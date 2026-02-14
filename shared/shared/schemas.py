@@ -147,14 +147,12 @@ class ReminderResponse(BaseModel):
 
 # Event schemas
 class EventCreate(BaseModel):
+    memory_id: str | None = None
     owner_user_id: int
     event_time: datetime
     description: str
-    status: EventStatus = EventStatus.pending
     source_type: EventSourceType
     source_detail: str | None = None
-    source_chat_id: int | None = None
-    source_message_id: int | None = None
 
 
 class EventUpdate(BaseModel):
@@ -167,12 +165,14 @@ class EventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    memory_id: str | None
     owner_user_id: int
     event_time: datetime
     description: str
     status: EventStatus
     source_type: EventSourceType
     source_detail: str | None
+    reminder_id: str | None
     created_at: datetime
     updated_at: datetime
 
