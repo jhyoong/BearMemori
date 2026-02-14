@@ -1,5 +1,6 @@
 """Memories router with FTS5 integration."""
 
+import logging
 import os
 import uuid
 from datetime import datetime, timedelta
@@ -19,7 +20,9 @@ from shared.schemas import (
     TagsAddRequest,
 )
 
-router = APIRouter(prefix="/memories", tags=["memories"])
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["memories"])
 
 
 @router.post("", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED)
@@ -292,7 +295,7 @@ async def delete_memory(
             os.remove(media_local_path)
         except OSError as e:
             # Log error but continue with database deletion
-            print(f"Warning: Failed to delete file {media_local_path}: {e}")
+            logger.warning(f"Failed to delete file {media_local_path}: {e}")
 
     # Delete from database (cascade will delete memory_tags)
     await db.execute("DELETE FROM memories WHERE id = ?", (id,))
