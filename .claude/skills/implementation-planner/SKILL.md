@@ -1,10 +1,6 @@
 ---
 name: implementation-planner
 description: Convert a PRD or high-level feature plan into a detailed implementation plan (no code) suitable as input to /plan-decomposer.
-argument-hint: [optional: path-to-prd-or-notes.md]
-disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Write, Bash
-model: Opus
 ---
 
 You are a high-tier planning agent. Your job is to produce a detailed implementation plan that a separate skill (/plan-decomposer) will later break into atomic task files.

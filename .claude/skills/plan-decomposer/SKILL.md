@@ -1,15 +1,6 @@
 ---
 name: plan-decomposer
 description: Breaks down development plans into discrete, atomic tasks optimized for lower-tier model execution
-when: >
-  - User asks to "break down", "decompose", "split", or "plan" a development task into smaller pieces
-  - User mentions creating tasks for a subagent or lower-tier model
-  - User wants to generate task files from a plan
-when_not: >
-  - User asks you to implement or write actual code
-  - User is debugging or troubleshooting existing code
-context: fork
-agent_type: Plan
 ---
 
 # Plan Decomposer

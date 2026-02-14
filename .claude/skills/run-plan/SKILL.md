@@ -1,8 +1,6 @@
 ---
 name: run-plan
 description: Sequentially execute .claude/tasks task files with a worker subagent then a reviewer subagent; stop on first failure
-disable-model-invocation: true
-argument-hint: (no args)
 ---
 
 # Sequential Task Orchestration
