@@ -118,28 +118,31 @@ class TaskUpdateResponse(BaseModel):
 
 # Reminder schemas
 class ReminderCreate(BaseModel):
+    memory_id: str
     owner_user_id: int
     text: str
     fire_at: datetime
-    source_chat_id: int | None = None
-    source_message_id: int | None = None
+    recurrence_minutes: int | None = None
 
 
 class ReminderUpdate(BaseModel):
     text: str | None = None
     fire_at: datetime | None = None
+    recurrence_minutes: int | None = None
 
 
 class ReminderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    memory_id: str
     owner_user_id: int
     text: str
     fire_at: datetime
+    recurrence_minutes: int | None
     fired: bool
     created_at: datetime
-    updated_at: datetime
+    updated_at: datetime | None
 
 
 # Event schemas
