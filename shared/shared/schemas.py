@@ -55,14 +55,29 @@ class TagResponse(BaseModel):
     created_at: datetime
 
 
+# Memory tag schemas (for memory_tags table)
+class MemoryTagResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tag: str
+    status: str
+    suggested_at: datetime | None
+    confirmed_at: datetime | None
+
+
 class MemoryWithTags(MemoryResponse):
-    tags: list[TagResponse]
+    tags: list[MemoryTagResponse]
 
 
 # Tag schemas
 class TagAdd(BaseModel):
     memory_id: str
     tag_name: str
+
+
+class TagsAddRequest(BaseModel):
+    tags: list[str]
+    status: str = "confirmed"
 
 
 # Task schemas
