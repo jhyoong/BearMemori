@@ -89,8 +89,6 @@ async def test_create_task():
             description="Complete project documentation",
             due_at=None,
             recurrence_minutes=None,
-            source_chat_id=12345,
-            source_message_id=67890,
         )
 
         result = await create_task(task_create, db)
