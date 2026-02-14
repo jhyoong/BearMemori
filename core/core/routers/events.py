@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -47,7 +47,7 @@ async def create_event(
     event_id = str(uuid.uuid4())
 
     # Set pending_since to now and status to pending
-    pending_since = datetime.utcnow().isoformat() + 'Z'
+    pending_since = datetime.now(timezone.utc).isoformat()
 
     # Convert event_time to ISO format
     event_time_str = event.event_time.isoformat()
@@ -166,7 +166,7 @@ async def update_event(
 
         # If status changes to "confirmed"
         if new_status == "confirmed" and old_status != "confirmed":
-            confirmed_at = datetime.utcnow().isoformat() + 'Z'
+            confirmed_at = datetime.now(timezone.utc).isoformat()
             update_fields.append("confirmed_at = ?")
             update_values.append(confirmed_at)
 
@@ -219,7 +219,7 @@ async def update_event(
 
     # Always set updated_at
     update_fields.append("updated_at = ?")
-    updated_at = datetime.utcnow().isoformat() + 'Z'
+    updated_at = datetime.now(timezone.utc).isoformat()
     update_values.append(updated_at)
 
     # Add id to values for WHERE clause
