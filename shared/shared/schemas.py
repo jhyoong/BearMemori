@@ -82,26 +82,38 @@ class TagsAddRequest(BaseModel):
 
 # Task schemas
 class TaskCreate(BaseModel):
+    memory_id: str
     owner_user_id: int
     description: str
-    source_chat_id: int | None = None
-    source_message_id: int | None = None
+    due_at: datetime | None = None
+    recurrence_minutes: int | None = None
 
 
 class TaskUpdate(BaseModel):
     description: str | None = None
     state: TaskState | None = None
+    due_at: datetime | None = None
+    recurrence_minutes: int | None = None
 
 
 class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    memory_id: str
     owner_user_id: int
     description: str
     state: TaskState
+    due_at: datetime | None
+    recurrence_minutes: int | None
+    completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class TaskUpdateResponse(BaseModel):
+    task: TaskResponse
+    recurring_task_id: str | None = None
 
 
 # Reminder schemas
