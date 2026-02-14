@@ -19,12 +19,12 @@ You are the **overview orchestrator** running a sequential workflow for this rep
 Stop and ask the user if any of these fail:
 
 1. **Task index exists**: Ensure `.claude/tasks/task-index.md` exists
-   - If missing: "⚠️ Task index not found. Please run the plan decomposition step first using the plan-decomposer skill."
+   - If missing: "Task index not found. Please run the plan decomposition step first using the plan-decomposer skill."
 
 2. **Subagents exist**: Confirm both subagents are present in this project:
    - `.claude/agents/task-worker.md`
    - `.claude/agents/task-reviewer.md`
-   - If missing: "⚠️ Required subagents not found. Please create task-worker and task-reviewer in .claude/agents/."
+   - If missing: "Required subagents not found. Please create task-worker and task-reviewer in .claude/agents/."
 
 3. **Artifacts directory exists**: Ensure `.claude/artifacts/` exists
    - Create it if missing (this is the only auto-fix allowed)
@@ -56,12 +56,12 @@ For each task in order:
 
 ### If STATUS: DONE
 - Skip this task
-- Log: "✅ Task {id} already complete, skipping."
+- Log: "Task {id} already complete, skipping."
 - Continue to next task
 
 ### If STATUS: BLOCKED
 - Stop immediately
-- Report to user: "🛑 Task {id} is BLOCKED. Review `.claude/tasks/{filename}` for blocking issue."
+- Report to user: "Task {id} is BLOCKED. Review `.claude/tasks/{filename}` for blocking issue."
 - Ask user what to do next
 - Do not proceed to remaining tasks
 
@@ -69,7 +69,7 @@ For each task in order:
 Execute the following steps **strictly in order**:
 
 #### A) Worker Step (Foreground Subagent)
-1. Log: "🔨 Starting task-worker on task {id}..."
+1. Log: "Starting task-worker on task {id}..."
 2. Invoke the `task-worker` subagent with this prompt:
    ```
    Work on this task file only: .claude/tasks/{filename}
@@ -79,10 +79,10 @@ Execute the following steps **strictly in order**:
    Write your work report to: .claude/artifacts/{task-id}-work.md
    ```
 3. **Wait for the subagent to complete** (foreground = blocking)
-4. Log: "✅ Worker completed task {id}"
+4. Log: "Worker completed task {id}"
 
 #### B) Reviewer Step (Foreground Subagent)
-1. Log: "🔍 Starting task-reviewer on task {id}..."
+1. Log: "Starting task-reviewer on task {id}..."
 2. Invoke the `task-reviewer` subagent with this prompt:
    ```
    Review this completed task: .claude/tasks/{filename}
@@ -101,7 +101,7 @@ Execute the following steps **strictly in order**:
    }
    ```
 3. **Wait for the reviewer to complete** (foreground = blocking)
-4. Log: "✅ Reviewer completed task {id}"
+4. Log: "Reviewer completed task {id}"
 
 #### C) Gate (Pass/Fail Decision)
 1. Read `.claude/artifacts/{task-id}-review.json`
@@ -109,16 +109,16 @@ Execute the following steps **strictly in order**:
 3. Check the verdict:
 
 **If verdict == "PASS":**
-- Log: "✅ Task {id} PASSED review"
+- Log: "Task {id} PASSED review"
 - Continue to the next task in the queue
 
 **If verdict == "FAIL":**
-- Log: "❌ Task {id} FAILED review"
+- Log: "Task {id} FAILED review"
 - Display the issues array to the user
 - Stop the entire orchestration run
 - Report to user:
   ```
-  🛑 Task {id} failed review. Issues found:
+  Task {id} failed review. Issues found:
   - Issue 1
   - Issue 2
 
@@ -135,11 +135,26 @@ Execute the following steps **strictly in order**:
 
 ## Completion
 
+Completion (archive only on full success):
+- Only when all tasks are complete (no STATUS: TODO remains, and execution never hit FAIL/BLOCKED):
+  1) Invoke `/archive-run` with no args.
+  2) After it finishes, report:
+     - “All tasks completed successfully”
+     - Archive run-id (from the archive manifest)
+     - Archive locations:
+       - `.claude/tasks/old/<run-id>/`
+       - `.claude/artifacts/old/<run-id>/`
+     - Manifest path:
+       - `.claude/artifacts/old/<run-id>/archive-manifest.md`
+
+Failure paths (do NOT archive):
+- If any task is BLOCKED: stop and wait for user input; do not invoke `/archive-run`.
+- If any review verdict is FAIL: stop and wait for user input; do not invoke `/archive-run`.
+- If review JSON is missing/malformed: stop and wait for user input; do not invoke `/archive-run`.
+
 When all tasks are either DONE or skipped:
 
 ```
-✅ All tasks completed successfully!
-
 Summary:
 - Total tasks: {N}
 - Completed: {done_count}
@@ -150,11 +165,6 @@ Artifacts generated in .claude/artifacts/:
 - {task-id}-work.md (worker reports)
 - {task-id}-review.json (review verdicts)
 - subagent-log.txt (execution log)
-
-Next steps:
-1. Review the artifacts for detailed execution history
-2. Test the complete implementation
-3. Commit your changes
 ```
 
 ## Error Handling
@@ -188,15 +198,15 @@ Log all major steps to help the user track progress:
 
 Example log format:
 ```
-[12:00:00] 🚀 Starting orchestration run
-[12:00:01] 📋 Found 5 tasks in queue
-[12:00:02] ⏭️  Skipping task-001 (already DONE)
-[12:00:03] 🔨 Starting worker on task-002
-[12:15:22] ✅ Worker completed task-002
-[12:15:23] 🔍 Starting reviewer on task-002
-[12:18:45] ✅ Reviewer completed task-002
-[12:18:46] ✅ Task-002 PASSED review
-[12:18:47] 🔨 Starting worker on task-003
+[12:00:00] Starting orchestration run
+[12:00:01] Found 5 tasks in queue
+[12:00:02] Skipping task-001 (already DONE)
+[12:00:03] Starting worker on task-002
+[12:15:22] Worker completed task-002
+[12:15:23] Starting reviewer on task-002
+[12:18:45] Reviewer completed task-002
+[12:18:46] Task-002 PASSED review
+[12:18:47] Starting worker on task-003
 ...
 ```
 

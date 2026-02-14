@@ -149,4 +149,4 @@ Generate all task files in `.claude/tasks/` with:
 - task-index.md as the master reference
 
 After generation, inform the user:
-"✅ Created {N} task files in .claude/tasks/. Review task-index.md for overview. Run /run-plan to start sequential execution."
+"Created {N} task files in .claude/tasks/. Review task-index.md for overview. Run /run-plan to start sequential execution."
