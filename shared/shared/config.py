@@ -18,3 +18,8 @@ class Settings(BaseSettings):
     database_path: str = "/data/db/life_organiser.db"
     image_storage_path: str = "/data/images"
     core_api_url: str = "http://core:8000"
+
+
+def load_config() -> Settings:
+    """Load and return application settings."""
+    return Settings()
