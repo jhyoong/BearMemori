@@ -202,6 +202,12 @@ class SearchResult(BaseModel):
     score: float | None = None
 
 
+class MemorySearchResult(BaseModel):
+    """Search result containing a memory with tags and relevance score."""
+    memory: MemoryWithTags
+    score: float
+
+
 # Audit schemas
 class AuditLogEntry(BaseModel):
     model_config = ConfigDict(from_attributes=True)
