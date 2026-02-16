@@ -1,0 +1,69 @@
+services:
+  core:
+    build:
+      context: .
+      dockerfile: core/Dockerfile
+    volumes:
+      - db-data:/data/db
+      - image-data:/data/images
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file: .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  telegram:
+    build:
+      context: .
+      dockerfile: telegram/Dockerfile
+    depends_on:
+      core:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+
+  llm-worker:
+    build:
+      context: .
+      dockerfile: llm_worker/Dockerfile
+    depends_on:
+      core:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+
+  email:
+    build:
+      context: .
+      dockerfile: email_poller/Dockerfile
+    depends_on:
+      core:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  db-data:
+  image-data:
+  redis-data:
