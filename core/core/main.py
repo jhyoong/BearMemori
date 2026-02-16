@@ -1,5 +1,7 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+import redis.asyncio
 
 # Group 3 imports (database):
 from shared.config import load_config
@@ -16,9 +18,8 @@ from core.routers.audit import router as audit_router
 from core.routers.llm_jobs import router as llm_jobs_router
 from core.routers.backup import router as backup_router
 
-# Future imports (commented out until Groups 4-6 are complete):
-# import redis.asyncio
-# from core.scheduler import run_scheduler
+# Group 6 imports (scheduler):
+from core.scheduler import run_scheduler
 
 
 @asynccontextmanager
@@ -32,23 +33,29 @@ async def lifespan(app: FastAPI):
     config = load_config()
     app.state.db = await init_db(config.database_path)
 
-    # TODO (Group 4): Connect to Redis
-    # app.state.redis = await redis.asyncio.from_url(config.redis_url)
+    # Connect to Redis (Group 4)
+    app.state.redis = await redis.asyncio.from_url(config.redis_url)
 
-    # TODO (Group 6): Start scheduler
-    # app.state.scheduler_task = asyncio.create_task(run_scheduler(app.state.db))
+    # Start scheduler (Group 6)
+    app.state.scheduler_task = asyncio.create_task(
+        run_scheduler(app.state.db, app.state.redis)
+    )
 
     yield
 
     # SHUTDOWN
-    # TODO (Group 6): Cancel scheduler task
-    # app.state.scheduler_task.cancel()
+    # Stop scheduler (Group 6)
+    app.state.scheduler_task.cancel()
+    try:
+        await app.state.scheduler_task
+    except asyncio.CancelledError:
+        pass
 
     # Close database connection (Group 3)
     await app.state.db.close()
 
-    # TODO (Group 4): Close Redis connection
-    # await app.state.redis.close()
+    # Close Redis connection (Group 4)
+    await app.state.redis.close()
 
 
 app = FastAPI(
