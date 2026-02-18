@@ -6,8 +6,8 @@ from datetime import datetime
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException
 
-from core.database import get_db
-from shared.schemas import BackupStatus
+from core_svc.database import get_db
+from shared_lib.schemas import BackupStatus
 
 logger = logging.getLogger(__name__)
 

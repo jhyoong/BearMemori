@@ -13,18 +13,18 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent / 'core'))
 sys.path.insert(0, str(Path(__file__).parent / 'shared'))
 
-from core.database import init_db
-from core.routers.tasks import (
+from core_svc.database import init_db
+from core_svc.routers.tasks import (
     create_task,
     get_tasks,
     update_task,
     delete_task,
 )
-from shared.schemas import (
+from shared_lib.schemas import (
     TaskCreate,
     TaskUpdate,
 )
-from shared.enums import TaskState
+from shared_lib.enums import TaskState
 
 
 class MockRequest:

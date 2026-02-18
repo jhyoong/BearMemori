@@ -24,4 +24,4 @@ EXPOSE 8000
 
 # Run uvicorn server
 # Uses module notation to run core.main:app
-CMD ["python", "-m", "uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "core_svc.main:app", "--host", "0.0.0.0", "--port", "8000"]

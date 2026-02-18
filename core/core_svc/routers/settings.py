@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 import aiosqlite
 from fastapi import APIRouter, Depends
 
-from core.audit import log_audit
-from core.database import get_db
-from shared.schemas import UserSettingsResponse, UserSettingsUpdate
+from core_svc.audit import log_audit
+from core_svc.database import get_db
+from shared_lib.schemas import UserSettingsResponse, UserSettingsUpdate
 
 logger = logging.getLogger(__name__)
 

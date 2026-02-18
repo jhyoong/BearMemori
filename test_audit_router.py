@@ -13,12 +13,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent / 'core'))
 sys.path.insert(0, str(Path(__file__).parent / 'shared'))
 
-from core.database import init_db
-from core.routers.audit import (
+from core_svc.database import init_db
+from core_svc.routers.audit import (
     get_audit_logs,
     parse_actor_to_user_id,
 )
-from shared.enums import EntityType, AuditAction
+from shared_lib.enums import EntityType, AuditAction
 
 
 async def setup_test_db():

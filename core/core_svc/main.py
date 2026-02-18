@@ -4,22 +4,22 @@ from fastapi import FastAPI
 import redis.asyncio
 
 # Group 3 imports (database):
-from shared.config import load_config
-from core.database import init_db
+from shared_lib.config import load_config
+from core_svc.database import init_db
 
 # Group 5 imports (routers):
-from core.routers.memories import router as memories_router
-from core.routers.tasks import router as tasks_router
-from core.routers.reminders import router as reminders_router
-from core.routers.events import router as events_router
-from core.routers.search import router as search_router
-from core.routers.settings import router as settings_router
-from core.routers.audit import router as audit_router
-from core.routers.llm_jobs import router as llm_jobs_router
-from core.routers.backup import router as backup_router
+from core_svc.routers.memories import router as memories_router
+from core_svc.routers.tasks import router as tasks_router
+from core_svc.routers.reminders import router as reminders_router
+from core_svc.routers.events import router as events_router
+from core_svc.routers.search import router as search_router
+from core_svc.routers.settings import router as settings_router
+from core_svc.routers.audit import router as audit_router
+from core_svc.routers.llm_jobs import router as llm_jobs_router
+from core_svc.routers.backup import router as backup_router
 
 # Group 6 imports (scheduler):
-from core.scheduler import run_scheduler
+from core_svc.scheduler import run_scheduler
 
 
 @asynccontextmanager

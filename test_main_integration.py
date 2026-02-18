@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'core'))
 sys.path.insert(0, str(Path(__file__).parent / 'shared'))
 
-from core.main import app
+from core_svc.main import app
 
 
 def test_app_metadata():

@@ -12,10 +12,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent / 'core'))
 sys.path.insert(0, str(Path(__file__).parent / 'shared'))
 
-from core.database import init_db
-from core.routers.search import search
-from core.routers.memories import create_memory, add_tags_to_memory
-from shared.schemas import MemoryCreate, TagsAddRequest
+from core_svc.database import init_db
+from core_svc.routers.search import search
+from core_svc.routers.memories import create_memory, add_tags_to_memory
+from shared_lib.schemas import MemoryCreate, TagsAddRequest
 
 
 class MockRequest:
@@ -357,7 +357,7 @@ async def test_search_pending_memories():
         print(f"   ✓ Confirmed memory created: {created1.content}")
 
         print("\n2. Creating pending memory...")
-        from shared.enums import MediaType
+        from shared_lib.enums import MediaType
         memory2 = MemoryCreate(
             owner_user_id=123456,
             content="Pending Python guide",

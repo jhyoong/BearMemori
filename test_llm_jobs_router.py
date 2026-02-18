@@ -13,14 +13,14 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent / 'core'))
 sys.path.insert(0, str(Path(__file__).parent / 'shared'))
 
-from core.database import init_db
-from core.routers.llm_jobs import (
+from core_svc.database import init_db
+from core_svc.routers.llm_jobs import (
     create_llm_job,
     get_llm_job,
     update_llm_job,
     get_llm_jobs,
 )
-from shared.schemas import (
+from shared_lib.schemas import (
     LLMJobCreate,
     LLMJobUpdate,
 )

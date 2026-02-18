@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from core.audit import log_audit
-from core.database import get_db
-from shared.schemas import (
+from core_svc.audit import log_audit
+from core_svc.database import get_db
+from shared_lib.schemas import (
     TaskCreate,
     TaskResponse,
     TaskUpdate,

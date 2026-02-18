@@ -9,7 +9,7 @@ import tempfile
 # Add the core directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'core'))
 
-from core.database import init_db
+from core_svc.database import init_db
 
 
 async def test_database_initialization():

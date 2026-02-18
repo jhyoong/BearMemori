@@ -8,9 +8,9 @@ from pathlib import Path
 
 import aiosqlite
 
-from core.audit import log_audit
-from core.search import remove_from_index
-from shared.redis_streams import publish, STREAM_NOTIFY_TELEGRAM
+from core_svc.audit import log_audit
+from core_svc.search import remove_from_index
+from shared_lib.redis_streams import publish, STREAM_NOTIFY_TELEGRAM
 
 logger = logging.getLogger(__name__)
 

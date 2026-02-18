@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 
-from core.database import get_db, init_db
-from core.main import app
+from core_svc.database import get_db, init_db
+from core_svc.main import app
 
 
 @asynccontextmanager

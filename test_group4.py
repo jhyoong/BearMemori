@@ -11,9 +11,9 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent / 'core'))
 
-from core.audit import log_audit
-from core.search import index_memory, remove_from_index, search_memories
-from core.database import init_db
+from core_svc.audit import log_audit
+from core_svc.search import index_memory, remove_from_index, search_memories
+from core_svc.database import init_db
 
 
 async def setup_test_db():

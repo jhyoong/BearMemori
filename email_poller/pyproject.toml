@@ -9,4 +9,4 @@ requires-python = ">=3.12"
 dependencies = []
 
 [tool.hatch.build.targets.wheel]
-packages = ["email_poller"]
+packages = ["poller"]

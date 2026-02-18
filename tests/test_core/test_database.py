@@ -3,7 +3,7 @@
 import aiosqlite
 import pytest
 
-from core.database import init_db
+from core_svc.database import init_db
 
 
 async def test_init_db_creates_tables(tmp_path):

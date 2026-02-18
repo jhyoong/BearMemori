@@ -13,12 +13,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent / 'core'))
 sys.path.insert(0, str(Path(__file__).parent / 'shared'))
 
-from core.database import init_db
-from core.routers.settings import (
+from core_svc.database import init_db
+from core_svc.routers.settings import (
     get_user_settings,
     update_user_settings,
 )
-from shared.schemas import (
+from shared_lib.schemas import (
     UserSettingsUpdate,
 )
 

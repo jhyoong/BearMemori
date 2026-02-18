@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 from pydantic import BaseModel, ConfigDict
-from shared.enums import (
+from shared_lib.enums import (
     MemoryStatus,
     MediaType,
     TaskState,

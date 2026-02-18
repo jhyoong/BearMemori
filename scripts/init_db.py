@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, '.')
 
 async def main(db_path: str):
-    from core.core.database import init_db
+    from core.core_svc.database import init_db
     db = await init_db(db_path)
     print(f"Database initialized at {db_path}")
     await db.close()

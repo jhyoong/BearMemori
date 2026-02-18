@@ -5,14 +5,14 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
 
-from core.scheduler import (
+from core_svc.scheduler import (
     _expire_pending_images,
     _expire_suggested_tags,
     _fire_due_reminders,
     _requeue_stale_events,
     run_scheduler,
 )
-from shared.redis_streams import STREAM_NOTIFY_TELEGRAM
+from shared_lib.redis_streams import STREAM_NOTIFY_TELEGRAM
 
 
 def _ts_past(hours: int = 0, days: int = 0) -> str:
@@ -232,10 +232,10 @@ async def test_scheduler_error_isolation(test_db, mock_redis):
         called.append("requeue")
 
     with (
-        patch("core.scheduler._fire_due_reminders", new=fire_fails),
-        patch("core.scheduler._expire_pending_images", new=expire_ok),
-        patch("core.scheduler._expire_suggested_tags", new=tags_ok),
-        patch("core.scheduler._requeue_stale_events", new=requeue_ok),
+        patch("core_svc.scheduler._fire_due_reminders", new=fire_fails),
+        patch("core_svc.scheduler._expire_pending_images", new=expire_ok),
+        patch("core_svc.scheduler._expire_suggested_tags", new=tags_ok),
+        patch("core_svc.scheduler._requeue_stale_events", new=requeue_ok),
     ):
         task = asyncio.create_task(run_scheduler(test_db, mock_redis, interval_seconds=0))
         await asyncio.sleep(0.05)

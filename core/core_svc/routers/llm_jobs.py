@@ -8,9 +8,9 @@ from datetime import datetime, timezone
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from core.audit import log_audit
-from core.database import get_db
-from shared.schemas import LLMJobCreate, LLMJobResponse, LLMJobUpdate
+from core_svc.audit import log_audit
+from core_svc.database import get_db
+from shared_lib.schemas import LLMJobCreate, LLMJobResponse, LLMJobUpdate
 
 logger = logging.getLogger(__name__)
 

@@ -7,9 +7,9 @@ from datetime import datetime
 import aiosqlite
 from fastapi import APIRouter, Depends
 
-from core.database import get_db
-from shared.schemas import AuditLogEntry
-from shared.enums import EntityType, AuditAction
+from core_svc.database import get_db
+from shared_lib.schemas import AuditLogEntry
+from shared_lib.enums import EntityType, AuditAction
 
 logger = logging.getLogger(__name__)
 

@@ -13,13 +13,13 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent / 'core'))
 sys.path.insert(0, str(Path(__file__).parent / 'shared'))
 
-from core.database import init_db
-from core.routers.events import (
+from core_svc.database import init_db
+from core_svc.routers.events import (
     create_event,
     update_event,
     get_events,
 )
-from shared.schemas import (
+from shared_lib.schemas import (
     EventCreate,
     EventUpdate,
 )
@@ -462,7 +462,7 @@ async def test_confirm_event_with_updated_time_and_description():
         print(f"   ✓ Reminder text: {reminder_row['text']}")
 
         # Verify reminder fire_at matches updated event_time
-        from core.routers.events import parse_db_datetime
+        from core_svc.routers.events import parse_db_datetime
         reminder_fire_at = parse_db_datetime(reminder_row["fire_at"])
         time_diff = abs((reminder_fire_at - new_event_time).total_seconds())
         assert time_diff < 2, "Reminder fire_at should match updated event_time"

@@ -6,9 +6,9 @@ from datetime import datetime
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from core.database import get_db
-from core.search import search_memories
-from shared.schemas import MemorySearchResult, MemoryWithTags, MemoryTagResponse
+from core_svc.database import get_db
+from core_svc.search import search_memories
+from shared_lib.schemas import MemorySearchResult, MemoryWithTags, MemoryTagResponse
 
 logger = logging.getLogger(__name__)
 

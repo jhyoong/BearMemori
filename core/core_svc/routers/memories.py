@@ -8,10 +8,10 @@ from datetime import datetime, timedelta
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from core.audit import log_audit
-from core.database import get_db
-from core.search import index_memory, remove_from_index
-from shared.schemas import (
+from core_svc.audit import log_audit
+from core_svc.database import get_db
+from core_svc.search import index_memory, remove_from_index
+from shared_lib.schemas import (
     MemoryCreate,
     MemoryResponse,
     MemoryUpdate,

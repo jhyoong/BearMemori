@@ -13,8 +13,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent / 'core'))
 sys.path.insert(0, str(Path(__file__).parent / 'shared'))
 
-from core.database import init_db
-from core.routers.memories import (
+from core_svc.database import init_db
+from core_svc.routers.memories import (
     create_memory,
     get_memory,
     update_memory,
@@ -22,12 +22,12 @@ from core.routers.memories import (
     add_tags_to_memory,
     remove_tag_from_memory,
 )
-from shared.schemas import (
+from shared_lib.schemas import (
     MemoryCreate,
     MemoryUpdate,
     TagsAddRequest,
 )
-from shared.enums import MediaType, MemoryStatus
+from shared_lib.enums import MediaType, MemoryStatus
 
 
 class MockRequest:

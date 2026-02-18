@@ -13,14 +13,14 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent / 'core'))
 sys.path.insert(0, str(Path(__file__).parent / 'shared'))
 
-from core.database import init_db
-from core.routers.reminders import (
+from core_svc.database import init_db
+from core_svc.routers.reminders import (
     create_reminder,
     get_reminders,
     update_reminder,
     delete_reminder,
 )
-from shared.schemas import (
+from shared_lib.schemas import (
     ReminderCreate,
     ReminderUpdate,
 )

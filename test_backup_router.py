@@ -12,8 +12,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent / 'core'))
 sys.path.insert(0, str(Path(__file__).parent / 'shared'))
 
-from core.database import init_db
-from core.routers.backup import get_backup_status
+from core_svc.database import init_db
+from core_svc.routers.backup import get_backup_status
 from fastapi import HTTPException
 
 
