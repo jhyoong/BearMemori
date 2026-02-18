@@ -85,7 +85,7 @@ Each callback flow:
 
 ## Files to Create
 
-### `telegram/telegram_gw/handlers/callback.py`
+### `telegram/tg_gateway/handlers/callback.py`
 
 #### `async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None`
 
@@ -139,7 +139,7 @@ From `shared`:
 - `shared.schemas.MemoryUpdate, TaskCreate, TaskUpdate, ReminderCreate, TagAdd`
 - `shared.enums.TaskState`
 
-From `telegram_gw`:
+From `tg_gateway`:
 - All callback data types from `callback_data.py`
 - All keyboard functions from `keyboards.py`
 - `CoreClient, CoreUnavailableError, CoreNotFoundError` from `core_client.py`

@@ -58,7 +58,7 @@ Request/response models are defined in `shared.schemas`:
 
 ## Files to Create
 
-### `telegram/telegram_gw/core_client.py`
+### `telegram/tg_gateway/core_client.py`
 
 #### Custom Exceptions
 
@@ -114,7 +114,7 @@ Note: `get_memory` returns `None` on 404 instead of raising, because callers fre
 
 ---
 
-### `telegram/telegram_gw/gateway.py`
+### `telegram/tg_gateway/gateway.py`
 
 Abstract base class defining the platform-agnostic messaging interface.
 
@@ -147,7 +147,7 @@ The `buttons` parameter uses plain dicts so the interface is not tied to any Tel
 
 ---
 
-### `telegram/telegram_gw/telegram_gateway.py`
+### `telegram/tg_gateway/telegram_gateway.py`
 
 Concrete implementation of `Gateway` for Telegram using `python-telegram-bot`.
 

@@ -59,7 +59,7 @@ The consumer is started as a managed task via `application.create_task()` in `po
 
 ## Files to Create
 
-### `telegram/telegram_gw/consumer.py`
+### `telegram/tg_gateway/consumer.py`
 
 #### `async def run_notify_consumer(application: Application) -> None`
 
@@ -171,7 +171,7 @@ RUN pip install --no-cache-dir -e /app/shared/
 COPY telegram/ /app/telegram/
 RUN pip install --no-cache-dir -e /app/telegram/
 
-CMD ["python", "-m", "telegram_gw.main"]
+CMD ["python", "-m", "tg_gateway.main"]
 ```
 
 Notes:
@@ -220,7 +220,7 @@ CORE_API_URL=http://core:8000
 From `shared`:
 - `shared.redis_streams.STREAM_NOTIFY_TELEGRAM, GROUP_TELEGRAM, create_consumer_group, consume, ack`
 
-From `telegram_gw`:
+From `tg_gateway`:
 - `tag_suggestion_keyboard` from `keyboards.py`
 - `TaskAction, TagConfirm` from `callback_data.py`
 

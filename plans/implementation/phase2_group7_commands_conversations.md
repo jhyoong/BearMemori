@@ -52,7 +52,7 @@ Note: The `q=*` parameter may need adjustment depending on how Core's search end
 
 ## Files to Create
 
-### `telegram/telegram_gw/handlers/command.py`
+### `telegram/tg_gateway/handlers/command.py`
 
 #### `async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None`
 
@@ -110,7 +110,7 @@ You can also just send me text or images to save them.
 
 ---
 
-### `telegram/telegram_gw/handlers/conversation.py`
+### `telegram/tg_gateway/handlers/conversation.py`
 
 Public functions called from `message.py` when `user_data` has pending state.
 
@@ -164,7 +164,7 @@ On successful parse, set timezone to UTC (`dt.replace(tzinfo=timezone.utc)`) and
 From `shared`:
 - `shared.schemas.TagAdd, MemoryUpdate, TaskCreate, ReminderCreate`
 
-From `telegram_gw`:
+From `tg_gateway`:
 - `CoreClient, CoreUnavailableError` from `core_client.py`
 - `search_results_keyboard, task_list_keyboard` from `keyboards.py`
 - `SearchDetail, TaskAction` from `callback_data.py`

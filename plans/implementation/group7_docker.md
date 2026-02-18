@@ -25,8 +25,8 @@ Create three minimal packages. Each follows the same pattern.
 
 **Files:**
 - `telegram/pyproject.toml`
-- `telegram/telegram_gw/__init__.py` (empty)
-- `telegram/telegram_gw/main.py`
+- `telegram/tg_gateway/__init__.py` (empty)
+- `telegram/tg_gateway/main.py`
 - `telegram/Dockerfile`
 
 **`telegram/pyproject.toml`:**
@@ -42,7 +42,7 @@ requires-python = ">=3.12"
 dependencies = []
 ```
 
-**`telegram/telegram_gw/main.py`:**
+**`telegram/tg_gateway/main.py`:**
 ```python
 import asyncio
 import logging
@@ -65,7 +65,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY telegram/ /app/telegram/
 RUN pip install --no-cache-dir -e /app/telegram/
-CMD ["python", "-m", "telegram_gw.main"]
+CMD ["python", "-m", "tg_gateway.main"]
 ```
 
 #### LLM Worker stub

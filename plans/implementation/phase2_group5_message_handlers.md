@@ -57,7 +57,7 @@ If Redis is unreachable or the publish fails, this is non-fatal. The user can st
 
 ## Files to Create
 
-### `telegram/telegram_gw/handlers/message.py`
+### `telegram/tg_gateway/handlers/message.py`
 
 Three handler functions:
 
@@ -96,7 +96,7 @@ Three handler functions:
 
 ---
 
-### `telegram/telegram_gw/media.py`
+### `telegram/tg_gateway/media.py`
 
 #### `async def download_and_upload_image(bot, core_client: CoreClient, memory_id: str, file_id: str) -> str | None`
 
@@ -114,11 +114,11 @@ From `shared`:
 - `shared.enums.MediaType`
 - `shared.redis_streams.STREAM_LLM_IMAGE_TAG, publish`
 
-From `telegram_gw`:
-- `telegram_gw.core_client.CoreClient, CoreUnavailableError`
-- `telegram_gw.keyboards.memory_actions_keyboard`
-- `telegram_gw.handlers.conversation` (for pending state delegation)
-- `telegram_gw.media.download_and_upload_image`
+From `tg_gateway`:
+- `tg_gateway.core_client.CoreClient, CoreUnavailableError`
+- `tg_gateway.keyboards.memory_actions_keyboard`
+- `tg_gateway.handlers.conversation` (for pending state delegation)
+- `tg_gateway.media.download_and_upload_image`
 
 ---
 

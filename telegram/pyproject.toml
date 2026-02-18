@@ -6,7 +6,13 @@ build-backend = "hatchling.build"
 name = "life-organiser-telegram"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "python-telegram-bot[ext]>=20.0,<23.0",
+    "httpx>=0.27",
+    "redis>=5.0",
+    "aiofiles>=24.0",
+    "life-organiser-shared",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["tg_gateway"]

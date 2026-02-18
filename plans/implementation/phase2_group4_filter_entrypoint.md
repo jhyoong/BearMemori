@@ -50,7 +50,7 @@ PTB processes handlers in registration order. First match wins. Order:
 
 ## Files to Create
 
-### `telegram/telegram_gw/filters.py`
+### `telegram/tg_gateway/filters.py`
 
 A custom PTB filter that only passes updates from allowlisted users.
 
@@ -69,7 +69,7 @@ This filter is combined with PTB's built-in filters in handler registration:
 
 ---
 
-### `telegram/telegram_gw/main.py`
+### `telegram/tg_gateway/main.py`
 
 The bot entrypoint. Structured as follows:
 
@@ -125,12 +125,12 @@ Cleanup:
 ### Handler Imports
 
 The entrypoint imports handler functions from:
-- `telegram_gw.handlers.message` -- `handle_text`, `handle_image`, `handle_unauthorized`
-- `telegram_gw.handlers.callback` -- `handle_callback`, `handle_invalid`
-- `telegram_gw.handlers.command` -- `help_command`, `find_command`, `tasks_command`, `pinned_command`, `cancel_command`
-- `telegram_gw.consumer` -- `run_notify_consumer`
+- `tg_gateway.handlers.message` -- `handle_text`, `handle_image`, `handle_unauthorized`
+- `tg_gateway.handlers.callback` -- `handle_callback`, `handle_invalid`
+- `tg_gateway.handlers.command` -- `help_command`, `find_command`, `tasks_command`, `pinned_command`, `cancel_command`
+- `tg_gateway.consumer` -- `run_notify_consumer`
 
-Also create `telegram/telegram_gw/handlers/__init__.py` (empty file).
+Also create `telegram/tg_gateway/handlers/__init__.py` (empty file).
 
 ---
 

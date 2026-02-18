@@ -11,7 +11,7 @@ Create the Telegram Gateway Python package with all dependencies and configurati
 
 ## Context
 
-The Telegram Gateway is one of four custom services in the Life Organiser architecture. It is the user-facing Telegram bot that communicates with the Core service via REST API and with the LLM Worker via Redis Streams. The service lives at `telegram/` in the monorepo with the Python package at `telegram/telegram_gw/`.
+The Telegram Gateway is one of four custom services in the Life Organiser architecture. It is the user-facing Telegram bot that communicates with the Core service via REST API and with the LLM Worker via Redis Streams. The service lives at `telegram/` in the monorepo with the Python package at `telegram/tg_gateway/`.
 
 The shared package (`shared/`) already exists from Phase 1 and provides:
 - `shared.schemas` -- Pydantic models (MemoryCreate, TaskCreate, ReminderCreate, etc.)
@@ -50,11 +50,11 @@ Dependency rationale:
 - `aiofiles` -- async file I/O for image handling.
 - `life-organiser-shared` -- the shared package from Phase 1 (installed as editable dep in Docker).
 
-### `telegram/telegram_gw/__init__.py`
+### `telegram/tg_gateway/__init__.py`
 
 Empty file. Package marker.
 
-### `telegram/telegram_gw/config.py`
+### `telegram/tg_gateway/config.py`
 
 Telegram-specific configuration using `pydantic-settings`. Loads from environment variables.
 
@@ -74,7 +74,7 @@ Use `pydantic_settings.BaseSettings` with no env prefix (env vars match field na
 ## Acceptance Criteria
 
 1. `pip install -e ./telegram` succeeds with all dependencies resolved (assuming shared package is available)
-2. `from telegram_gw.config import TelegramConfig` works
+2. `from tg_gateway.config import TelegramConfig` works
 3. `TelegramConfig` loads `telegram_bot_token` from `TELEGRAM_BOT_TOKEN` env var
 4. `allowed_ids_set` correctly parses `"123,456"` into `{123, 456}`
 5. `allowed_ids_set` returns empty set when `allowed_user_ids` is `""`

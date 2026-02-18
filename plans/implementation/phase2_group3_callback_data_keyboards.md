@@ -42,7 +42,7 @@ After a memory is captured, the bot replies with inline buttons. Each button pre
 
 ## Files to Create
 
-### `telegram/telegram_gw/callback_data.py`
+### `telegram/tg_gateway/callback_data.py`
 
 Frozen dataclasses (hashable, as required by PTB's cache).
 
@@ -77,7 +77,7 @@ All dataclasses use `@dataclass(frozen=True)` from the `dataclasses` module.
 
 ---
 
-### `telegram/telegram_gw/keyboards.py`
+### `telegram/tg_gateway/keyboards.py`
 
 Functions that return `InlineKeyboardMarkup` objects. Each function is pure (no side effects, no async).
 

@@ -121,7 +121,7 @@ life-organiser/
 ├── telegram/                   # Telegram Gateway (Docker image: life-org-telegram)
 │   ├── Dockerfile
 │   ├── pyproject.toml
-│   └── telegram_gw/
+│   └── tg_gateway/
 │       ├── __init__.py
 │       ├── main.py             # Bot entrypoint
 │       ├── gateway.py          # Abstract gateway interface
