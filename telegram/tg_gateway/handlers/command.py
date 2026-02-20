@@ -107,10 +107,10 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     keyboard_results = []
     for result in results[:5]:
         # Create label: first 50 chars of content + "..." if longer
-        content = result.content
+        content = result.memory.content
         label = content[:50] + "..." if len(content) > 50 else content
-        # Use entity_id as the memory_id
-        keyboard_results.append((label, result.entity_id))
+        # Use memory id as the memory_id
+        keyboard_results.append((label, result.memory.id))
 
     # Create inline keyboard with search results
     keyboard = search_results_keyboard(keyboard_results)
@@ -217,10 +217,10 @@ async def pinned_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     keyboard_results = []
     for result in results[:10]:
         # Create label: first 50 chars of content + "..." if longer
-        content = result.content
+        content = result.memory.content
         label = content[:50] + "..." if len(content) > 50 else content
-        # Use entity_id as the memory_id
-        keyboard_results.append((label, result.entity_id))
+        # Use memory id as the memory_id
+        keyboard_results.append((label, result.memory.id))
 
     # Create inline keyboard with search results
     keyboard = search_results_keyboard(keyboard_results)

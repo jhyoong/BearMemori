@@ -54,7 +54,9 @@ async def test_search_pin_boost(test_app, test_user):
     # Pin the second one
     await test_app.patch(f"/memories/{pinned_id}", json={"is_pinned": True})
 
-    resp = await test_app.get("/search", params={"q": "review report", "owner": test_user})
+    resp = await test_app.get(
+        "/search", params={"q": "review report", "owner": test_user}
+    )
     assert resp.status_code == 200
     results = resp.json()
     assert len(results) >= 2
@@ -104,9 +106,7 @@ async def test_search_owner_filter(test_app, test_db):
     await _create_confirmed_memory(test_app, user_a, "user_a unique_xyzabc memory")
     await _create_confirmed_memory(test_app, user_b, "user_b unique_xyzabc memory")
 
-    resp = await test_app.get(
-        "/search", params={"q": "unique_xyzabc", "owner": user_a}
-    )
+    resp = await test_app.get("/search", params={"q": "unique_xyzabc", "owner": user_a})
     assert resp.status_code == 200
     results = resp.json()
     assert all(r["memory"]["owner_user_id"] == user_a for r in results)
@@ -116,3 +116,22 @@ async def test_search_empty_query_returns_400(test_app, test_user):
     """Search with empty q returns 400."""
     resp = await test_app.get("/search", params={"q": "", "owner": test_user})
     assert resp.status_code == 400
+
+
+async def test_search_pinned_empty_query(test_app, test_user):
+    """Search with empty q but pinned=true returns all pinned memories."""
+    # Create a confirmed memory and pin it
+    memory_id = await _create_confirmed_memory(
+        test_app, test_user, "important meeting notes"
+    )
+    await test_app.patch(f"/memories/{memory_id}", json={"is_pinned": True})
+
+    # Search with empty query but pinned=true should return the pinned memory
+    resp = await test_app.get(
+        "/search", params={"q": "", "owner": test_user, "pinned": "true"}
+    )
+    assert resp.status_code == 200
+    results = resp.json()
+    assert len(results) == 1
+    assert results[0]["memory"]["id"] == memory_id
+    assert results[0]["memory"]["is_pinned"] is True

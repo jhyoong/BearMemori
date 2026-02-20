@@ -5,13 +5,12 @@ from shared_lib.schemas import (
     LLMJobCreate,
     LLMJobResponse,
     MemoryCreate,
+    MemorySearchResult,
     MemoryUpdate,
     MemoryResponse,
     MemoryWithTags,
     ReminderCreate,
     ReminderResponse,
-    SearchResult,
-    TagAdd,
     TagsAddRequest,
     TaskCreate,
     TaskUpdate,
@@ -213,7 +212,7 @@ class CoreClient:
         self, owner_user_id: int, state: str | None = None
     ) -> list[TaskResponse]:
         """List tasks for an owner, optionally filtered by state."""
-        params: dict = {"owner": owner_user_id}
+        params: dict = {"owner_user_id": owner_user_id}
         if state is not None:
             params["state"] = state
 
@@ -286,7 +285,7 @@ class CoreClient:
 
     async def search(
         self, query: str, owner: int, pinned: bool = False
-    ) -> list[SearchResult]:
+    ) -> list[MemorySearchResult]:
         """Search memories."""
         try:
             response = await self._client.get(
@@ -306,7 +305,7 @@ class CoreClient:
                 f"Failed to search: {response.status_code} {response.text}"
             )
 
-        return [SearchResult.model_validate(item) for item in response.json()]
+        return [MemorySearchResult.model_validate(item) for item in response.json()]
 
     async def get_settings(self, user_id: int) -> UserSettingsResponse:
         """Get user settings."""
