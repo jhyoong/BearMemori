@@ -59,7 +59,15 @@ async def _insert_reminder(
             (id, memory_id, owner_user_id, text, fire_at, recurrence_minutes, fired)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (reminder_id, memory_id, user_id, "test reminder", fire_at, recurrence_minutes, fired),
+        (
+            reminder_id,
+            memory_id,
+            user_id,
+            "test reminder",
+            fire_at,
+            recurrence_minutes,
+            fired,
+        ),
     )
     await db.commit()
 
@@ -70,7 +78,9 @@ async def test_fire_due_reminder(test_db, mock_redis, test_user):
     reminder_id = str(uuid.uuid4())
 
     await _insert_memory(test_db, test_user, memory_id)
-    await _insert_reminder(test_db, reminder_id, memory_id, test_user, _ts_past(hours=1))
+    await _insert_reminder(
+        test_db, reminder_id, memory_id, test_user, _ts_past(hours=1)
+    )
 
     await _fire_due_reminders(test_db, mock_redis)
 
@@ -115,6 +125,43 @@ async def test_fire_recurring_reminder(test_db, mock_redis, test_user):
         new_row = await cur.fetchone()
     assert new_row is not None
     assert new_row["recurrence_minutes"] == recurrence_minutes
+
+
+async def test_fire_recurring_reminder_copies_text(test_db, mock_redis, test_user):
+    """Recurring reminder: text field is copied to the new reminder instance."""
+    memory_id = str(uuid.uuid4())
+    reminder_id = str(uuid.uuid4())
+    recurrence_minutes = 60
+    original_text = "Buy groceries"
+
+    await _insert_memory(test_db, test_user, memory_id)
+    # Insert reminder with specific text
+    await test_db.execute(
+        """
+        INSERT INTO reminders
+            (id, memory_id, owner_user_id, text, fire_at, recurrence_minutes, fired)
+        VALUES (?, ?, ?, ?, ?, ?, 0)
+        """,
+        (
+            reminder_id,
+            memory_id,
+            test_user,
+            original_text,
+            _ts_past(hours=1),
+            recurrence_minutes,
+        ),
+    )
+    await test_db.commit()
+
+    await _fire_due_reminders(test_db, mock_redis)
+
+    async with test_db.execute(
+        "SELECT * FROM reminders WHERE memory_id = ? AND id != ? AND fired = 0",
+        (memory_id, reminder_id),
+    ) as cur:
+        new_row = await cur.fetchone()
+    assert new_row is not None
+    assert new_row["text"] == original_text
 
 
 async def test_expire_pending_image(test_db, mock_redis, test_user):
@@ -189,7 +236,14 @@ async def test_requeue_stale_event(test_db, mock_redis, test_user):
             (id, owner_user_id, event_time, description, source_type, status, pending_since)
         VALUES (?, ?, ?, ?, ?, 'pending', ?)
         """,
-        (event_id, test_user, _ts_future(days=1), "quarterly review", "manual", old_pending_since),
+        (
+            event_id,
+            test_user,
+            _ts_future(days=1),
+            "quarterly review",
+            "manual",
+            old_pending_since,
+        ),
     )
     await test_db.commit()
 
@@ -237,7 +291,9 @@ async def test_scheduler_error_isolation(test_db, mock_redis):
         patch("core_svc.scheduler._expire_suggested_tags", new=tags_ok),
         patch("core_svc.scheduler._requeue_stale_events", new=requeue_ok),
     ):
-        task = asyncio.create_task(run_scheduler(test_db, mock_redis, interval_seconds=0))
+        task = asyncio.create_task(
+            run_scheduler(test_db, mock_redis, interval_seconds=0)
+        )
         await asyncio.sleep(0.05)
         task.cancel()
         try:

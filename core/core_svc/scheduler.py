@@ -30,12 +30,13 @@ async def _fire_due_reminders(db: aiosqlite.Connection, redis_client) -> None:
 
     for row in due_reminders:
         reminder = dict(row)
-        reminder_id = reminder['id']
-        memory_id = reminder['memory_id']
-        owner_user_id = reminder['owner_user_id']
-        content = reminder['content']
-        fire_at = reminder['fire_at']
-        recurrence_minutes = reminder['recurrence_minutes']
+        reminder_id = reminder["id"]
+        memory_id = reminder["memory_id"]
+        owner_user_id = reminder["owner_user_id"]
+        content = reminder["content"]
+        text = reminder["text"]
+        fire_at = reminder["fire_at"]
+        recurrence_minutes = reminder["recurrence_minutes"]
 
         # Publish notification to Redis
         notification = {
@@ -45,35 +46,40 @@ async def _fire_due_reminders(db: aiosqlite.Connection, redis_client) -> None:
                 "reminder_id": reminder_id,
                 "memory_id": memory_id,
                 "memory_content": content,
-                "fire_at": fire_at
-            }
+                "fire_at": fire_at,
+            },
         }
         await publish(redis_client, STREAM_NOTIFY_TELEGRAM, notification)
 
         # Mark as fired
-        await db.execute(
-            "UPDATE reminders SET fired = 1 WHERE id = ?",
-            (reminder_id,)
-        )
+        await db.execute("UPDATE reminders SET fired = 1 WHERE id = ?", (reminder_id,))
 
         # Handle recurrence
         if recurrence_minutes is not None:
             # Calculate next fire time
-            old_fire_at = datetime.fromisoformat(fire_at.replace('Z', '+00:00'))
+            old_fire_at = datetime.fromisoformat(fire_at.replace("Z", "+00:00"))
             next_fire_at = old_fire_at + timedelta(minutes=recurrence_minutes)
-            next_fire_at_str = next_fire_at.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+            next_fire_at_str = next_fire_at.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
             # Generate new ID for recurring reminder
             import uuid
+
             new_reminder_id = str(uuid.uuid4())
 
             # Create new reminder instance
             await db.execute(
                 """
-                INSERT INTO reminders (id, memory_id, owner_user_id, fire_at, recurrence_minutes, fired)
-                VALUES (?, ?, ?, ?, ?, 0)
+                INSERT INTO reminders (id, memory_id, owner_user_id, text, fire_at, recurrence_minutes, fired)
+                VALUES (?, ?, ?, ?, ?, ?, 0)
                 """,
-                (new_reminder_id, memory_id, owner_user_id, next_fire_at_str, recurrence_minutes)
+                (
+                    new_reminder_id,
+                    memory_id,
+                    owner_user_id,
+                    text,
+                    next_fire_at_str,
+                    recurrence_minutes,
+                ),
             )
 
             # Audit log for new recurring reminder
@@ -83,7 +89,7 @@ async def _fire_due_reminders(db: aiosqlite.Connection, redis_client) -> None:
                 new_reminder_id,
                 "created",
                 "system:scheduler",
-                {"source": "recurrence"}
+                {"source": "recurrence"},
             )
 
         # Audit log for fired reminder
@@ -106,8 +112,8 @@ async def _expire_pending_images(db: aiosqlite.Connection) -> None:
 
     for row in expired_memories:
         memory = dict(row)
-        memory_id = memory['id']
-        media_local_path = memory['media_local_path']
+        memory_id = memory["id"]
+        media_local_path = memory["media_local_path"]
 
         # Defensive: remove from FTS5 index (should not be indexed, but just in case)
         await remove_from_index(db, memory_id)
@@ -143,13 +149,12 @@ async def _expire_suggested_tags(db: aiosqlite.Connection) -> None:
 
     for row in expired_tags:
         tag_data = dict(row)
-        memory_id = tag_data['memory_id']
-        tag = tag_data['tag']
+        memory_id = tag_data["memory_id"]
+        tag = tag_data["tag"]
 
         # Delete tag
         await db.execute(
-            "DELETE FROM memory_tags WHERE memory_id = ? AND tag = ?",
-            (memory_id, tag)
+            "DELETE FROM memory_tags WHERE memory_id = ? AND tag = ?", (memory_id, tag)
         )
 
         # Audit log
@@ -159,7 +164,7 @@ async def _expire_suggested_tags(db: aiosqlite.Connection) -> None:
             memory_id,
             "expired",
             "system:scheduler",
-            {"tag": tag, "reason": "suggested_tag_expiry"}
+            {"tag": tag, "reason": "suggested_tag_expiry"},
         )
 
     await db.commit()
@@ -180,10 +185,12 @@ async def _requeue_stale_events(db: aiosqlite.Connection, redis_client) -> None:
 
     for row in stale_events:
         event = dict(row)
-        event_id = event['id']
-        owner_user_id = event['owner_user_id']
-        description = event['description']
-        event_time = event['event_time']  # Note: renamed from event_date in migration 004
+        event_id = event["id"]
+        owner_user_id = event["owner_user_id"]
+        description = event["description"]
+        event_time = event[
+            "event_time"
+        ]  # Note: renamed from event_date in migration 004
 
         # Publish re-prompt to Redis
         reprompt = {
@@ -192,15 +199,15 @@ async def _requeue_stale_events(db: aiosqlite.Connection, redis_client) -> None:
             "content": {
                 "event_id": event_id,
                 "description": description,
-                "event_date": event_time  # Keep as "event_date" in message for compatibility
-            }
+                "event_date": event_time,  # Keep as "event_date" in message for compatibility
+            },
         }
         await publish(redis_client, STREAM_NOTIFY_TELEGRAM, reprompt)
 
         # Update pending_since to current time
         await db.execute(
             "UPDATE events SET pending_since = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
-            (event_id,)
+            (event_id,),
         )
 
         # Audit log
@@ -210,9 +217,7 @@ async def _requeue_stale_events(db: aiosqlite.Connection, redis_client) -> None:
 
 
 async def run_scheduler(
-    db: aiosqlite.Connection,
-    redis_client,
-    interval_seconds: int = 30
+    db: aiosqlite.Connection, redis_client, interval_seconds: int = 30
 ) -> None:
     """
     Run the scheduler loop, executing housekeeping tasks at regular intervals.

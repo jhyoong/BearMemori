@@ -522,13 +522,15 @@ class TestStubHandlers:
 
         # Verify the methods were called
         core_client.get_memory.assert_called_once_with("123")
-        # Should confirm suggested tags
+        # Should confirm suggested tags in a single batch call
         core_client.add_tags.assert_called_once()
         core_client.update_memory.assert_called_once()
-        # Check that the confirmed tag is "tag1" (the suggested one)
+        # Check that add_tags was called with TagsAddRequest containing all suggested tags
         call_args = core_client.add_tags.call_args[0]
         assert call_args[0] == "123"
-        assert call_args[1].tag_name == "tag1"
+        # Should be TagsAddRequest with tags list ["tag1"] and status "confirmed"
+        assert call_args[1].tags == ["tag1"]
+        assert call_args[1].status == "confirmed"
         update.callback_query.edit_message_text.assert_called_with(
             "Tags confirmed: tag1"
         )

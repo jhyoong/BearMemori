@@ -4,13 +4,16 @@ import logging
 import os
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import JSONResponse
 
 from core_svc.audit import log_audit
 from core_svc.database import get_db
 from core_svc.search import index_memory, remove_from_index
+from shared_lib.config import load_config
 from shared_lib.schemas import (
     MemoryCreate,
     MemoryResponse,
@@ -45,7 +48,7 @@ async def create_memory(
     # Determine status and pending_expires_at based on media_type
     if memory.media_type == "image":
         memory_status = "pending"
-        pending_expires_at = (datetime.utcnow() + timedelta(days=7)).isoformat() + 'Z'
+        pending_expires_at = (datetime.utcnow() + timedelta(days=7)).isoformat() + "Z"
     else:
         memory_status = "confirmed"
         pending_expires_at = None
@@ -94,10 +97,14 @@ async def create_memory(
         media_file_id=row["media_file_id"],
         media_local_path=row["media_local_path"],
         status=row["status"],
-        pending_expires_at=datetime.fromisoformat(row["pending_expires_at"].replace('Z', '+00:00')) if row["pending_expires_at"] else None,
+        pending_expires_at=datetime.fromisoformat(
+            row["pending_expires_at"].replace("Z", "+00:00")
+        )
+        if row["pending_expires_at"]
+        else None,
         is_pinned=bool(row["is_pinned"]),
-        created_at=datetime.fromisoformat(row["created_at"].replace('Z', '+00:00')),
-        updated_at=datetime.fromisoformat(row["updated_at"].replace('Z', '+00:00')),
+        created_at=datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")),
+        updated_at=datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00")),
     )
 
 
@@ -135,8 +142,16 @@ async def get_memory(
         MemoryTagResponse(
             tag=tag_row["tag"],
             status=tag_row["status"],
-            suggested_at=datetime.fromisoformat(tag_row["suggested_at"].replace('Z', '+00:00')) if tag_row["suggested_at"] else None,
-            confirmed_at=datetime.fromisoformat(tag_row["confirmed_at"].replace('Z', '+00:00')) if tag_row["confirmed_at"] else None,
+            suggested_at=datetime.fromisoformat(
+                tag_row["suggested_at"].replace("Z", "+00:00")
+            )
+            if tag_row["suggested_at"]
+            else None,
+            confirmed_at=datetime.fromisoformat(
+                tag_row["confirmed_at"].replace("Z", "+00:00")
+            )
+            if tag_row["confirmed_at"]
+            else None,
         )
         for tag_row in tag_rows
     ]
@@ -149,10 +164,14 @@ async def get_memory(
         media_file_id=row["media_file_id"],
         media_local_path=row["media_local_path"],
         status=row["status"],
-        pending_expires_at=datetime.fromisoformat(row["pending_expires_at"].replace('Z', '+00:00')) if row["pending_expires_at"] else None,
+        pending_expires_at=datetime.fromisoformat(
+            row["pending_expires_at"].replace("Z", "+00:00")
+        )
+        if row["pending_expires_at"]
+        else None,
         is_pinned=bool(row["is_pinned"]),
-        created_at=datetime.fromisoformat(row["created_at"].replace('Z', '+00:00')),
-        updated_at=datetime.fromisoformat(row["updated_at"].replace('Z', '+00:00')),
+        created_at=datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")),
+        updated_at=datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00")),
         tags=tags,
     )
 
@@ -210,7 +229,7 @@ async def update_memory(
 
     # Always set updated_at
     update_fields.append("updated_at = ?")
-    updated_at = datetime.utcnow().isoformat() + 'Z'
+    updated_at = datetime.utcnow().isoformat() + "Z"
     update_values.append(updated_at)
 
     # Add id to values for WHERE clause
@@ -252,10 +271,14 @@ async def update_memory(
         media_file_id=row["media_file_id"],
         media_local_path=row["media_local_path"],
         status=row["status"],
-        pending_expires_at=datetime.fromisoformat(row["pending_expires_at"].replace('Z', '+00:00')) if row["pending_expires_at"] else None,
+        pending_expires_at=datetime.fromisoformat(
+            row["pending_expires_at"].replace("Z", "+00:00")
+        )
+        if row["pending_expires_at"]
+        else None,
         is_pinned=bool(row["is_pinned"]),
-        created_at=datetime.fromisoformat(row["created_at"].replace('Z', '+00:00')),
-        updated_at=datetime.fromisoformat(row["updated_at"].replace('Z', '+00:00')),
+        created_at=datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")),
+        updated_at=datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00")),
     )
 
 
@@ -336,11 +359,11 @@ async def add_tags_to_memory(
     # Insert or replace tags
     for tag in tags_request.tags:
         if tags_request.status == "suggested":
-            suggested_at = datetime.utcnow().isoformat() + 'Z'
+            suggested_at = datetime.utcnow().isoformat() + "Z"
             confirmed_at = None
         else:  # confirmed
             suggested_at = None
-            confirmed_at = datetime.utcnow().isoformat() + 'Z'
+            confirmed_at = datetime.utcnow().isoformat() + "Z"
 
         await db.execute(
             """
@@ -417,3 +440,71 @@ async def remove_tag_from_memory(
         f"user:{owner_user_id}",
         detail={"tag_removed": tag},
     )
+
+
+@router.post("/{id}/image")
+async def upload_memory_image(
+    id: str,
+    file: UploadFile = File(...),
+    db: aiosqlite.Connection = Depends(get_db),
+) -> JSONResponse:
+    """
+    Upload an image for a memory.
+
+    - Fetch memory by ID; 404 if not found
+    - Read image bytes from upload
+    - Save to disk using IMAGE_STORAGE_PATH config
+    - Update memory with local path
+    - Call log_audit() to log the upload
+    - Return: {"local_path": <path>}
+    """
+    # Fetch memory
+    cursor = await db.execute(
+        "SELECT * FROM memories WHERE id = ?",
+        (id,),
+    )
+    row = await cursor.fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+
+    owner_user_id = row["owner_user_id"]
+
+    # Read image bytes
+    file_bytes = await file.read()
+
+    # Get storage path from config
+    config = load_config()
+    storage_dir = Path(config.image_storage_path)
+
+    # Ensure directory exists
+    storage_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate unique filename
+    file_ext = Path(file.filename or ".jpg").suffix
+    filename = f"{uuid.uuid4()}{file_ext}"
+    local_path = storage_dir / filename
+
+    # Save to disk
+    with open(local_path, "wb") as f:
+        f.write(file_bytes)
+
+    # Update memory with local path
+    updated_at = datetime.utcnow().isoformat() + "Z"
+    await db.execute(
+        "UPDATE memories SET media_local_path = ?, updated_at = ? WHERE id = ?",
+        (str(local_path), updated_at, id),
+    )
+    await db.commit()
+
+    # Log audit
+    await log_audit(
+        db,
+        "memory",
+        id,
+        "updated",
+        f"user:{owner_user_id}",
+        detail={"image_uploaded": str(local_path)},
+    )
+
+    return JSONResponse(content={"local_path": str(local_path)})

@@ -10,7 +10,13 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 
-from shared_lib.schemas import MemoryUpdate, TaskCreate, ReminderCreate, TagAdd
+from shared_lib.schemas import (
+    MemoryUpdate,
+    TaskCreate,
+    ReminderCreate,
+    TagAdd,
+    TagsAddRequest,
+)
 from shared_lib.enums import TaskState, MemoryStatus
 
 from tg_gateway.callback_data import (
@@ -550,10 +556,10 @@ async def handle_tag_confirm(
         # Get suggested tags (tags with status "suggested")
         suggested_tags = [t.tag for t in memory.tags if t.status == "suggested"]
 
-        # Confirm each suggested tag
-        for tag_name in suggested_tags:
+        # Confirm all suggested tags in a single batch call
+        if suggested_tags:
             await core_client.add_tags(
-                memory_id, TagAdd(memory_id=memory_id, tag_name=tag_name)
+                memory_id, TagsAddRequest(tags=suggested_tags, status="confirmed")
             )
 
         # Update memory status to confirmed

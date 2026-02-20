@@ -212,3 +212,38 @@ async def test_create_memory_audit_logged(test_app, test_user):
     entries = audit_resp.json()
     actions = [e["action"] for e in entries]
     assert "created" in actions
+
+
+async def test_upload_memory_image(test_app, test_user):
+    """POST an image file to /memories/{id}/image returns 200 with local_path."""
+    # Create a memory first
+    create_resp = await test_app.post(
+        "/memories",
+        json={
+            "owner_user_id": test_user,
+            "content": "image memory",
+            "media_type": "image",
+        },
+    )
+    assert create_resp.status_code == 201
+    memory_id = create_resp.json()["id"]
+
+    # Upload an image
+    image_bytes = b"fake image data"
+    upload_resp = await test_app.post(
+        f"/memories/{memory_id}/image",
+        files={"file": ("test.jpg", image_bytes, "image/jpeg")},
+    )
+    assert upload_resp.status_code == 200
+    data = upload_resp.json()
+    assert "local_path" in data
+    assert data["local_path"].endswith(".jpg")
+
+
+async def test_upload_memory_image_not_found(test_app, test_user):
+    """POST to non-existent memory ID returns 404."""
+    upload_resp = await test_app.post(
+        "/memories/nonexistent-id-12345/image",
+        files={"file": ("test.jpg", b"fake image data", "image/jpeg")},
+    )
+    assert upload_resp.status_code == 404

@@ -1,5 +1,6 @@
 """Shared test fixtures for BearMemori core service tests."""
 
+import os
 from contextlib import asynccontextmanager
 
 import pytest_asyncio
@@ -35,10 +36,15 @@ async def mock_redis():
 
 
 @pytest_asyncio.fixture
-async def test_app(test_db, mock_redis):
+async def test_app(test_db, mock_redis, tmp_path):
     """Create a FastAPI test client with test DB and mock Redis."""
     original_lifespan = app.router.lifespan_context
     app.router.lifespan_context = _noop_lifespan
+
+    # Set image storage path to temp directory for tests
+    image_storage_dir = str(tmp_path / "images")
+    os.makedirs(image_storage_dir, exist_ok=True)
+    os.environ["IMAGE_STORAGE_PATH"] = image_storage_dir
 
     async def get_test_db():
         return test_db
@@ -53,6 +59,8 @@ async def test_app(test_db, mock_redis):
 
     app.dependency_overrides.clear()
     app.router.lifespan_context = original_lifespan
+    # Clean up env
+    os.environ.pop("IMAGE_STORAGE_PATH", None)
 
 
 @pytest_asyncio.fixture
