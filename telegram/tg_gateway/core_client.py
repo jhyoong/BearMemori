@@ -12,6 +12,7 @@ from shared_lib.schemas import (
     ReminderResponse,
     SearchResult,
     TagAdd,
+    TagsAddRequest,
     TaskCreate,
     TaskUpdate,
     TaskResponse,
@@ -137,7 +138,7 @@ class CoreClient:
 
         return True
 
-    async def add_tags(self, memory_id: str, data: TagAdd) -> MemoryWithTags:
+    async def add_tags(self, memory_id: str, data: TagsAddRequest) -> MemoryWithTags:
         """Add tags to a memory."""
         try:
             response = await self._client.post(

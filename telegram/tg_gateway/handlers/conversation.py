@@ -6,12 +6,40 @@ The next text message from the user is routed to the appropriate handler here.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from telegram import Update
+
+
+def parse_datetime(text: str) -> datetime | None:
+    """Parse date/time strings in multiple formats.
+
+    Args:
+        text: Date/time string to parse
+
+    Returns:
+        UTC-aware datetime or None if parsing fails
+    """
+    formats = [
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d",
+        "%d/%m/%Y %H:%M",
+        "%d/%m/%Y",
+    ]
+
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(text, fmt)
+            return dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+
+    return None
+
+
 from telegram.ext import ContextTypes
 
-from shared_lib.schemas import TagAdd, TaskCreate, ReminderCreate
+from shared_lib.schemas import TagAdd, TagsAddRequest, TaskCreate, ReminderCreate
 
 logger = logging.getLogger(__name__)
 
@@ -52,20 +80,16 @@ async def receive_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     # Get core client from bot_data
     core_client = context.bot_data["core_client"]
 
-    # Add each tag
-    added_tags = []
-    for tag in tags:
-        try:
-            tag_data = TagAdd(memory_id=memory_id, tag_name=tag)
-            await core_client.add_tags(memory_id, tag_data)
-            added_tags.append(tag)
-        except Exception as e:
-            logger.exception(f"Failed to add tag '{tag}' to memory {memory_id}")
-
-    if added_tags:
-        await update.message.reply_text(f"Tags added: {', '.join(added_tags)}")
-    else:
+    # Add tags in a single batch call
+    try:
+        tags_request = TagsAddRequest(tags=tags, status="confirmed")
+        await core_client.add_tags(memory_id, tags_request)
+        await update.message.reply_text(f"Tags added: {', '.join(tags)}")
+    except Exception as e:
+        logger.exception(f"Failed to add tags to memory {memory_id}")
         await update.message.reply_text("Failed to add tags. Please try again.")
+        # Re-set the pending state so user can retry
+        context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
 
 
 async def receive_custom_date(
@@ -90,27 +114,8 @@ async def receive_custom_date(
         await update.message.reply_text("Something went wrong. Please try again.")
         return
 
-    # Try to parse the date - simple parsing for now
-    # In production, you'd want more sophisticated parsing
-    due_at = None
-    try:
-        # Try parsing as ISO format first
-        due_at = datetime.fromisoformat(text)
-    except ValueError:
-        # Try relative dates
-        text_lower = text.lower()
-        if "today" in text_lower:
-            due_at = datetime.now().replace(hour=23, minute=59, second=0)
-        elif "tomorrow" in text_lower:
-            due_at = (datetime.now() + timedelta(days=1)).replace(
-                hour=9, minute=0, second=0
-            )
-        else:
-            # Try to parse as a simple date string (e.g., "2024-12-25")
-            try:
-                due_at = datetime.strptime(text, "%Y-%m-%d")
-            except ValueError:
-                pass
+    # Try to parse the date using the utility function
+    due_at = parse_datetime(text)
 
     if due_at is None:
         await update.message.reply_text(
@@ -163,29 +168,8 @@ async def receive_custom_reminder(
         await update.message.reply_text("Something went wrong. Please try again.")
         return
 
-    # Try to parse the reminder time
-    remind_at = None
-    try:
-        # Try parsing as ISO format first
-        remind_at = datetime.fromisoformat(text)
-    except ValueError:
-        # Try relative times
-        text_lower = text.lower()
-        if "1 hour" in text_lower or "1h" in text_lower:
-            remind_at = datetime.now() + timedelta(hours=1)
-        elif "tomorrow" in text_lower and "9am" in text_lower:
-            remind_at = (datetime.now() + timedelta(days=1)).replace(
-                hour=9, minute=0, second=0
-            )
-        else:
-            # Try to parse as a simple datetime string
-            try:
-                remind_at = datetime.strptime(text, "%Y-%m-%d %H:%M")
-            except ValueError:
-                try:
-                    remind_at = datetime.strptime(text, "%Y-%m-%d")
-                except ValueError:
-                    pass
+    # Try to parse the reminder time using the utility function
+    remind_at = parse_datetime(text)
 
     if remind_at is None:
         await update.message.reply_text(
@@ -202,7 +186,8 @@ async def receive_custom_reminder(
     reminder_data = ReminderCreate(
         memory_id=memory_id,
         owner_user_id=user.id,
-        remind_at=remind_at,
+        text="Custom reminder",
+        fire_at=remind_at,
     )
 
     try:
