@@ -29,6 +29,7 @@ services:
       redis:
         condition: service_healthy
     env_file: .env
+    restart: unless-stopped
 
   llm-worker:
     build:
