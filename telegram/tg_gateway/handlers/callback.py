@@ -23,13 +23,16 @@ from tg_gateway.callback_data import (
     TagConfirm,
 )
 from tg_gateway.core_client import CoreClient, CoreUnavailableError, CoreNotFoundError
+from tg_gateway.handlers.conversation import (
+    PENDING_TAG_MEMORY_ID,
+    PENDING_TASK_MEMORY_ID,
+    PENDING_REMINDER_MEMORY_ID,
+)
 from tg_gateway.keyboards import (
     due_date_keyboard,
     reminder_time_keyboard,
     delete_confirm_keyboard,
     memory_actions_keyboard,
-    search_results_keyboard,
-    task_list_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -194,10 +197,11 @@ async def handle_memory_action(
         )
 
     elif action == "add_tag":
+        # Set conversation state key for message handler
+        context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
         # Prompt user for tags (send message asking for comma-separated tags)
-        user_id = context.bot_data["user_id"]
         await callback_query.edit_message_text(
-            f"Please send the tags for this memory as a comma-separated list (e.g., work, important, project)."
+            "Please send the tags for this memory as a comma-separated list (e.g., work, important, project)."
         )
         # Note: The actual tag input handling would be done by a message handler
 
@@ -237,10 +241,11 @@ async def handle_due_date_choice(
     callback_query = update.callback_query
     memory_id = callback_data.memory_id
     choice = callback_data.choice
-    user_id = context.bot_data["user_id"]
+    user_id = update.effective_user.id
 
     # Handle custom date - prompt user for date entry
     if choice == "custom":
+        context.user_data[PENDING_TASK_MEMORY_ID] = memory_id
         await callback_query.edit_message_text(
             "Please enter a custom due date in YYYY-MM-DD format (e.g., 2024-12-31):"
         )
@@ -311,10 +316,11 @@ async def handle_reminder_time_choice(
     callback_query = update.callback_query
     memory_id = callback_data.memory_id
     choice = callback_data.choice
-    user_id = context.bot_data["user_id"]
+    user_id = update.effective_user.id
 
     # Handle custom reminder time - prompt user for custom time
     if choice == "custom":
+        context.user_data[PENDING_REMINDER_MEMORY_ID] = memory_id
         await callback_query.edit_message_text(
             "Please enter a custom reminder time in YYYY-MM-DD HH:MM format "
             "(e.g., 2024-12-31 14:30):"
@@ -339,7 +345,7 @@ async def handle_reminder_time_choice(
     elif choice == "tomorrow_9am":
         # Try to get user settings for default reminder time, fallback to 9am
         try:
-            settings = await core_client.get_settings(user_id)
+            _settings = await core_client.get_settings(user_id)
             # User settings might have a default reminder time preference
             # For now, use 9am as default (could be extended to read from settings)
             default_hour = 9
@@ -435,7 +441,6 @@ async def handle_search_detail(
         callback_data: The parsed callback data.
         core_client: The Core API client.
     """
-    from telegram import PhotoSize
 
     callback_query = update.callback_query
     memory_id = callback_data.memory_id
@@ -488,7 +493,6 @@ async def handle_task_action(
         core_client: The Core API client.
     """
     from shared_lib.schemas import TaskUpdate
-    from shared_lib.enums import TaskState
 
     callback_query = update.callback_query
     task_id = callback_data.task_id
@@ -561,6 +565,8 @@ async def handle_tag_confirm(
         await callback_query.edit_message_text(f"Tags confirmed: {tags_str}")
 
     elif action == "edit":
+        # Set conversation state key for message handler
+        context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
         # Prompt user for comma-separated tag input
         await callback_query.edit_message_text(
             "Please send the tags for this memory as a comma-separated list (e.g., work, important, project)."

@@ -10,7 +10,7 @@ from telegram.ext import Application
 from tg_gateway.callback_data import TaskAction
 from tg_gateway.keyboards import tag_suggestion_keyboard
 
-from shared.shared_lib.redis_streams import (
+from shared_lib.redis_streams import (
     GROUP_TELEGRAM,
     STREAM_NOTIFY_TELEGRAM,
     ack,
