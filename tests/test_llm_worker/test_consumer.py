@@ -152,22 +152,18 @@ async def test_consumer_processes_job(
         job_id=job_id, status="completed", result=notification
     )
 
-    # Verify: Notification was published to telegram stream
+    # Verify: Notification was published to telegram stream in wrapper format
+    import json
+
     notify_messages = await mock_redis.xread({STREAM_NOTIFY_TELEGRAM: "0"}, count=1)
     assert len(notify_messages) == 1
     stream, msgs = notify_messages[0]
     assert stream.decode() == STREAM_NOTIFY_TELEGRAM
-    # Check the published data
-    found_notification = False
-    for msg_id, fields in msgs:
-        if b"data" in fields:
-            import json
-
-            data_str = fields[b"data"].decode()
-            notification_data = json.loads(data_str)
-            if notification_data.get("type") == "image_tag_result":
-                found_notification = True
-    assert found_notification, "Notification should be published to notify:telegram"
+    msg_id, fields = msgs[0]
+    notification_data = json.loads(fields[b"data"].decode())
+    assert notification_data["user_id"] == 12345
+    assert notification_data["message_type"] == "llm_image_tag_result"
+    assert notification_data["content"] == notification
 
 
 @pytest.mark.asyncio
@@ -339,22 +335,18 @@ async def test_consumer_max_retries_exceeded(
         job_id=job_id, status="failed", error_message="LLM API error"
     )
 
-    # Verify: Failure notification was published
-    notify_messages = await mock_redis.xread({STREAM_NOTIFY_TELEGRAM: "0"}, count=1)
-    assert len(notify_messages) == 1
+    # Verify: Failure notification was published in wrapper format
     import json
 
+    notify_messages = await mock_redis.xread({STREAM_NOTIFY_TELEGRAM: "0"}, count=1)
+    assert len(notify_messages) == 1
     stream, msgs = notify_messages[0]
-    found_failure_notification = False
-    for msg_id, fields in msgs:
-        if b"data" in fields:
-            data_str = fields[b"data"].decode()
-            notification_data = json.loads(data_str)
-            if notification_data.get("type") == "job_failed":
-                found_failure_notification = True
-                assert notification_data.get("job_type") == "task_match"
-                assert notification_data.get("memory_id") == "mem-4"
-    assert found_failure_notification, "Failure notification should be published"
+    msg_id, fields = msgs[0]
+    notification_data = json.loads(fields[b"data"].decode())
+    assert notification_data["user_id"] == 12345
+    assert notification_data["message_type"] == "llm_failure"
+    assert notification_data["content"]["job_type"] == "task_match"
+    assert notification_data["content"]["memory_id"] == "mem-4"
 
     # Verify: Retry tracker cleared for this job
     retry_tracker.clear(job_id)

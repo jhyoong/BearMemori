@@ -37,21 +37,13 @@ STREAM_HANDLER_MAP = {
     "email_extract": STREAM_LLM_EMAIL_EXTRACT,
 }
 
-# Notification types
-NOTIFICATION_TYPE_IMAGE_TAG = "image_tag_result"
-NOTIFICATION_TYPE_INTENT = "intent_result"
-NOTIFICATION_TYPE_FOLLOWUP = "followup_result"
-NOTIFICATION_TYPE_TASK_MATCH = "task_match_result"
-NOTIFICATION_TYPE_CONFIRMATION = "event_confirmation"
-NOTIFICATION_TYPE_FAILURE = "job_failed"
-
-# Stream to notification type mapping
-STREAM_TO_NOTIFICATION_TYPE = {
-    STREAM_LLM_IMAGE_TAG: NOTIFICATION_TYPE_IMAGE_TAG,
-    STREAM_LLM_INTENT: NOTIFICATION_TYPE_INTENT,
-    STREAM_LLM_FOLLOWUP: NOTIFICATION_TYPE_FOLLOWUP,
-    STREAM_LLM_TASK_MATCH: NOTIFICATION_TYPE_TASK_MATCH,
-    STREAM_LLM_EMAIL_EXTRACT: NOTIFICATION_TYPE_CONFIRMATION,
+# Maps each stream to (handler_key, notification message_type)
+STREAM_NOTIFICATION_TYPE = {
+    STREAM_LLM_IMAGE_TAG: "llm_image_tag_result",
+    STREAM_LLM_INTENT: "llm_intent_result",
+    STREAM_LLM_FOLLOWUP: "llm_followup_result",
+    STREAM_LLM_TASK_MATCH: "llm_task_match_result",
+    STREAM_LLM_EMAIL_EXTRACT: "event_confirmation",
 }
 
 
@@ -113,20 +105,18 @@ async def _process_message(
         result = await handler.handle(job_id, payload, user_id)
 
         if result is not None:
-            # Job completed successfully with a result - update status and publish notification
+            # Job completed successfully with a result
             await core_api.update_job(job_id=job_id, status="completed", result=result)
             retry_tracker.clear(job_id)
 
-            # Publish notification
-            notification_data = {
-                "type": STREAM_TO_NOTIFICATION_TYPE.get(
-                    stream_name, "event_confirmation"
-                ),
-                "job_id": job_id,
-                "memory_id": payload.get("memory_id"),
-                **result,
-            }
-            await publish(redis_client, STREAM_NOTIFY_TELEGRAM, notification_data)
+            # Publish notification in wrapper format for Telegram consumer
+            if user_id is not None:
+                msg_type = STREAM_NOTIFICATION_TYPE.get(stream_name, "event_confirmation")
+                await publish(redis_client, STREAM_NOTIFY_TELEGRAM, {
+                    "user_id": user_id,
+                    "message_type": msg_type,
+                    "content": result,
+                })
         else:
             # Job completed but no notification needed
             await core_api.update_job(job_id=job_id, status="completed", result=None)
@@ -154,15 +144,16 @@ async def _process_message(
                 job_id=job_id, status="failed", error_message=error_message
             )
 
-            # Publish failure notification
-            failure_notification = {
-                "type": NOTIFICATION_TYPE_FAILURE,
-                "job_id": job_id,
-                "job_type": job_type,
-                "memory_id": payload.get("memory_id"),
-                "error_message": error_message,
-            }
-            await publish(redis_client, STREAM_NOTIFY_TELEGRAM, failure_notification)
+            # Publish failure notification in wrapper format
+            if user_id is not None:
+                await publish(redis_client, STREAM_NOTIFY_TELEGRAM, {
+                    "user_id": user_id,
+                    "message_type": "llm_failure",
+                    "content": {
+                        "job_type": job_type,
+                        "memory_id": payload.get("memory_id", ""),
+                    },
+                })
 
             # Clear retry tracker and ack the message
             retry_tracker.clear(job_id)
