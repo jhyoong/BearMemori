@@ -1,30 +1,17 @@
 """Backup router for read-only access to backup job status."""
 
 import logging
-from datetime import datetime
 
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException
 
 from core_svc.database import get_db
+from core_svc.utils import parse_db_datetime
 from shared_lib.schemas import BackupStatus
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["backup"])
-
-
-def parse_db_datetime(dt_str: str | None) -> datetime | None:
-    """Parse datetime string from database, handling both 'Z' and '+00:00' formats."""
-    if not dt_str:
-        return None
-    # Handle edge case: string ending with both timezone offset and 'Z' (e.g., '+00:00Z')
-    if '+' in dt_str and dt_str.endswith('Z'):
-        dt_str = dt_str[:-1]  # Remove trailing 'Z'
-    # Replace 'Z' with '+00:00' for ISO parsing
-    elif dt_str.endswith('Z'):
-        dt_str = dt_str.replace('Z', '+00:00')
-    return datetime.fromisoformat(dt_str)
 
 
 @router.get("/status/{user_id}", response_model=BackupStatus)
