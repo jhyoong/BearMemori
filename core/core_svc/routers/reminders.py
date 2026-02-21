@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -115,7 +115,7 @@ async def get_reminders(
 
     if upcoming_only:
         # upcoming_only means fire_at > now AND fired = 0
-        now_str = datetime.utcnow().isoformat() + 'Z'
+        now_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         where_clauses.append("fire_at > ?")
         query_params.append(now_str)
         where_clauses.append("fired = 0")
@@ -200,7 +200,7 @@ async def update_reminder(
 
     # Always set updated_at
     update_fields.append("updated_at = ?")
-    updated_at = datetime.utcnow().isoformat() + 'Z'
+    updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     update_values.append(updated_at)
 
     # Add id to values for WHERE clause

@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -235,14 +235,14 @@ async def update_task(
         # If state changes to DONE, set completed_at
         if task_update.state == "DONE" and row["state"] != "DONE":
             state_changed_to_done = True
-            completed_at = datetime.utcnow().isoformat() + 'Z'
+            completed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             update_fields.append("completed_at = ?")
             update_values.append(completed_at)
             changed_fields["completed_at"] = completed_at
 
     # Always set updated_at
     update_fields.append("updated_at = ?")
-    updated_at = datetime.utcnow().isoformat() + 'Z'
+    updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     update_values.append(updated_at)
 
     # Add id to values for WHERE clause
@@ -261,7 +261,7 @@ async def update_task(
             old_due_at = parse_db_datetime(row["due_at"])
             new_due_at = old_due_at + timedelta(minutes=row["recurrence_minutes"])
         else:
-            new_due_at = datetime.utcnow() + timedelta(minutes=row["recurrence_minutes"])
+            new_due_at = datetime.now(timezone.utc) + timedelta(minutes=row["recurrence_minutes"])
 
         # Generate new task ID
         recurring_task_id = str(uuid.uuid4())

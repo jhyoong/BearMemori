@@ -3,7 +3,7 @@
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import aiosqlite
@@ -48,7 +48,7 @@ async def create_memory(
     # Determine status and pending_expires_at based on media_type
     if memory.media_type == "image":
         memory_status = "pending"
-        pending_expires_at = (datetime.utcnow() + timedelta(days=7)).isoformat() + "Z"
+        pending_expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat().replace("+00:00", "Z")
     else:
         memory_status = "confirmed"
         pending_expires_at = None
@@ -229,7 +229,7 @@ async def update_memory(
 
     # Always set updated_at
     update_fields.append("updated_at = ?")
-    updated_at = datetime.utcnow().isoformat() + "Z"
+    updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     update_values.append(updated_at)
 
     # Add id to values for WHERE clause
@@ -359,11 +359,11 @@ async def add_tags_to_memory(
     # Insert or replace tags
     for tag in tags_request.tags:
         if tags_request.status == "suggested":
-            suggested_at = datetime.utcnow().isoformat() + "Z"
+            suggested_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             confirmed_at = None
         else:  # confirmed
             suggested_at = None
-            confirmed_at = datetime.utcnow().isoformat() + "Z"
+            confirmed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         await db.execute(
             """
@@ -490,7 +490,7 @@ async def upload_memory_image(
         f.write(file_bytes)
 
     # Update memory with local path
-    updated_at = datetime.utcnow().isoformat() + "Z"
+    updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     await db.execute(
         "UPDATE memories SET media_local_path = ?, updated_at = ? WHERE id = ?",
         (str(local_path), updated_at, id),
