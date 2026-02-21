@@ -27,6 +27,7 @@ async def test_init_db_creates_tables(tmp_path):
         "events",
         "llm_jobs",
         "memories",
+        "memories_fts_meta",
         "memory_tags",
         "reminders",
         "tasks",
@@ -37,7 +38,7 @@ async def test_init_db_creates_tables(tmp_path):
 
 
 async def test_init_db_sets_user_version(tmp_path):
-    """After init_db(), PRAGMA user_version returns 7 (latest migration)."""
+    """After init_db(), PRAGMA user_version returns 8 (latest migration)."""
     db_path = str(tmp_path / "test.db")
     db = await init_db(db_path)
 
@@ -48,11 +49,11 @@ async def test_init_db_sets_user_version(tmp_path):
     finally:
         await db.close()
 
-    assert version == 7
+    assert version == 8
 
 
 async def test_init_db_idempotent(tmp_path):
-    """Calling init_db() twice on the same path does not fail; version remains 7."""
+    """Calling init_db() twice on the same path does not fail; version remains 8."""
     db_path = str(tmp_path / "test.db")
 
     db1 = await init_db(db_path)
@@ -66,7 +67,7 @@ async def test_init_db_idempotent(tmp_path):
     finally:
         await db2.close()
 
-    assert version == 7
+    assert version == 8
 
 
 async def test_wal_mode_enabled(tmp_path):

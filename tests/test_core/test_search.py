@@ -135,3 +135,40 @@ async def test_search_pinned_empty_query(test_app, test_user):
     assert len(results) == 1
     assert results[0]["memory"]["id"] == memory_id
     assert results[0]["memory"]["is_pinned"] is True
+
+
+async def test_targeted_index_and_remove(test_app, test_user):
+    """Targeted FTS5 insert/delete: add 3, search finds all 3, remove 1, search finds 2."""
+    id_a = await _create_confirmed_memory(
+        test_app, test_user, "targeted_unique_alpha document"
+    )
+    id_b = await _create_confirmed_memory(
+        test_app, test_user, "targeted_unique_beta document"
+    )
+    id_c = await _create_confirmed_memory(
+        test_app, test_user, "targeted_unique_gamma document"
+    )
+
+    # All 3 should be findable
+    resp = await test_app.get(
+        "/search", params={"q": "targeted_unique", "owner": test_user}
+    )
+    assert resp.status_code == 200
+    result_ids = [r["memory"]["id"] for r in resp.json()]
+    assert id_a in result_ids
+    assert id_b in result_ids
+    assert id_c in result_ids
+
+    # Delete memory id_b via the API (DELETE removes it from FTS5 via remove_from_index)
+    del_resp = await test_app.delete(f"/memories/{id_b}")
+    assert del_resp.status_code == 204
+
+    # Now only 2 should appear
+    resp2 = await test_app.get(
+        "/search", params={"q": "targeted_unique", "owner": test_user}
+    )
+    assert resp2.status_code == 200
+    result_ids2 = [r["memory"]["id"] for r in resp2.json()]
+    assert id_a in result_ids2
+    assert id_c in result_ids2
+    assert id_b not in result_ids2
