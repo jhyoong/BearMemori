@@ -280,7 +280,7 @@ async def update_task(
                 row["owner_user_id"],
                 row["description"],
                 "NOT_DONE",
-                new_due_at.isoformat().replace('+00:00', 'Z') if '+00:00' in new_due_at.isoformat() else new_due_at.isoformat() + 'Z',
+                new_due_at.isoformat().replace("+00:00", "Z"),
                 row["recurrence_minutes"],
             ),
         )
