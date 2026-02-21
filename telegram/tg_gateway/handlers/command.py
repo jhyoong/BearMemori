@@ -8,14 +8,14 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from tg_gateway.handlers.conversation import (
+    PENDING_TAG_MEMORY_ID,
+    PENDING_TASK_MEMORY_ID,
+    PENDING_REMINDER_MEMORY_ID,
+)
 from tg_gateway.keyboards import search_results_keyboard, task_list_keyboard
 
 logger = logging.getLogger(__name__)
-
-# Conversation pending state keys (same as in conversation.py)
-PENDING_TAG_MEMORY_ID = "pending_tag_memory_id"
-PENDING_TASK_MEMORY_ID = "pending_task_memory_id"
-PENDING_REMINDER_MEMORY_ID = "pending_reminder_memory_id"
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
