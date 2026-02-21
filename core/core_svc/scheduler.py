@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -62,8 +63,6 @@ async def _fire_due_reminders(db: aiosqlite.Connection, redis_client) -> None:
             next_fire_at_str = next_fire_at.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
             # Generate new ID for recurring reminder
-            import uuid
-
             new_reminder_id = str(uuid.uuid4())
 
             # Create new reminder instance
