@@ -142,26 +142,29 @@ async def index_memory(db: aiosqlite.Connection, memory_id: str) -> None:
 
 async def remove_from_index(db: aiosqlite.Connection, memory_id: str) -> None:
     """Remove a single memory from the FTS5 index."""
-    data = await _get_memory_fts_data(db, memory_id)
-    if data is None:
-        return
-
-    memory_rowid, _current_content, _current_tags = data
-
-    # Use the cached (originally indexed) content for deletion.
     cached = await _get_cached_fts_data(db, memory_id)
     if cached is None:
-        # Memory was never indexed; nothing to remove.
         return
 
-    old_content, old_tags = cached
-    await db.execute(
-        "INSERT INTO memories_fts(memories_fts, rowid, content, tags) "
-        "VALUES('delete', ?, ?, ?)",
-        (memory_rowid, old_content, old_tags),
+    cached_content, cached_tags = cached
+
+    rowid_cursor = await db.execute(
+        "SELECT rowid FROM memories WHERE id = ?", (memory_id,)
     )
-    await _delete_fts_meta(db, memory_id)
-    await db.commit()
+    rowid_row = await rowid_cursor.fetchone()
+    if rowid_row is None:
+        return
+
+    try:
+        await db.execute(
+            "INSERT INTO memories_fts(memories_fts, rowid, content, tags) "
+            "VALUES('delete', ?, ?, ?)",
+            (rowid_row[0], cached_content, cached_tags),
+        )
+        await _delete_fts_meta(db, memory_id)
+        await db.commit()
+    except Exception:
+        pass
 
 
 async def search_memories(

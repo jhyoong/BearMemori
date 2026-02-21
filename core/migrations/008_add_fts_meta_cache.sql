@@ -4,7 +4,7 @@
 -- "database disk image is malformed" errors on external-content FTS5 tables.
 
 CREATE TABLE IF NOT EXISTS memories_fts_meta (
-    memory_id  TEXT PRIMARY KEY,
+    memory_id  TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
     content    TEXT NOT NULL DEFAULT '',
     tags       TEXT NOT NULL DEFAULT ''
 );
