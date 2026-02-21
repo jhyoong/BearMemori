@@ -1,0 +1,27 @@
+"""Follow-up question handler -- generates clarifying questions."""
+
+import logging
+from typing import Any
+
+from worker.handlers.base import BaseHandler
+from worker.prompts import FOLLOWUP_PROMPT
+
+logger = logging.getLogger(__name__)
+
+
+class FollowupHandler(BaseHandler):
+    """Generate a clarifying follow-up question."""
+
+    async def handle(
+        self, job_id: str, payload: dict[str, Any], user_id: int | None
+    ) -> dict[str, Any] | None:
+        message = payload["message"]
+        context = payload.get("context", "No additional context available.")
+
+        prompt = FOLLOWUP_PROMPT.format(message=message, context=context)
+        raw_response = await self.llm.complete(prompt, self.config.llm_text_model)
+
+        question = raw_response.strip()
+        logger.info("Generated followup question: %s", question[:80])
+
+        return {"question": question}
