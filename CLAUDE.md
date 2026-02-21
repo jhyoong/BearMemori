@@ -10,7 +10,7 @@ BearMemori is a personal memory management system with a microservice architectu
 - `core/core_svc/` — FastAPI REST API (port 8000), the only service with full implementation
 - `shared/shared_lib/` — Pydantic models, enums, config, Redis stream utilities (installed as a dependency by other services)
 - `telegram/tg_gateway/` — Telegram bot gateway (stub, not yet implemented)
-- `llm_worker/worker/` — LLM processing worker (stub, not yet implemented)
+- `llm_worker/worker/` — LLM processing worker (consumer loop, handlers, and clients implemented; `main.py` entrypoint is the remaining stub)
 - `email_poller/poller/` — Email polling service (stub, not yet implemented)
 
 ## Commands
@@ -95,12 +95,38 @@ Each router handles one domain. The pattern is consistent across all:
 
 When the core API needs LLM processing (e.g., auto-tagging an image), it inserts a row into the `llm_jobs` table with `status=pending` and a JSON payload. The `llm_worker` reads from Redis streams, calls the LLM via the OpenAI API, then PATCHes the job result back to core. The affected entity stays in `pending` status until a user action confirms it.
 
-### Test Fixtures (`tests/conftest.py`)
+### LLM Worker Architecture (`llm_worker/worker/`)
 
+Key modules:
+- `consumer.py` — main async loop; reads Redis streams via consumer groups, dispatches to handlers, publishes results to `notify:telegram`, handles retries and graceful shutdown
+- `handlers/` — one handler per job type (`image_tag`, `intent`, `task_match`, `followup`, `email_extract`); each inherits `BaseHandler` with `async handle(job_id, payload, user_id) → dict | None`
+- `core_api_client.py` — async HTTP client (aiohttp) for calling the core REST API
+- `llm_client.py` — async OpenAI-compatible client; `complete()` for text, `complete_with_image()` for vision
+- `retry.py` — `RetryTracker`: in-memory per-message attempt counter with exponential backoff (`min(2^(attempts-1), 60)` seconds), max 3 retries by default
+- `utils.py` — `extract_json()`: extracts JSON from LLM responses that may include markdown fences or surrounding text
+- `prompts.py` — all LLM prompt strings
+
+Stream → handler mapping (defined in `consumer.py`):
+- `llm:image_tag` → `ImageTagHandler`
+- `llm:intent` → `IntentHandler`
+- `llm:followup` → `FollowupHandler`
+- `llm:task_match` → `TaskMatchHandler`
+- `llm:email_extract` → `EmailExtractHandler`
+
+`main.py` is still a stub. When implementing it, wire up: config loading, Redis client, aiohttp session, `LLMClient`, `CoreAPIClient`, handler instances, signal handlers (SIGTERM/SIGINT), then call `run_consumer()`.
+
+### Test Fixtures
+
+`tests/conftest.py` (core tests):
 - `test_db` — temporary SQLite with all migrations applied (session-scoped)
 - `mock_redis` — `fakeredis.aioredis` instance (no real Redis needed)
 - `test_app` — `AsyncClient` with the FastAPI app wired to `test_db` and `mock_redis`
 - `test_user` — pre-inserted user with `telegram_user_id=12345`
+
+`tests/test_llm_worker/test_consumer.py` (llm_worker tests):
+- Fixtures are defined in the test file itself, not in a conftest
+- Uses `AsyncMock` for `CoreAPIClient` and handlers; `fakeredis.aioredis` for Redis
+- `tests/conftest.py` injects `llm_worker/` into `sys.path` so `from worker.xxx` imports work
 
 ## Code Conventions
 

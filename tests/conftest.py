@@ -1,7 +1,15 @@
 """Shared test fixtures for BearMemori core service tests."""
 
 import os
+import sys
 from contextlib import asynccontextmanager
+
+# Ensure correct paths for llm_worker tests
+# Add llm_worker directory to path for "from worker.xxx" imports
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_llm_worker_path = os.path.join(PROJECT_ROOT, "llm_worker")
+if _llm_worker_path not in sys.path:
+    sys.path.insert(0, _llm_worker_path)
 
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
