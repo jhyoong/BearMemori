@@ -6,7 +6,15 @@ build-backend = "hatchling.build"
 name = "life-organiser-llm-worker"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "openai>=1.0.0",
+    "aiohttp>=3.9.0",
+    "redis[hiredis]>=5.0.0",
+    "pydantic-settings>=2.0.0",
+    # shared is installed separately in Docker (see Dockerfile).
+    # For local dev: pip install -e ../shared && pip install -e .
+    "life-organiser-shared @ file:///${PROJECT_ROOT}/../shared",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["worker"]
