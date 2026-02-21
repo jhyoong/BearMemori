@@ -469,6 +469,20 @@ def test_stream_handler_map_structure():
     assert set(STREAM_HANDLER_MAP.keys()) == expected_keys
 
 
+# Test that STREAM_NOTIFICATION_TYPE has correct message_type values
+def test_stream_notification_type_mapping():
+    """Verify STREAM_NOTIFICATION_TYPE values match Telegram consumer expectations."""
+    # Import the mapping
+    from worker.consumer import STREAM_NOTIFICATION_TYPE
+
+    # Verify all expected mappings are present and correct
+    assert STREAM_NOTIFICATION_TYPE[STREAM_LLM_IMAGE_TAG] == "llm_image_tag_result"
+    assert STREAM_NOTIFICATION_TYPE[STREAM_LLM_INTENT] == "llm_intent_result"
+    assert STREAM_NOTIFICATION_TYPE[STREAM_LLM_FOLLOWUP] == "llm_followup_result"
+    assert STREAM_NOTIFICATION_TYPE[STREAM_LLM_TASK_MATCH] == "llm_task_match_result"
+    assert STREAM_NOTIFICATION_TYPE[STREAM_LLM_EMAIL_EXTRACT] == "event_confirmation"
+
+
 # Test that CONSUMER_NAME is defined
 def test_consumer_name_defined():
     """Verify CONSUMER_NAME is defined."""
