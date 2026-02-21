@@ -72,7 +72,7 @@ class TestFollowupHandler:
 
         # Verify LLM was called with context included
         call_args = mock_llm_client.complete.call_args
-        prompt = call_args[0][0]  # First positional argument
+        prompt = call_args[0][1]  # Second positional argument (model is first)
 
         # Check that both message and context are in the prompt
         assert "show me photos" in prompt

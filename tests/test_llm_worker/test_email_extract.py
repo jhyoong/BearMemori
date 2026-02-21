@@ -52,13 +52,13 @@ class TestEmailExtractHandler:
         }
 
         # Assert core_api.create_event was called with correct event_data
-        mock_core_api.create_event.assert_called_once_with(
-            event_data={
-                "description": "Team meeting",
-                "event_time": "2026-03-01T10:00:00Z",
-                "user_id": 12345,
-            }
-        )
+        mock_core_api.create_event.assert_called_once_with({
+            "owner_user_id": 12345,
+            "event_time": "2026-03-01T10:00:00Z",
+            "description": "Team meeting",
+            "source_type": "email",
+            "source_detail": "Meeting",
+        })
 
     async def test_email_extract_low_confidence(
         self, handler, mock_llm_client, mock_core_api
@@ -144,13 +144,13 @@ class TestEmailExtractHandler:
         )
 
         # Assert only high confidence event created
-        mock_core_api.create_event.assert_called_once_with(
-            event_data={
-                "description": "Team meeting",
-                "event_time": "2026-03-01T10:00:00Z",
-                "user_id": 12345,
-            }
-        )
+        mock_core_api.create_event.assert_called_once_with({
+            "owner_user_id": 12345,
+            "event_time": "2026-03-01T10:00:00Z",
+            "description": "Team meeting",
+            "source_type": "email",
+            "source_detail": "Meeting",
+        })
 
         # Assert result is the high confidence event
         assert result == {

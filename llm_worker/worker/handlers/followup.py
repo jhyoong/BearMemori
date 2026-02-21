@@ -19,7 +19,7 @@ class FollowupHandler(BaseHandler):
         context = payload.get("context", "No additional context available.")
 
         prompt = FOLLOWUP_PROMPT.format(message=message, context=context)
-        raw_response = await self.llm.complete(prompt, self.config.llm_text_model)
+        raw_response = await self.llm.complete(self.config.llm_text_model, prompt)
 
         question = raw_response.strip()
         logger.info("Generated followup question: %s", question[:80])

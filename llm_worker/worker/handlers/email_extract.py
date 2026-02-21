@@ -33,11 +33,13 @@ class EmailExtractHandler(BaseHandler):
                 continue
 
             event_data = {
-                "description": event["description"],
+                "owner_user_id": user_id,
                 "event_time": event["event_time"],
-                "user_id": user_id,
+                "description": event["description"],
+                "source_type": "email",
+                "source_detail": subject,
             }
-            await self.core_api.create_event(event_data=event_data)
+            await self.core_api.create_event(event_data)
 
             # Use the first high-confidence event for the notification
             if first_event_notification is None:

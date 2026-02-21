@@ -33,7 +33,7 @@ class TaskMatchHandler(BaseHandler):
         prompt = TASK_MATCH_PROMPT.format(
             memory_content=memory_content, tasks_list=tasks_list
         )
-        raw_response = await self.llm.complete(prompt, self.config.llm_text_model)
+        raw_response = await self.llm.complete(self.config.llm_text_model, prompt)
 
         result = extract_json(raw_response)
         matched_id = result.get("matched_task_id")

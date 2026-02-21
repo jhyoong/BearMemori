@@ -158,7 +158,7 @@ class TestTaskMatchHandler:
         # Verify LLM was called and check prompt contains tasks
         mock_llm_client.complete.assert_called_once()
         call_args = mock_llm_client.complete.call_args
-        prompt = call_args[0][0]  # First positional argument is the prompt
+        prompt = call_args[0][1]  # Second positional argument (model is first)
 
         # Check all task descriptions are in the prompt
         assert "Buy groceries" in prompt
