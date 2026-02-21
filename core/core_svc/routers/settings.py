@@ -82,7 +82,7 @@ async def update_user_settings(
         # New record: use provided values or defaults
         timezone_value = settings_update.timezone if settings_update.timezone is not None else "UTC"
         language_value = settings_update.language if settings_update.language is not None else "en"
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     else:
         # Existing record: use provided values or keep existing
         timezone_value = settings_update.timezone if settings_update.timezone is not None else existing_row["timezone"]
@@ -90,7 +90,7 @@ async def update_user_settings(
         created_at = existing_row["created_at"]
 
     # Always update updated_at
-    updated_at = datetime.now(timezone.utc).isoformat()
+    updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     # Use INSERT OR REPLACE to upsert
     await db.execute(

@@ -183,7 +183,7 @@ async def update_llm_job(
 
     # Always update updated_at
     update_fields.append("updated_at = ?")
-    updated_at = datetime.now(timezone.utc).isoformat()
+    updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     update_values.append(updated_at)
 
     # Add id to values for WHERE clause

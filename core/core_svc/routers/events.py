@@ -35,7 +35,7 @@ async def create_event(
     event_id = str(uuid.uuid4())
 
     # Set pending_since to now and status to pending
-    pending_since = datetime.now(timezone.utc).isoformat()
+    pending_since = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     # Convert event_time to ISO format
     event_time_str = event.event_time.isoformat()
@@ -154,7 +154,7 @@ async def update_event(
 
         # If status changes to "confirmed"
         if new_status == "confirmed" and old_status != "confirmed":
-            confirmed_at = datetime.now(timezone.utc).isoformat()
+            confirmed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             update_fields.append("confirmed_at = ?")
             update_values.append(confirmed_at)
 
@@ -207,7 +207,7 @@ async def update_event(
 
     # Always set updated_at
     update_fields.append("updated_at = ?")
-    updated_at = datetime.now(timezone.utc).isoformat()
+    updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     update_values.append(updated_at)
 
     # Add id to values for WHERE clause
@@ -239,6 +239,24 @@ async def update_event(
         created_at=parse_db_datetime(row["created_at"]),
         updated_at=parse_db_datetime(row["updated_at"]),
     )
+
+
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_event(
+    id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+) -> None:
+    """Delete an event by ID. Returns 404 if not found."""
+    cursor = await db.execute("SELECT owner_user_id FROM events WHERE id = ?", (id,))
+    row = await cursor.fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    await db.execute("DELETE FROM events WHERE id = ?", (id,))
+    await db.commit()
+
+    await log_audit(db, "event", id, "deleted", f"user:{row['owner_user_id']}")
 
 
 @router.get("", response_model=list[EventResponse])

@@ -7,11 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 BearMemori is a personal memory management system with a microservice architecture. Users capture memories, tasks, reminders, and events via a Telegram bot. An LLM (via the OpenAI API) processes items asynchronously (image tagging, intent classification). All LLM-generated content starts as `pending` status — the user must confirm before it becomes `confirmed`.
 
 **Services (each service's Python package lives in a uniquely-named subdirectory):**
-- `core/core_svc/` — FastAPI REST API (port 8000), the only service with full implementation
+- `core/core_svc/` — FastAPI REST API (port 8000), fully implemented
 - `shared/shared_lib/` — Pydantic models, enums, config, Redis stream utilities (installed as a dependency by other services)
-- `telegram/tg_gateway/` — Telegram bot gateway (stub, not yet implemented)
-- `llm_worker/worker/` — LLM processing worker (consumer loop, handlers, and clients implemented; `main.py` entrypoint is the remaining stub)
-- `email_poller/poller/` — Email polling service (stub, not yet implemented)
+- `telegram/tg_gateway/` — Telegram bot gateway, substantially implemented (~95%)
+- `llm_worker/worker/` — LLM processing worker, fully implemented (consumer loop, all 5 handlers, clients, retry, `main.py`)
+- `email_poller/poller/` — Email polling service (stub, Phase 4 scope)
 
 ## Commands
 
@@ -113,7 +113,7 @@ Stream → handler mapping (defined in `consumer.py`):
 - `llm:task_match` → `TaskMatchHandler`
 - `llm:email_extract` → `EmailExtractHandler`
 
-`main.py` is still a stub. When implementing it, wire up: config loading, Redis client, aiohttp session, `LLMClient`, `CoreAPIClient`, handler instances, signal handlers (SIGTERM/SIGINT), then call `run_consumer()`.
+`main.py` is fully implemented: wires up config loading, Redis client, aiohttp session, `LLMClient`, `CoreAPIClient`, handler instances, signal handlers (SIGTERM/SIGINT), and calls `run_consumer()`.
 
 ### Test Fixtures
 
