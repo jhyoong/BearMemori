@@ -59,6 +59,9 @@ async def test_app(test_db, mock_redis, tmp_path):
 
     app.dependency_overrides[get_db] = get_test_db
 
+    # Inject mock Redis into app state for routers that use request.app.state.redis
+    app.state.redis = mock_redis
+
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
@@ -66,6 +69,9 @@ async def test_app(test_db, mock_redis, tmp_path):
         yield client
 
     app.dependency_overrides.clear()
+    # Clean up app state
+    if hasattr(app.state, "redis"):
+        del app.state.redis
     app.router.lifespan_context = original_lifespan
     # Clean up env
     os.environ.pop("IMAGE_STORAGE_PATH", None)

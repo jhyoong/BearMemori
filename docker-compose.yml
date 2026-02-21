@@ -35,6 +35,8 @@ services:
     build:
       context: .
       dockerfile: llm_worker/Dockerfile
+    volumes:
+      - image-data:/data/images
     depends_on:
       core:
         condition: service_healthy

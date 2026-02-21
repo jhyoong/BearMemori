@@ -6,9 +6,17 @@ import uuid
 from datetime import datetime, timezone
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from core_svc.audit import log_audit
+from shared_lib.redis_streams import (
+    STREAM_LLM_EMAIL_EXTRACT,
+    STREAM_LLM_FOLLOWUP,
+    STREAM_LLM_IMAGE_TAG,
+    STREAM_LLM_INTENT,
+    STREAM_LLM_TASK_MATCH,
+    publish,
+)
 from core_svc.database import get_db
 from shared_lib.schemas import LLMJobCreate, LLMJobResponse, LLMJobUpdate
 
@@ -16,23 +24,32 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["llm_jobs"])
 
+JOB_TYPE_TO_STREAM: dict[str, str] = {
+    "image_tag": STREAM_LLM_IMAGE_TAG,
+    "intent_classify": STREAM_LLM_INTENT,
+    "followup": STREAM_LLM_FOLLOWUP,
+    "task_match": STREAM_LLM_TASK_MATCH,
+    "email_extract": STREAM_LLM_EMAIL_EXTRACT,
+}
+
 
 def parse_db_datetime(dt_str: str | None) -> datetime | None:
     """Parse datetime string from database, handling both 'Z' and '+00:00' formats."""
     if not dt_str:
         return None
     # Handle edge case: string ending with both timezone offset and 'Z' (e.g., '+00:00Z')
-    if '+' in dt_str and dt_str.endswith('Z'):
+    if "+" in dt_str and dt_str.endswith("Z"):
         dt_str = dt_str[:-1]  # Remove trailing 'Z'
     # Replace 'Z' with '+00:00' for ISO parsing
-    elif dt_str.endswith('Z'):
-        dt_str = dt_str.replace('Z', '+00:00')
+    elif dt_str.endswith("Z"):
+        dt_str = dt_str.replace("Z", "+00:00")
     return datetime.fromisoformat(dt_str)
 
 
 @router.post("", response_model=LLMJobResponse, status_code=status.HTTP_201_CREATED)
 async def create_llm_job(
     job: LLMJobCreate,
+    request: Request,
     db: aiosqlite.Connection = Depends(get_db),
 ) -> LLMJobResponse:
     """
@@ -64,6 +81,21 @@ async def create_llm_job(
 
     # Log audit
     await log_audit(db, "llm_job", job_id, "created", actor)
+
+    # Publish to Redis stream for LLM Worker to consume
+    stream = JOB_TYPE_TO_STREAM.get(job.job_type)
+    redis_client = getattr(request.app.state, "redis", None)
+    if stream and redis_client:
+        await publish(
+            redis_client,
+            stream,
+            {
+                "job_id": job_id,
+                "job_type": job.job_type,
+                "payload": job.payload,
+                "user_id": job.user_id,
+            },
+        )
 
     # Fetch and return the created job
     cursor = await db.execute(
