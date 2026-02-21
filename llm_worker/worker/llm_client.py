@@ -1,4 +1,4 @@
-"""OpenAI-compatible async LLM client for llama.cpp / Ollama / vLLM."""
+"""Async LLM client using the OpenAI API."""
 
 import logging
 

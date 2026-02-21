@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BearMemori is a personal memory management system with a microservice architecture. Users capture memories, tasks, reminders, and events via a Telegram bot. A local Ollama LLM processes items asynchronously (image tagging, intent classification). All LLM-generated content starts as `pending` status — the user must confirm before it becomes `confirmed`.
+BearMemori is a personal memory management system with a microservice architecture. Users capture memories, tasks, reminders, and events via a Telegram bot. An LLM (via the OpenAI API) processes items asynchronously (image tagging, intent classification). All LLM-generated content starts as `pending` status — the user must confirm before it becomes `confirmed`.
 
 **Services (each service's Python package lives in a uniquely-named subdirectory):**
 - `core/core_svc/` — FastAPI REST API (port 8000), the only service with full implementation
@@ -93,7 +93,7 @@ Each router handles one domain. The pattern is consistent across all:
 
 ### LLM Job Pattern
 
-When the core API needs LLM processing (e.g., auto-tagging an image), it inserts a row into the `llm_jobs` table with `status=pending` and a JSON payload. The `llm_worker` reads from Redis streams, calls Ollama, then PATCHes the job result back to core. The affected entity stays in `pending` status until a user action confirms it.
+When the core API needs LLM processing (e.g., auto-tagging an image), it inserts a row into the `llm_jobs` table with `status=pending` and a JSON payload. The `llm_worker` reads from Redis streams, calls the LLM via the OpenAI API, then PATCHes the job result back to core. The affected entity stays in `pending` status until a user action confirms it.
 
 ### Test Fixtures (`tests/conftest.py`)
 

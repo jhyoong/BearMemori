@@ -32,7 +32,7 @@ Missing step between 5 and 6: publish to the appropriate Redis stream.
 
 `docker-compose.yml` -- Current `llm-worker` service config (no volumes).
 
-`.env.example` -- Current LLM section uses Ollama-specific env vars that need updating.
+`.env.example` -- Current LLM section env vars.
 
 **Existing test infrastructure:**
 - `tests/conftest.py` -- `test_app` fixture provides `AsyncClient`, `mock_redis` provides `fakeredis`
@@ -157,9 +157,9 @@ Update the LLM Worker section to use OpenAI-compatible env var names.
 # ============================
 # LLM Worker
 # ============================
-OLLAMA_BASE_URL=http://<ollama-host>:11434
-OLLAMA_VISION_MODEL=llava
-OLLAMA_TEXT_MODEL=mistral
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_VISION_MODEL=gpt-4o-mini
+LLM_TEXT_MODEL=gpt-4o-mini
 LLM_MAX_RETRIES=5
 ```
 

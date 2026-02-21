@@ -250,9 +250,9 @@ Users issue a query (e.g. `/find passport renewal`) and the bot returns the top 
 
 ---
 
-### 5.7 LLM Usage (Ollama — Local Only)
+### 5.7 LLM Usage (OpenAI API)
 
-The LLM runs locally via Ollama and acts strictly as an advisory layer. It never writes to the database directly. All LLM outputs are disposable unless explicitly confirmed by the user.
+The LLM is accessed via the OpenAI API and acts strictly as an advisory layer. It never writes to the database directly. All LLM outputs are disposable unless explicitly confirmed by the user.
 
 #### 5.7.1 Trigger Points
 
@@ -301,12 +301,12 @@ All LLM invocations are placed on an internal queue. If the LLM is unavailable o
 
 #### 5.7.3 Model Selection
 
-The system uses two Ollama models:
+The system uses two model roles, both accessed via the OpenAI API:
 
-- **Vision model** (e.g. LLaVA or equivalent): Used for image tagging, description, and location inference.
-- **Text model** (e.g. Mistral, Llama, or equivalent): Used for intent classification, follow-up generation, email event extraction, and task matching.
+- **Vision model** (e.g. `gpt-4o-mini`): Used for image tagging, description, and location inference.
+- **Text model** (e.g. `gpt-4o-mini`): Used for intent classification, follow-up generation, email event extraction, and task matching.
 
-Model names are configured via environment variables so they can be swapped without code changes.
+Model names are configured via environment variables (`LLM_VISION_MODEL`, `LLM_TEXT_MODEL`) so they can be swapped without code changes.
 
 #### 5.7.4 Constraints Summary
 
@@ -342,7 +342,7 @@ In the event of database corruption, a full restore from the latest S3 backup is
 
 1. Universal capture: text messages stored immediately; images stored as pending with 7-day retention window.
 2. Inline actions: inline keyboard buttons on every captured item (Task, Remind, Tag, Pin, Delete).
-3. Image tagging via LLM: Ollama vision model proposes tags; user confirms. Unconfirmed suggestions discarded after 7 days.
+3. Image tagging via LLM: vision model proposes tags; user confirms. Unconfirmed suggestions discarded after 7 days.
 4. Task management: create tasks with optional due date, mark DONE/NOT DONE, repeatable tasks via `recurrence_minutes`.
 5. Reminders: create from any Memory, deliver at scheduled time, persist across restarts. Recurring reminders via `recurrence_minutes`. Default reminder time configurable.
 6. Email event extraction: poll inbox, extract candidates, confirm/reject/re-queue flow with full audit logging. Implementation details deferred.
@@ -571,7 +571,7 @@ In the event of database corruption, a full restore from the latest S3 backup is
 1. In DM and shared group, sending any text creates a stored Memory tagged to the sender's user ID. Sending an image creates a pending Memory with a 7-day retention window.
 2. Bot responds with inline buttons; tapping "Remind" schedules a reminder; reminder fires at scheduled time.
 3. Tapping "Task" creates a task with optional due date; task can be marked DONE. Repeatable tasks auto-generate next instance on completion.
-4. Images processed by Ollama vision model; suggested tags sent to user for confirmation; only confirmed tags persisted. Unconfirmed suggestions discarded after 7 days.
+4. Images processed by the vision model; suggested tags sent to user for confirmation; only confirmed tags persisted. Unconfirmed suggestions discarded after 7 days.
 5. Email polling extracts candidate events; user confirms/rejects; unanswered items re-queued after 24 hours; all outcomes audit-logged.
 6. `/find <query>` returns top 3-5 matches from confirmed Memories only; "Show details" returns full content and attached media. Pinned items boosted in ranking.
 7. Deterministic features (capture, tasks, reminders) function when LLM is unavailable. Search fallback behaviour determined during implementation.

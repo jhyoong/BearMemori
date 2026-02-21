@@ -32,7 +32,7 @@ Establish the monorepo layout, service boundaries, communication patterns, datab
 | HTTP framework | FastAPI | Async, lightweight, auto-generated OpenAPI docs. Used by the Core service to expose its REST API. |
 | Telegram library | `python-telegram-bot` (v20+) | Async, well-maintained, covers inline keyboards and callbacks. |
 | Email | `aioimaplib` + OAuth2 | Async IMAP for Gmail and Outlook. OAuth2 via app passwords or service credentials. |
-| LLM client | HTTP calls to Ollama REST API | Ollama exposes `http://<host>:11434`. No SDK needed. |
+| LLM client | OpenAI Python SDK (`openai`) | Uses the OpenAI API (`/v1/chat/completions`). Supports text and vision models. |
 | Containerisation | Docker + Docker Compose | One Compose file orchestrates all services. |
 | Backup | `boto3` (S3) | Weekly SQLite file + image directory upload. |
 
@@ -64,7 +64,7 @@ There are four custom services and one infrastructure dependency.
           │
           ▼
    ┌──────────────┐
-   │    Ollama     │  (separate machine, same network)
+   │  OpenAI API  │  (external service)
    └──────────────┘
 ```
 
@@ -74,7 +74,7 @@ There are four custom services and one infrastructure dependency.
 |---|---|---|
 | **Core** | SQLite DB, image files, scheduler, search, audit log, backup | Exposes REST API. Publishes/consumes Redis Streams. |
 | **Telegram Gateway** | Telegram bot connection, user session context | Calls Core REST API. Publishes to Redis (LLM jobs). |
-| **LLM Worker** | Nothing persistent | Consumes Redis (LLM jobs). Calls Ollama HTTP API. Calls Core REST API to deliver results. |
+| **LLM Worker** | Nothing persistent | Consumes Redis (LLM jobs). Calls the OpenAI API. Calls Core REST API to deliver results. |
 | **Email Poller** | Nothing persistent | Calls Core REST API. Publishes to Redis (LLM jobs for email extraction). |
 | **Redis** | Streams, consumer groups | Standard Redis image. Persistence enabled (AOF). |
 
@@ -141,7 +141,7 @@ life-organiser/
 │       ├── __init__.py
 │       ├── main.py             # Consumer entrypoint
 │       ├── consumer.py         # Redis stream consumer loop
-│       ├── ollama_client.py    # HTTP client for Ollama API
+│       ├── llm_client.py       # OpenAI API client
 │       ├── handlers/
 │       │   ├── image_tag.py    # Vision model: tag + describe images
 │       │   ├── intent.py       # Text model: classify search intent
@@ -356,9 +356,10 @@ ALLOWED_USER_IDS=123456,789012     # Comma-separated allowlist
 CORE_API_URL=http://core:8000
 
 # LLM Worker
-OLLAMA_BASE_URL=http://<ollama-host>:11434
-OLLAMA_VISION_MODEL=llava
-OLLAMA_TEXT_MODEL=mistral
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_VISION_MODEL=gpt-4o-mini
+LLM_TEXT_MODEL=gpt-4o-mini
+LLM_API_KEY=sk-your-openai-api-key-here
 LLM_MAX_RETRIES=5
 
 # Email
@@ -589,7 +590,7 @@ Build the Telegram bot that serves as the user interface. At the end of this pla
 
 ### 3.1 Goal
 
-Build the LLM integration layer. At the end of this plan, the system can tag images, classify search intent, generate follow-up questions, suggest task completions, and extract events from emails — all via Ollama running on the separate machine.
+Build the LLM integration layer. At the end of this plan, the system can tag images, classify search intent, generate follow-up questions, suggest task completions, and extract events from emails — all via the OpenAI API.
 
 ### 3.2 Features
 
@@ -598,11 +599,11 @@ Build the LLM integration layer. At the end of this plan, the system can tag ima
 - Processes one job at a time per stream (configurable concurrency if needed later).
 - On receiving a job: update status to `processing` in Core (`PATCH /llm-jobs/{id}`), process, then update to `completed` or `failed`.
 
-**Ollama HTTP client**
-- Wrapper around Ollama's REST API (`/api/generate`, `/api/chat`).
+**OpenAI API client**
+- Uses the OpenAI Python SDK (`openai`) for `/v1/chat/completions`.
 - Supports both vision and text models.
-- Handles timeouts, connection errors, and model loading delays.
-- Model names are configurable via env vars.
+- Handles timeouts, connection errors, and API failures.
+- Model names are configurable via env vars (`LLM_VISION_MODEL`, `LLM_TEXT_MODEL`).
 
 **Image tagging handler (`llm:image_tag`)**
 - Input: memory ID, image path or file_id.
@@ -647,7 +648,7 @@ Prompts should be kept in separate text files or constants for easy iteration. K
 - Include examples in the prompt (few-shot) for consistent formatting.
 - For image tagging, instruct the model to distinguish between confident and uncertain tags.
 - For intent classification, provide clear definitions and examples of each intent category.
-- Keep prompts minimal — these are small local models, not GPT-4. Concise prompts perform better.
+- Keep prompts minimal and concise for consistent results.
 
 ### 3.4 Acceptance Criteria
 
@@ -655,7 +656,7 @@ Prompts should be kept in separate text files or constants for easy iteration. K
 2. Using `/find` with a natural language query triggers intent classification and routes correctly.
 3. An ambiguous query produces a clarifying follow-up question.
 4. Sending an image related to an open task triggers a task completion suggestion.
-5. If Ollama is unreachable, jobs queue up and are processed when it comes back.
+5. If the LLM API is unreachable, jobs queue up and are processed when it comes back.
 6. After 5 failed attempts, the user is notified and the job is marked failed.
 7. Worker restarts do not lose queued jobs.
 
@@ -736,7 +737,7 @@ Document the setup steps in `email_poller/README.md`.
 |---|---|---|
 | **Phase 1** | Plan 0 + Plan 1 | Project scaffolded. Core API running. DB initialised. Scheduler ticking. All endpoints testable via curl. |
 | **Phase 2** | Plan 2 | Full Telegram bot. Capture, tasks, reminders, search all work. Keyword search via FTS5. No LLM needed. Reminders fire. This is a usable product. |
-| **Phase 3** | Plan 3 | LLM enhances everything. Image tagging, smart search, follow-up questions, task matching. Graceful degradation when Ollama is down. |
+| **Phase 3** | Plan 3 | LLM enhances everything. Image tagging, smart search, follow-up questions, task matching. Graceful degradation when the LLM API is down. |
 | **Phase 4** | Plan 4 | Email integration. Events extracted from Gmail/Outlook. Confirmation flow via Telegram. |
 
 ## Appendix B: Cross-Cutting Concerns

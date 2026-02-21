@@ -11,7 +11,7 @@ This is the first sub-phase of Phase 3 (LLM Worker). It builds the foundational 
 - `shared/shared_lib/schemas.py` -- `LLMJobUpdate`, `TagsAddRequest`, `EventCreate`, `TaskResponse`
 
 **Key design decisions:**
-- LLM client uses the **OpenAI API standard** (`/v1/chat/completions`) via the `openai` Python SDK. Compatible with llama.cpp server, Ollama's OpenAI mode, vLLM, etc.
+- LLM client uses the **OpenAI API** (`/v1/chat/completions`) via the `openai` Python SDK.
 - Retry tracking is in-memory (`dict[str, int]`). Resets on worker restart, which is acceptable since unacked Redis messages will be redelivered.
 - `extract_json()` handles unreliable LLM output by finding the first `{...}` or `[...]` block via regex before parsing.
 
@@ -62,7 +62,7 @@ Env var names: `LLM_BASE_URL`, `LLM_VISION_MODEL`, `LLM_TEXT_MODEL`, `LLM_API_KE
 OpenAI-compatible async LLM client.
 
 ```python
-"""OpenAI-compatible async LLM client for llama.cpp / Ollama / vLLM."""
+"""Async LLM client using the OpenAI API."""
 
 import logging
 

@@ -211,9 +211,9 @@ CORE_API_URL=http://core:8000
 # ============================
 # LLM Worker
 # ============================
-OLLAMA_BASE_URL=http://<ollama-host>:11434
-OLLAMA_VISION_MODEL=llava
-OLLAMA_TEXT_MODEL=mistral
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_VISION_MODEL=gpt-4o-mini
+LLM_TEXT_MODEL=gpt-4o-mini
 LLM_MAX_RETRIES=5
 
 # ============================

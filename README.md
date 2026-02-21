@@ -3,7 +3,7 @@
 > [!NOTE]                                                                                                                                                                                      
 > An ambitious personal project for my personal use. I'm building this with the aim of storing and managing memories with the help of AI. 
 
-A personal memory management system built with a microservice architecture. Capture memories, tasks, reminders, and events via a Telegram bot. A local Ollama LLM processes items asynchronously (image tagging, intent classification). All LLM-generated content starts as `pending` until the user confirms it.
+A personal memory management system built with a microservice architecture. Capture memories, tasks, reminders, and events via a Telegram bot. An LLM (via the OpenAI API) processes items asynchronously (image tagging, intent classification). All LLM-generated content starts as `pending` until the user confirms it.
 
 ## Architecture
 
@@ -24,7 +24,7 @@ Each service lives in its own directory with its own Python package:
 | **Core API** | `core/core_svc/` | FastAPI REST API (port 8000) | Implemented |
 | **Shared Library** | `shared/shared_lib/` | Pydantic models, enums, config, Redis stream utilities | Implemented |
 | **Telegram Gateway** | `telegram/tg_gateway/` | Telegram bot interface | Stub |
-| **LLM Worker** | `llm_worker/worker/` | Async LLM processing via Ollama | Stub |
+| **LLM Worker** | `llm_worker/worker/` | Async LLM processing via OpenAI API | Stub |
 | **Email Poller** | `email_poller/poller/` | Email polling for calendar events | Stub |
 
 ### Core API Endpoints
@@ -37,7 +37,7 @@ SQLite with WAL mode, foreign keys enabled, and FTS5 for full-text search. Schem
 
 ### LLM Job Pattern
 
-When the Core API needs LLM processing (e.g., auto-tagging an image), it inserts a row into the `llm_jobs` table with `status=pending` and a JSON payload. The LLM Worker reads from Redis streams, calls Ollama, then PATCHes the result back to the Core API. The affected entity stays in `pending` status until the user confirms it.
+When the Core API needs LLM processing (e.g., auto-tagging an image), it inserts a row into the `llm_jobs` table with `status=pending` and a JSON payload. The LLM Worker reads from Redis streams, calls the LLM via the OpenAI API, then PATCHes the result back to the Core API. The affected entity stays in `pending` status until the user confirms it.
 
 ## Prerequisites
 
