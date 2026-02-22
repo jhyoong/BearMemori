@@ -7,13 +7,13 @@ services:
       - db-data:/data/db
       - image-data:/data/images
     ports:
-      - "8000:8000"
+      - "${CORE_PORT:-8000}:${CORE_PORT:-8000}"
     depends_on:
       redis:
         condition: service_healthy
     env_file: .env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${CORE_PORT:-8000}/health"]
       interval: 30s
       timeout: 5s
       retries: 3

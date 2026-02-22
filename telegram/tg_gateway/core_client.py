@@ -15,7 +15,9 @@ from shared_lib.schemas import (
     TaskCreate,
     TaskUpdate,
     TaskResponse,
+    TaskUpdateResponse,
     UserSettingsResponse,
+    UserUpsert,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,12 +49,31 @@ class CoreClient:
         """Close the HTTP client."""
         await self._client.aclose()
 
+    async def ensure_user(self, telegram_user_id: int, display_name: str) -> None:
+        """Upsert a user by Telegram ID. Creates the user row if it doesn't exist."""
+        try:
+            response = await self._client.post(
+                "/users",
+                json=UserUpsert(
+                    telegram_user_id=telegram_user_id, display_name=display_name
+                ).model_dump(),
+            )
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if not response.is_success:
+            logger.error(f"Failed to ensure user: {response.status_code} {response.text}")
+            raise CoreClientError(
+                f"Failed to ensure user: {response.status_code} {response.text}"
+            )
+
     async def create_memory(self, data: MemoryCreate) -> MemoryResponse:
         """Create a new memory."""
         try:
             response = await self._client.post(
                 "/memories",
-                json=data.model_dump(exclude_none=True),
+                json=data.model_dump(mode="json", exclude_none=True),
             )
         except (ConnectError, TimeoutException) as e:
             logger.exception("Failed to connect to Core API")
@@ -97,7 +118,7 @@ class CoreClient:
         try:
             response = await self._client.patch(
                 f"/memories/{memory_id}",
-                json=data.model_dump(exclude_none=True),
+                json=data.model_dump(mode="json", exclude_none=True),
             )
         except (ConnectError, TimeoutException) as e:
             logger.exception("Failed to connect to Core API")
@@ -142,7 +163,7 @@ class CoreClient:
         try:
             response = await self._client.post(
                 f"/memories/{memory_id}/tags",
-                json=data.model_dump(exclude_none=True),
+                json=data.model_dump(mode="json", exclude_none=True),
             )
         except (ConnectError, TimeoutException) as e:
             logger.exception("Failed to connect to Core API")
@@ -189,7 +210,7 @@ class CoreClient:
         try:
             response = await self._client.post(
                 "/tasks",
-                json=data.model_dump(exclude_none=True),
+                json=data.model_dump(mode="json", exclude_none=True),
             )
         except (ConnectError, TimeoutException) as e:
             logger.exception("Failed to connect to Core API")
@@ -240,7 +261,7 @@ class CoreClient:
         try:
             response = await self._client.patch(
                 f"/tasks/{task_id}",
-                json=data.model_dump(exclude_none=True),
+                json=data.model_dump(mode="json", exclude_none=True),
             )
         except (ConnectError, TimeoutException) as e:
             logger.exception("Failed to connect to Core API")
@@ -257,14 +278,14 @@ class CoreClient:
                 f"Failed to update task: {response.status_code} {response.text}"
             )
 
-        return TaskResponse.model_validate(response.json())
+        return TaskUpdateResponse.model_validate(response.json()).task
 
     async def create_reminder(self, data: ReminderCreate) -> ReminderResponse:
         """Create a new reminder."""
         try:
             response = await self._client.post(
                 "/reminders",
-                json=data.model_dump(exclude_none=True),
+                json=data.model_dump(mode="json", exclude_none=True),
             )
         except (ConnectError, TimeoutException) as e:
             logger.exception("Failed to connect to Core API")
@@ -332,8 +353,8 @@ class CoreClient:
         """Create a new LLM job."""
         try:
             response = await self._client.post(
-                "/llm-jobs",
-                json=data.model_dump(exclude_none=True),
+                "/llm_jobs",
+                json=data.model_dump(mode="json", exclude_none=True),
             )
         except (ConnectError, TimeoutException) as e:
             logger.exception("Failed to connect to Core API")

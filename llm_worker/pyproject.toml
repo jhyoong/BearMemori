@@ -13,7 +13,6 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     # shared is installed separately in Docker (see Dockerfile).
     # For local dev: pip install -e ../shared && pip install -e .
-    "life-organiser-shared @ file:///${PROJECT_ROOT}/../shared",
 ]
 
 [tool.hatch.build.targets.wheel]

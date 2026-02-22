@@ -119,7 +119,7 @@ async def receive_custom_date(
 
     if due_at is None:
         await update.message.reply_text(
-            "Could not parse the date. Please use a format like '2024-12-25' or 'today', 'tomorrow'."
+            "Could not parse the date. Please use format YYYY-MM-DD HH:MM (e.g., 2024-12-25 09:00)."
         )
         # Re-set the pending state
         context.user_data[PENDING_TASK_MEMORY_ID] = memory_id

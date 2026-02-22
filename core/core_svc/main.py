@@ -8,6 +8,7 @@ from shared_lib.config import load_config
 from core_svc.database import init_db
 
 # Group 5 imports (routers):
+from core_svc.routers.users import router as users_router
 from core_svc.routers.memories import router as memories_router
 from core_svc.routers.tasks import router as tasks_router
 from core_svc.routers.reminders import router as reminders_router
@@ -66,6 +67,7 @@ app = FastAPI(
 
 
 # Router includes (Group 5):
+app.include_router(users_router, prefix="/users")
 app.include_router(memories_router, prefix="/memories")
 app.include_router(tasks_router, prefix="/tasks")
 app.include_router(reminders_router, prefix="/reminders")

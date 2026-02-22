@@ -14,6 +14,21 @@ from shared_lib.enums import (
 )
 
 
+# User schemas
+class UserUpsert(BaseModel):
+    telegram_user_id: int
+    display_name: str
+
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    telegram_user_id: int
+    display_name: str
+    is_allowed: bool
+    created_at: datetime
+
+
 # Memory schemas
 class MemoryCreate(BaseModel):
     owner_user_id: int

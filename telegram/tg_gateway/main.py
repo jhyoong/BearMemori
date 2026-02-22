@@ -206,3 +206,7 @@ async def post_shutdown(application: Application) -> None:
         await redis_client.close()
 
     logger.info("Telegram Gateway shutdown complete")
+
+
+if __name__ == "__main__":
+    main()

@@ -253,7 +253,7 @@ async def handle_due_date_choice(
     if choice == "custom":
         context.user_data[PENDING_TASK_MEMORY_ID] = memory_id
         await callback_query.edit_message_text(
-            "Please enter a custom due date in YYYY-MM-DD format (e.g., 2024-12-31):"
+            "Please enter a custom due date and time (e.g., 2024-12-31 09:00):"
         )
         return
 

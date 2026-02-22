@@ -9,9 +9,8 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from shared_lib.enums import MediaType
-from shared_lib.schemas import MemoryCreate
-from shared_lib.redis_streams import STREAM_LLM_IMAGE_TAG, publish
+from shared_lib.enums import JobType, MediaType
+from shared_lib.schemas import LLMJobCreate, MemoryCreate
 
 from tg_gateway.core_client import CoreUnavailableError
 from tg_gateway.keyboards import memory_actions_keyboard
@@ -61,6 +60,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     core_client = context.bot_data["core_client"]
 
     try:
+        await core_client.ensure_user(user.id, user.full_name)
         memory_data = MemoryCreate(
             owner_user_id=user.id,
             content=msg.text,
@@ -101,6 +101,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     core_client = context.bot_data["core_client"]
 
     try:
+        await core_client.ensure_user(user.id, user.full_name)
         memory_data = MemoryCreate(
             owner_user_id=user.id,
             content=caption,
@@ -117,29 +118,29 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     # Download and upload image (non-fatal)
+    local_path = None
     try:
-        await download_and_upload_image(
+        local_path = await download_and_upload_image(
             context.bot, core_client, memory.id, photo.file_id
         )
-    except Exception as e:
+    except Exception:
         logger.exception(f"Failed to download/upload image for memory {memory.id}")
 
-    # Publish LLM tagging job (non-fatal)
-    try:
-        redis_client = context.bot_data["redis"]
-        job_data = {
-            "memory_id": memory.id,
-            "file_id": photo.file_id,
-            "caption": caption,
-            "user_id": user.id,
-            "chat_id": msg.chat_id,
-        }
-        await publish(redis_client, STREAM_LLM_IMAGE_TAG, job_data)
-    except Exception as e:
-        logger.exception(f"Failed to publish LLM tagging job for memory {memory.id}")
+    # Queue LLM tagging job via core (non-fatal); requires image_path from upload
+    if local_path:
+        try:
+            await core_client.create_llm_job(
+                LLMJobCreate(
+                    job_type=JobType.image_tag,
+                    payload={"memory_id": memory.id, "image_path": local_path},
+                    user_id=user.id,
+                )
+            )
+        except Exception:
+            logger.exception(f"Failed to queue LLM tagging job for memory {memory.id}")
 
-    # Build keyboard and reply
-    keyboard = memory_actions_keyboard(memory.id, is_image=True)
+    # Build keyboard and reply; tag actions appear after LLM suggests tags
+    keyboard = memory_actions_keyboard(memory.id, is_image=False)
     await msg.reply_text("Saved as pending!", reply_markup=keyboard)
 
 

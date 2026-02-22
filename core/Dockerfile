@@ -19,9 +19,8 @@ RUN pip install --no-cache-dir -e /app/core/
 # These will be mounted as volumes in docker-compose
 RUN mkdir -p /data/db /data/images
 
-# Expose the FastAPI port
-EXPOSE 8000
+# Expose the FastAPI port (informational; actual port comes from CORE_PORT env var)
+EXPOSE ${CORE_PORT:-8000}
 
-# Run uvicorn server
-# Uses module notation to run core.main:app
-CMD ["python", "-m", "uvicorn", "core_svc.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run uvicorn server; shell form so CORE_HOST and CORE_PORT are expanded at runtime
+CMD python -m uvicorn core_svc.main:app --host ${CORE_HOST:-0.0.0.0} --port ${CORE_PORT:-8000}
