@@ -399,6 +399,10 @@ class TestStubHandlers:
         update = MagicMock(spec=Update)
         update.callback_query = MagicMock()
         update.callback_query.edit_message_text = AsyncMock()
+        update.callback_query.edit_message_caption = AsyncMock()
+        # Set up message as text message (no photo)
+        update.callback_query.message = MagicMock()
+        update.callback_query.message.photo = None
 
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
         context.bot_data = {"user_id": 12345}

@@ -220,10 +220,19 @@ async def handle_memory_action(
 
     elif action == "confirm_delete":
         # Show delete confirmation keyboard
-        await callback_query.edit_message_text(
-            "Are you sure you want to delete this memory?",
-            reply_markup=delete_confirm_keyboard(memory_id),
-        )
+        # Check if the original message has a photo
+        if callback_query.message.photo is not None:
+            # Use edit_message_caption for photo messages
+            await callback_query.edit_message_caption(
+                "Are you sure you want to delete this memory?",
+                reply_markup=delete_confirm_keyboard(memory_id),
+            )
+        else:
+            # Use edit_message_text for text messages
+            await callback_query.edit_message_text(
+                "Are you sure you want to delete this memory?",
+                reply_markup=delete_confirm_keyboard(memory_id),
+            )
 
 
 async def handle_due_date_choice(
@@ -409,7 +418,13 @@ async def handle_confirm_delete(
     if confirmed:
         # Delete the memory and show confirmation message
         await core_client.delete_memory(memory_id)
-        await callback_query.edit_message_text("Memory deleted")
+        # Check if the original message has a photo
+        if callback_query.message.photo is not None:
+            # Use edit_message_caption for photo messages
+            await callback_query.edit_message_caption("Memory deleted")
+        else:
+            # Use edit_message_text for text messages
+            await callback_query.edit_message_text("Memory deleted")
     else:
         # Cancel and restore the original keyboard
         # Get the memory to check if it has an image
@@ -425,10 +440,19 @@ async def handle_confirm_delete(
         message_text = memory.content if memory.content else "Memory"
 
         # Restore the original keyboard
-        await callback_query.edit_message_text(
-            message_text,
-            reply_markup=memory_actions_keyboard(memory_id, is_image=is_image),
-        )
+        # Check if the original message has a photo
+        if callback_query.message.photo is not None:
+            # Use edit_message_caption for photo messages
+            await callback_query.edit_message_caption(
+                message_text,
+                reply_markup=memory_actions_keyboard(memory_id, is_image=is_image),
+            )
+        else:
+            # Use edit_message_text for text messages
+            await callback_query.edit_message_text(
+                message_text,
+                reply_markup=memory_actions_keyboard(memory_id, is_image=is_image),
+            )
 
 
 async def handle_search_detail(
