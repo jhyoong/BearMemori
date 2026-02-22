@@ -106,10 +106,12 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     # Build keyboard with up to 5 results
     keyboard_results = []
     for result in results[:5]:
-        # Create label: first 50 chars of content + "..." if longer
-        content = result.memory.content
-        label = content[:50] + "..." if len(content) > 50 else content
-        # Use memory id as the memory_id
+        content = result.memory.content or ""
+        if content:
+            label = content[:50] + "..." if len(content) > 50 else content
+        else:
+            tags = ", ".join(t.tag for t in result.memory.tags) if result.memory.tags else ""
+            label = f"[Image: {tags}]" if tags else "[Image]"
         keyboard_results.append((label, result.memory.id))
 
     # Create inline keyboard with search results
@@ -216,10 +218,12 @@ async def pinned_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Build keyboard with up to 10 results
     keyboard_results = []
     for result in results[:10]:
-        # Create label: first 50 chars of content + "..." if longer
-        content = result.memory.content
-        label = content[:50] + "..." if len(content) > 50 else content
-        # Use memory id as the memory_id
+        content = result.memory.content or ""
+        if content:
+            label = content[:50] + "..." if len(content) > 50 else content
+        else:
+            tags = ", ".join(t.tag for t in result.memory.tags) if result.memory.tags else ""
+            label = f"[Image: {tags}]" if tags else "[Image]"
         keyboard_results.append((label, result.memory.id))
 
     # Create inline keyboard with search results
