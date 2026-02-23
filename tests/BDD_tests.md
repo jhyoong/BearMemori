@@ -30,14 +30,12 @@ Scenario 3
 
 Scenario 4
 1. User sends an image
-2. System is available and not running fully, LLM system is not available.
-3. Image is sent to the queue
-4. System waits for the LLM system to be available
-5. LLM system has recovered after 14 days
-6. LLM processes the image and generates tags
-7. System sends proposed tags
-8. User confirms tags
-9. Memory saved
+2. System is available but LLM system is not available
+3. Image stored as pending memory, tagging queued for LLM
+4. LLM system remains down for 14 days
+5. After 7 days with no user interaction, pending memory and image hard deleted
+6. LLM recovers on day 14, finds no memory for the queued job
+7. LLM job marked as failed, no further action
 
 Scenario 5
 1. User sends an image
@@ -52,55 +50,79 @@ Scenario 5
 Task, Reminder, General text, Search
 
 Scenario 6
-1. User sends a text message "Remind me to do something in 5 mins"
-2. System is available and running fully
-3. LLM processes the text message
-4. LLM recognises that it should trigger a reminder tool call
-5. Reminder tool call shall be set to 5 minutes from message (input event) timestamp
-6. System records this reminder and sets a time trigger
-7. Time trigger sends a message to the user
+1. User sends text "Remind me to buy butter at 6pm"
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies intent as "reminder"
+5. LLM extracts: action="buy butter", time="6pm today" (resolved from original message timestamp)
+6. System saves text as confirmed memory
+7. System sends: "Set reminder for 'buy butter' at 6pm today? [Confirm] [Edit time] [Just a note]"
+8. User taps [Confirm]
+9. Reminder created, linked to memory
 
 
 Scenario 7
-1. User sends a text message "I need to buy butter later at 6pm"
-2. System is available and running fully
-3. LLM processes the text message
-4. LLM recognises that it should trigger a task tool call
-5. 
+1. User sends text "I need to buy butter later at 6pm"
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies intent as "task"
+5. LLM extracts: description="buy butter", due_time="6pm today"
+6. System saves text as confirmed memory
+7. System sends: "Create task 'buy butter' due at 6pm today? [Confirm] [Edit] [Just a note]"
+8. User taps [Confirm]
+9. Task created with due date, linked to memory
 
 Scenario 8
-1. User sends a text message "Best method to get to mount fuji from hakone is ..."
-2. System is available and running fully
-3. LLM processes the text message
-4. LLM recognises that it should generate tags for this generic text message
-5. 
+1. User sends text "Best method to get to mount fuji from hakone is take the bus"
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies intent as "general_note"
+5. System saves text as confirmed memory
+6. LLM suggests tags: "travel", "japan", "transport"
+7. System sends: "Saved! Suggested tags: travel, japan, transport. [Confirm Tags] [Edit Tags] [Task] [Remind] [Pin] [Delete]"
+8. User confirms tags
+9. Tags stored as confirmed
 
 Scenario 9
-1. User sends a text message "When did I last buy butter?"
-2. System is available and running fully
-3. LLM processes the text message
-4. LLM recognises that it should trigger search with keywords extracted from text message
-5. 
+1. User sends text "When did I last buy butter?"
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies intent as "search"
+5. Text is NOT saved as a memory
+6. System performs search for "butter"
+7. Top 3-5 results returned with snippets
+8. User taps [Show details] on a result
 
 ## Ambiguous text input
 Scenario 10
-1. User sends a text message "I need to buy butter later"
-2. System is available and running fully
-3. LLM processes the text message
-4. LLM recognises that it needs more information, asks for clarity on `later`.
-5. Systems sends question from LLM back to user
-6. User answers the question
-7. LLM proceess the text message
-8. LLM recognises that it should trigger a task tool call
-9. 
+1. User sends text "I need to buy butter later"
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies intent as "ambiguous" — unclear if task, reminder, or note
+5. System saves text as confirmed memory
+6. LLM generates follow-up: "Would you like this as a task or a reminder? And when is 'later'?"
+7. System sets conversation context (timeout: 5 minutes)
+8. User replies: "A reminder for 6pm"
+9. System treats reply as answer to follow-up (not a new message)
+10. LLM re-classifies with full context as "reminder"
+11. System sends: "Set reminder for 'buy butter' at 6pm today? [Confirm] [Just a note]"
+12. User confirms
+13. Reminder created, linked to original memory
 
 
 Scenario 11
-1. User sends a text message "Remind me to do something after work"
-2. System is available and not running fully, LLM system is down
-3. LLM processes the text message
-4. LLM recognises that it needs more information, asks for clarity on `after work`.
-5. 
+1. User sends text "Remind me to do something after work"
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM system is down — message stays in queue
+5. LLM recovers (within 14-day window)
+6. LLM classifies intent as "reminder" but time is ambiguous ("after work")
+7. System saves text as confirmed memory
+8. System sends follow-up: "I processed your earlier message. When do you finish work?"
+9. System sets conversation context
+10. User replies: "5pm"
+11. LLM extracts time, proposes reminder
+12. User confirms
 
 # Additional Image Input Scenarios
 
@@ -138,14 +160,16 @@ Scenario 15
 6. User confirms reminder time
 7. Reminder scheduled and linked to Memory
 
-# Text Memory Capture Scenarios (TODO: REVISIT THIS REQUIREMENT)
+# Text Memory Capture Scenarios
 
 Scenario 16
-1. User sends a text message "Meeting with John at 3pm tomorrow"
-2. System is available and running fully
-3. Text message immediately stored as confirmed Memory
-4. No pending status (unlike images)
-5. Memory tagged to user's Telegram ID with timestamp
+1. User sends text "Meeting with John at 3pm tomorrow"
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies intent based on content
+5. System saves text as confirmed memory
+6. Inline buttons displayed: [Task] [Remind] [Tag] [Pin] [Delete]
+7. Memory tagged to user's Telegram ID with timestamp
 
 Scenario 17
 1. User sends a text message in a group chat
@@ -299,29 +323,29 @@ Scenario 38
 3. Results filtered to events
 4. Results returned
 
-Scenario 38b
+Scenario 39
 1. User sends query with no results
 2. LLM generates follow-up question
 3. Question sent to user
 4. User clarifies query
 
-Scenario 39
+Scenario 40
 1. User has pinned memories
 2. User searches for related terms
 3. Pinned items ranked higher in results (boost)
 
-Scenario 40
+Scenario 41
 1. User taps [Show details] on search result
 2. System returns full stored record
 3. If image, actual image sent
 4. Includes timestamp, tags, caption, source reference
 
-Scenario 41
+Scenario 42
 1. User searches for terms matching pending image
 2. Pending images excluded from results
 3. Only confirmed memories returned
 
-Scenario 42
+Scenario 43
 1. User sends vague query "What about the shelf?"
 2. Multiple items found (task, image, note)
 3. System asks "Which one did you mean?"
@@ -331,7 +355,7 @@ Scenario 42
 
 # Email Integration Scenarios
 
-Scenario 43
+Scenario 44
 1. Email poller polls inbox
 2. Candidate event extracted from email
 3. Event sent to user for confirmation via Telegram
@@ -340,21 +364,21 @@ Scenario 43
 6. Reminder scheduled
 7. Audit log records confirmation
 
-Scenario 44
+Scenario 45
 1. Email poller extracts candidate event
 2. User receives confirmation prompt
 3. User taps [No]
 4. Event discarded
 5. Audit log records rejection
 
-Scenario 45
+Scenario 46
 1. Email poller extracts candidate event
 2. Confirmation prompt sent to user
 3. User does not respond within 24 hours
 4. Event re-queued for another prompt
 5. Audit log records re-queue
 
-Scenario 46
+Scenario 47
 1. Email poller receives email with date, description, confidence level
 2. LLM extracts candidate events
 3. Zero or more events generated
@@ -362,34 +386,34 @@ Scenario 46
 
 # LLM Behavior Scenarios
 
-Scenario 47
+Scenario 48
 1. User sends image
 2. Vision model generates suggested tags
 3. Tags sent to user as buttons: [Confirm Tags] [Edit Tags]
 4. Nothing persisted until user action
 
-Scenario 48
+Scenario 49
 1. LLM processing fails for image
 2. Image added to retry queue
 3. Image stored as pending Memory without tags
 4. Retry happens with exponential backoff
 5. User notified if all retries fail (after 5 attempts)
 
-Scenario 49
+Scenario 50
 1. Image pending with tag suggestions
 2. User does not act on suggestions within 7 days
 3. Tag suggestions discarded
 4. If no other action taken, pending Memory and image hard deleted
 5. Audit log records expiry
 
-Scenario 50
+Scenario 51
 1. LLM queue has multiple items
 2. LLM becomes unavailable
 3. Queue items retry with exponential backoff
 4. Queue persists across restarts (stored in database)
 5. After 5 failed retries, item marked failed in audit log
 
-Scenario 51
+Scenario 52
 1. LLM unavailable during image processing
 2. Image still stored as pending Memory
 3. Tagging request placed on LLM retry queue
@@ -397,7 +421,7 @@ Scenario 51
 
 # Shared Chat Scenarios
 
-Scenario 52
+Scenario 53
 1. User A in shared chat sends message "Dinner at restaurant"
 2. User B in same chat sends message "Signed contract"
 3. User A searches "dinner"
@@ -405,20 +429,13 @@ Scenario 52
 5. Results also include User B's message if chat is shared context
 6. All users' confirmed Memories searchable
 
-Scenario 53
+Scenario 54
 1. User A sends message in shared chat
 2. Message stored with owner_user_id
 3. Memory record includes source_chat_id
 4. Records tagged for filtering but searchable by all
 
 # Failure Mode Scenarios
-
-Scenario 54
-1. LLM is unavailable
-2. User sends image
-3. Image still stored as pending Memory
-4. Tagging paused, added to retry queue
-5. Capture continues (text immediate, image pending)
 
 Scenario 55
 1. LLM unavailable
@@ -529,3 +546,102 @@ Scenario 71
 2. Each user's messages captured separately
 3. Each message tagged with correct owner_user_id
 4. All searchable by all group members
+
+# Queue-First Processing New Scenarios
+
+Scenario 72
+1. User sends text "I need to do something later"
+2. System responds: "Processing..."
+3. LLM classifies as ambiguous, asks follow-up question
+4. System sets conversation context with 5-minute timeout
+5. User does not reply within 5 minutes
+6. Context expires
+7. Original text remains saved as confirmed memory with no additional action
+8. User's next message is treated as a new message
+
+Scenario 73
+1. User sends text "The cafe on 5th street has great coffee"
+2. System responds: "Processing..."
+3. LLM classifies as general_note
+4. Text saved as confirmed memory
+5. LLM suggests tags: "cafe", "coffee", "food"
+6. System shows tag suggestions with [Confirm Tags] [Edit Tags]
+7. User does not act on tag suggestions within 7 days
+8. Suggested tags are discarded
+9. Memory remains (text memories are not subject to the 7-day image deletion rule)
+
+Scenario 74
+1. User sends text "Remind me to call the dentist tomorrow" on Feb 10
+2. System responds: "Processing..."
+3. LLM is down — message stays in queue
+4. LLM recovers on Feb 17
+5. LLM processes message, resolves "tomorrow" relative to Feb 10 = Feb 11
+6. Feb 11 is in the past
+7. System saves text as confirmed memory
+8. System sends: "Your message from Feb 10 mentioned a reminder for Feb 11, which has passed. [Reschedule] [Dismiss]"
+9. User taps [Reschedule] and picks a new date
+10. Reminder created with new date
+
+Scenario 75
+1. User sends text "Buy groceries"
+2. System responds: "Processing..."
+3. LLM is down — message stays in queue
+4. After 14 days, message expires in queue
+5. System marks job as expired
+6. System notifies user: "Your message 'Buy groceries' from [date] could not be processed and has expired."
+7. No memory is saved (text was never classified)
+
+Scenario 76
+1. LLM has been down for 3 days
+2. 15 text messages are queued
+3. LLM recovers
+4. System processes messages in order (oldest first), one at a time
+5. Each result delivered with 5-10 second delay before the next message is processed
+6. User receives each result as an individual follow-up message
+
+Scenario 77
+1. User sends text "I need to buy butter later"
+2. System responds: "Processing..." (queue was empty)
+3. User immediately sends text "Pick up the kids sometime"
+4. System responds: "Added to queue" (queue is mid-processing)
+5. LLM processes first message, classifies as ambiguous
+6. System asks follow-up: "Would you like this as a task or a reminder? When is 'later'?"
+7. Queue paused — second message waits
+8. User replies: "A reminder for 6pm"
+9. LLM re-classifies first message as reminder, proposes it
+10. User confirms reminder
+11. Conversation resolved — queue resumes
+12. LLM processes second message "Pick up the kids sometime", classifies as ambiguous
+13. System asks follow-up for second message
+14. Process continues
+
+Scenario 78
+1. User sends 3 text messages in quick succession
+2. System responds "Processing..." to message 1, "Added to queue" to messages 2 and 3
+3. LLM processes message 1, classifies as ambiguous, asks follow-up
+4. Queue paused — messages 2 and 3 wait
+5. User sends reply to follow-up question
+6. Reply is treated as answer to the follow-up (not added to queue as message 4)
+7. LLM re-classifies message 1 with the answer, resolves it
+8. Conversation resolved — queue resumes with message 2
+
+Scenario 79
+1. User sends 2 text messages
+2. System responds "Processing..." to message 1, "Added to queue" to message 2
+3. LLM processes message 1, classifies as ambiguous, asks follow-up
+4. Queue paused — message 2 waits
+5. User does not reply within 5 minutes
+6. Follow-up context expires
+7. Message 1 remains saved as confirmed memory with no additional action
+8. Queue resumes — LLM processes message 2
+
+Scenario 80
+1. User sends 3 text messages in quick succession:
+   - "Remind me to call the dentist at 3pm"
+   - "The best pizza place in town is Mario's"
+   - "When did I last go to the gym?"
+2. System responds "Processing..." to message 1, "Added to queue" to messages 2 and 3
+3. LLM processes message 1: classifies as "reminder", proposes it — conversation resolved immediately
+4. After delay, LLM processes message 2: classifies as "general_note", saves + suggests tags — resolved immediately
+5. After delay, LLM processes message 3: classifies as "search", returns results — resolved immediately
+6. No pauses because no message was ambiguous
