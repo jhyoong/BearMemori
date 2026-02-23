@@ -2,7 +2,7 @@
 
 Review of LLM worker consumer (`llm_worker/worker/consumer.py`) against the Phase 3 plans and the Telegram consumer's expected notification format.
 
-## Issue 1: Notification format mismatch (CRITICAL) -- FIXING
+## Issue 1: Notification format mismatch (CRITICAL) -- DONE
 
 The Telegram consumer at `telegram/tg_gateway/consumer.py` expects notifications on `notify:telegram` in this wrapper format:
 
@@ -22,7 +22,7 @@ Missing `user_id`, uses `type` instead of `message_type`, spreads handler result
 
 Rewrite the notification publish in `_process_message()` to use the wrapper format. Same for failure notifications.
 
-## Issue 2: Notification type names mismatch (CRITICAL) -- FIXING
+## Issue 2: Notification type names mismatch (CRITICAL) -- DONE
 
 The Telegram consumer dispatches on `message_type` using these values:
 
