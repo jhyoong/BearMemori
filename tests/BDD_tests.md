@@ -166,56 +166,71 @@ Scenario 16
 1. User sends text "Meeting with John at 3pm tomorrow"
 2. System responds: "Processing..."
 3. Text queued for LLM classification
-4. LLM classifies intent based on content
-5. System saves text as confirmed memory
-6. Inline buttons displayed: [Task] [Remind] [Tag] [Pin] [Delete]
-7. Memory tagged to user's Telegram ID with timestamp
+4. LLM classifies intent as "reminder"
+5. LLM extracts: action="Meeting with John", time="3pm tomorrow" (resolved from original message timestamp)
+6. System saves text as confirmed memory
+7. System sends: "Set reminder for 'Meeting with John' at 3pm tomorrow? [Confirm] [Edit time] [Just a note]"
+8. User taps [Confirm]
+9. Reminder created, linked to memory
 
 Scenario 17
 1. User sends a text message in a group chat
-2. System captures the message
-3. Message stored as confirmed Memory
-4. Memory tagged with sender's user_id and group chat_id
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies and processes accordingly
+5. Memory tagged with sender's user_id and group chat_id
 
 # Inline Actions Scenarios
 
 Scenario 18
 1. User sends a text message "Buy groceries"
-2. System stores Memory
-3. Inline buttons displayed: [Task] [Remind] [Tag] [Pin] [Delete]
-4. User taps [Task]
-5. Task created with description "Buy groceries"
-6. Task linked to source Memory
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies as general_note, saves as confirmed memory
+5. Inline buttons displayed: [Confirm Tags] [Edit Tags] [Task] [Remind] [Pin] [Delete]
+6. User taps [Task]
+7. Task created with description "Buy groceries"
+8. Task linked to source Memory
 
 Scenario 19
 1. User sends a text message "Renew passport by March 20"
-2. System stores Memory
-3. User taps [Remind] button
-4. System proposes March 18 at 9am (configurable default)
-5. User confirms
-6. Reminder scheduled for March 18
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies as reminder, saves as confirmed memory
+5. System proposes: "Set reminder for 'Renew passport' on March 18 at 9am? [Confirm] [Edit time] [Just a note]"
+6. User taps [Confirm]
+7. Reminder scheduled for March 18
 
 Scenario 20
 1. User sends a text message "Important contract details"
-2. System stores Memory
-3. User taps [Tag] button
-4. System prompts for tag input
-5. User enters tags manually
-6. Tags saved to Memory
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies as general_note, saves as confirmed memory
+5. LLM suggests tags, system displays: [Confirm Tags] [Edit Tags] [Task] [Remind] [Pin] [Delete]
+6. User taps [Edit Tags]
+7. System prompts for tag input
+8. User enters tags manually
+9. Tags saved to Memory
 
 Scenario 21
 1. User sends a text message "Key project deadline"
-2. System stores Memory
-3. User taps [Pin] button
-4. Memory is pinned with search boost
-5. Memory appears in /pinned filter
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies as general_note, saves as confirmed memory
+5. Inline buttons displayed: [Confirm Tags] [Edit Tags] [Task] [Remind] [Pin] [Delete]
+6. User taps [Pin]
+7. Memory is pinned with search boost
+8. Memory appears in /pinned filter
 
 Scenario 22
 1. User sends a text message "Temporary note to delete"
-2. System stores Memory
-3. User taps [Delete] button
-4. Memory hard deleted from database
-5. Audit log records deletion
+2. System responds: "Processing..."
+3. Text queued for LLM classification
+4. LLM classifies as general_note, saves as confirmed memory
+5. Inline buttons displayed: [Confirm Tags] [Edit Tags] [Task] [Remind] [Pin] [Delete]
+6. User taps [Delete]
+7. Memory hard deleted from database
+8. Audit log records deletion
 
 # Task Management Scenarios
 

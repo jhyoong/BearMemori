@@ -326,6 +326,8 @@ All LLM invocations are placed on an internal queue. Queue items expire after 14
 
 **Flood control:** When processing a backlog after LLM recovery, add a configurable delay (e.g., 5-10 seconds) between delivering results for consecutive messages.
 
+**Stale message handling:** When the LLM processes a queued message, the original message timestamp is included in the payload. The LLM uses this to resolve relative time references ("tomorrow", "in 5 minutes", "next week"). If the resolved datetime is in the past, the system notifies the user (e.g., "Your message from [date] mentioned a reminder for [resolved date], which has passed") and offers [Reschedule] [Dismiss]. If the user reschedules, they pick a new date/time. If dismissed, the memory is kept but no reminder/task is created.
+
 **Unconfirmed tag suggestions:** If the LLM successfully generates tag suggestions but the user does not act on them (confirm, reject, edit, or take any other action on the Memory) within 7 days, the suggestions are discarded. For images, this also triggers the pending Memory hard delete per the image retention policy (section 5.2).
 
 #### 5.7.3 Model Selection
@@ -409,6 +411,7 @@ In the event of database corruption, a full restore from the latest S3 backup is
 | Unanswered image suggestions | Pending Memory and image hard deleted after 7 days. |
 | Telegram API outage | Inbound capture paused. Scheduled reminders queued for delivery when restored. |
 | LLM queue overflow | Items beyond retry limit marked as failed in audit log. User notified to add metadata manually. |
+| Stale queued message (resolved time in the past) | When LLM processes a delayed message and resolves relative time references to a past datetime, user is notified with [Reschedule] [Dismiss] options. Memory is still saved. See 5.7.2 for details. |
 
 ---
 
