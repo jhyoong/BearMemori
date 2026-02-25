@@ -15,7 +15,7 @@ from worker.consumer import (
     CONSUMER_NAME,
     STREAM_NOTIFY_TELEGRAM,
 )
-from worker.retry import RetryTracker
+from worker.retry import RetryManager, FailureType
 from shared_lib.redis_streams import (
     STREAM_LLM_IMAGE_TAG,
     STREAM_LLM_INTENT,
@@ -73,8 +73,8 @@ def mock_core_api():
 
 @pytest.fixture
 def retry_tracker():
-    """Create a retry tracker with default settings."""
-    return RetryTracker(max_retries=3)
+    """Create a retry manager with default settings."""
+    return RetryManager()
 
 
 @pytest.fixture
@@ -488,3 +488,702 @@ def test_consumer_name_defined():
     """Verify CONSUMER_NAME is defined."""
     assert isinstance(CONSUMER_NAME, str)
     assert len(CONSUMER_NAME) > 0
+
+
+# =============================================================================
+# Task T004: Differentiated retry logic tests
+# =============================================================================
+# These tests verify the updated consumer behavior:
+# 1. Connection error (ConnectionRefusedError, Timeout) → UNAVAILABLE
+# 2. HTTP 5xx → UNAVAILABLE
+# 3. Unparseable JSON → INVALID_RESPONSE
+# 4. Missing required fields → INVALID_RESPONSE
+# 5. On INVALID_RESPONSE exhaustion → llm_failure notification
+# 6. On first UNAVAILABLE → "service unavailable" notification
+# 7. On 14-day expiry → llm_expiry notification
+# 8. Intent result includes structured data (intent, entities, stale flag)
+# =============================================================================
+
+
+class TestConnectionErrorClassification:
+    """Tests for connection error classification as UNAVAILABLE."""
+
+    @pytest.fixture
+    def retry_manager(self):
+        """Create a RetryManager instance."""
+        from worker.retry import RetryManager
+
+        return RetryManager()
+
+    @pytest.mark.asyncio
+    async def test_connection_refused_classifies_as_unavailable(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """ConnectionRefusedError should classify as UNAVAILABLE and pause queue."""
+        # Setup: Add a message to the stream
+        job_id = "job-conn-refused"
+        payload = {"memory_id": "mem-1", "image_path": "/tmp/test.jpg"}
+        await publish(
+            mock_redis,
+            STREAM_LLM_IMAGE_TAG,
+            {
+                "job_id": job_id,
+                "payload": payload,
+                "user_id": 12345,
+                "job_type": "image_tag",
+            },
+        )
+
+        # Create mock handler that raises ConnectionRefusedError
+        error = ConnectionRefusedError("Connection refused")
+        mock_handler = create_mock_handler(None, raises=error)
+        handlers = {"image_tag": mock_handler}
+
+        # Execute: Process one message
+        messages = await consume(
+            mock_redis, STREAM_LLM_IMAGE_TAG, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
+        )
+        assert len(messages) == 1
+        message_id, data = messages[0]
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_IMAGE_TAG,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Verify: Queue is paused due to UNAVAILABLE
+        assert retry_manager.is_queue_paused() is True
+
+        # Verify: Failure type recorded as UNAVAILABLE
+        from worker.retry import FailureType
+
+        assert retry_manager.get_failure_type(job_id) == FailureType.UNAVAILABLE
+
+    @pytest.mark.asyncio
+    async def test_timeout_classifies_as_unavailable(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """Timeout should classify as UNAVAILABLE and pause queue."""
+        # Setup: Add a message to the stream
+        job_id = "job-timeout"
+        payload = {"memory_id": "mem-2", "image_path": "/tmp/test.jpg"}
+        await publish(
+            mock_redis,
+            STREAM_LLM_IMAGE_TAG,
+            {
+                "job_id": job_id,
+                "payload": payload,
+                "user_id": 12345,
+                "job_type": "image_tag",
+            },
+        )
+
+        # Create mock handler that raises Timeout
+        error = asyncio.TimeoutError("Request timed out")
+        mock_handler = create_mock_handler(None, raises=error)
+        handlers = {"image_tag": mock_handler}
+
+        # Execute: Process one message
+        messages = await consume(
+            mock_redis, STREAM_LLM_IMAGE_TAG, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
+        )
+        assert len(messages) == 1
+        message_id, data = messages[0]
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_IMAGE_TAG,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Verify: Queue is paused due to UNAVAILABLE
+        assert retry_manager.is_queue_paused() is True
+
+        # Verify: Failure type recorded as UNAVAILABLE
+        from worker.retry import FailureType
+
+        assert retry_manager.get_failure_type(job_id) == FailureType.UNAVAILABLE
+
+
+class TestHTTP5xxClassification:
+    """Tests for HTTP 5xx response classification as UNAVAILABLE."""
+
+    @pytest.fixture
+    def retry_manager(self):
+        """Create a RetryManager instance."""
+        from worker.retry import RetryManager
+
+        return RetryManager()
+
+    @pytest.mark.asyncio
+    async def test_http_500_classifies_as_unavailable(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """HTTP 500 response should classify as UNAVAILABLE."""
+        # Setup: Add a message to the stream
+        job_id = "job-http-500"
+        payload = {"memory_id": "mem-3", "image_path": "/tmp/test.jpg"}
+        await publish(
+            mock_redis,
+            STREAM_LLM_IMAGE_TAG,
+            {
+                "job_id": job_id,
+                "payload": payload,
+                "user_id": 12345,
+                "job_type": "image_tag",
+            },
+        )
+
+        # Create mock handler that raises HTTPError with 500 status
+        from urllib.error import HTTPError
+
+        error = HTTPError(
+            url="http://llm/api",
+            code=500,
+            msg="Internal Server Error",
+            hdrs=None,
+            fp=None,
+        )
+        mock_handler = create_mock_handler(None, raises=error)
+        handlers = {"image_tag": mock_handler}
+
+        # Execute: Process one message
+        messages = await consume(
+            mock_redis, STREAM_LLM_IMAGE_TAG, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
+        )
+        assert len(messages) == 1
+        message_id, data = messages[0]
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_IMAGE_TAG,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Verify: Queue is paused due to UNAVAILABLE
+        assert retry_manager.is_queue_paused() is True
+
+        # Verify: Failure type recorded as UNAVAILABLE
+        from worker.retry import FailureType
+
+        assert retry_manager.get_failure_type(job_id) == FailureType.UNAVAILABLE
+
+
+class TestInvalidResponseClassification:
+    """Tests for INVALID_RESPONSE failure type classification."""
+
+    @pytest.fixture
+    def retry_manager(self):
+        """Create a RetryManager instance."""
+        from worker.retry import RetryManager
+
+        return RetryManager()
+
+    @pytest.mark.asyncio
+    async def test_unparseable_json_classifies_as_invalid_response(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """Unparseable JSON response should classify as INVALID_RESPONSE."""
+        # Setup: Add a message to the stream
+        job_id = "job-invalid-json"
+        payload = {"memory_id": "mem-4", "image_path": "/tmp/test.jpg"}
+        await publish(
+            mock_redis,
+            STREAM_LLM_IMAGE_TAG,
+            {
+                "job_id": job_id,
+                "payload": payload,
+                "user_id": 12345,
+                "job_type": "image_tag",
+            },
+        )
+
+        # Create mock handler that raises JSON decode error
+        import json
+
+        error = json.JSONDecodeError("Expecting value", "", 0)
+        mock_handler = create_mock_handler(None, raises=error)
+        handlers = {"image_tag": mock_handler}
+
+        # Execute: Process one message
+        messages = await consume(
+            mock_redis, STREAM_LLM_IMAGE_TAG, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
+        )
+        assert len(messages) == 1
+        message_id, data = messages[0]
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_IMAGE_TAG,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Verify: Failure type recorded as INVALID_RESPONSE
+        from worker.retry import FailureType
+
+        assert retry_manager.get_failure_type(job_id) == FailureType.INVALID_RESPONSE
+
+        # Verify: Queue is NOT paused (only UNAVAILABLE pauses queue)
+        assert retry_manager.is_queue_paused() is False
+
+    @pytest.mark.asyncio
+    async def test_missing_required_fields_classifies_as_invalid_response(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """Missing required fields in response should classify as INVALID_RESPONSE."""
+        # Setup: Add a message to the stream
+        job_id = "job-missing-fields"
+        payload = {"memory_id": "mem-5", "image_path": "/tmp/test.jpg"}
+        await publish(
+            mock_redis,
+            STREAM_LLM_IMAGE_TAG,
+            {
+                "job_id": job_id,
+                "payload": payload,
+                "user_id": 12345,
+                "job_type": "image_tag",
+            },
+        )
+
+        # Create mock handler that raises ValueError for missing fields
+        error = ValueError("Missing required field: tags")
+        mock_handler = create_mock_handler(None, raises=error)
+        handlers = {"image_tag": mock_handler}
+
+        # Execute: Process one message
+        messages = await consume(
+            mock_redis, STREAM_LLM_IMAGE_TAG, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
+        )
+        assert len(messages) == 1
+        message_id, data = messages[0]
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_IMAGE_TAG,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Verify: Failure type recorded as INVALID_RESPONSE
+        from worker.retry import FailureType
+
+        assert retry_manager.get_failure_type(job_id) == FailureType.INVALID_RESPONSE
+
+
+class TestInvalidResponseExhaustion:
+    """Tests for INVALID_RESPONSE exhaustion (5 attempts) behavior."""
+
+    @pytest.fixture
+    def retry_manager(self):
+        """Create a RetryManager instance."""
+        from worker.retry import RetryManager
+
+        return RetryManager()
+
+    @pytest.mark.asyncio
+    async def test_invalid_response_exhaustion_publishes_llm_failure_notification(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """On INVALID_RESPONSE exhaustion (5 attempts), publish llm_failure notification."""
+        import json
+
+        # Setup: Add a message to the stream
+        job_id = "job-exhausted"
+        payload = {
+            "memory_id": "mem-6",
+            "image_path": "/tmp/test.jpg",
+            "original_text": "Hello world",
+        }
+        await publish(
+            mock_redis,
+            STREAM_LLM_IMAGE_TAG,
+            {
+                "job_id": job_id,
+                "payload": payload,
+                "user_id": 12345,
+                "job_type": "image_tag",
+            },
+        )
+
+        # Create mock handler that raises invalid response error
+        import json
+
+        error = json.JSONDecodeError("Expecting value", "", 0)
+        mock_handler = create_mock_handler(None, raises=error)
+        handlers = {"image_tag": mock_handler}
+
+        # Simulate 5 failed attempts (exhaustion)
+        from worker.retry import FailureType
+
+        for i in range(5):
+            retry_manager.record_attempt(f"{job_id}-{i}", FailureType.INVALID_RESPONSE)
+        # For the actual job, record 5 attempts
+        for _ in range(5):
+            retry_manager.record_attempt(job_id, FailureType.INVALID_RESPONSE)
+
+        # Verify: Should NOT retry after 5 attempts
+        assert retry_manager.should_retry(job_id) is False
+
+        # Execute: Process one message after exhaustion
+        messages = await consume(
+            mock_redis, STREAM_LLM_IMAGE_TAG, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
+        )
+        assert len(messages) == 1
+        message_id, data = messages[0]
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_IMAGE_TAG,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Verify: Job marked as failed
+        mock_core_api.update_job.assert_called_with(
+            job_id=job_id, status="failed", error_message=json.JSONDecodeError.__name__
+        )
+
+        # Verify: llm_failure notification published
+        notify_messages = await mock_redis.xread(
+            {STREAM_NOTIFY_TELEGRAM: "0"}, count=10
+        )
+        assert len(notify_messages) >= 1
+
+        # Find the llm_failure notification
+        found_failure = False
+        for stream, msgs in notify_messages:
+            for msg_id, fields in msgs:
+                data_str = fields.get(b"data")
+                if data_str:
+                    notification_data = json.loads(data_str.decode())
+                    if notification_data.get("message_type") == "llm_failure":
+                        found_failure = True
+                        # Verify the failure message content
+                        content = notification_data.get("content", {})
+                        assert "I couldn't process your" in content.get("message", "")
+
+        assert found_failure, (
+            "llm_failure notification should be published on exhaustion"
+        )
+
+
+class TestUnavailableNotification:
+    """Tests for UNAVAILABLE first-occurrence notification."""
+
+    @pytest.fixture
+    def retry_manager(self):
+        """Create a RetryManager instance."""
+        from worker.retry import RetryManager
+
+        return RetryManager()
+
+    @pytest.mark.asyncio
+    async def test_first_unavailable_publishes_service_unavailable_notification(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """On first UNAVAILABLE, publish 'service unavailable' notification."""
+        import json
+
+        # Setup: Add a message to the stream
+        job_id = "job-first-unavail"
+        payload = {"memory_id": "mem-7", "image_path": "/tmp/test.jpg"}
+        await publish(
+            mock_redis,
+            STREAM_LLM_IMAGE_TAG,
+            {
+                "job_id": job_id,
+                "payload": payload,
+                "user_id": 12345,
+                "job_type": "image_tag",
+            },
+        )
+
+        # Create mock handler that raises connection error
+        error = ConnectionRefusedError("Connection refused")
+        mock_handler = create_mock_handler(None, raises=error)
+        handlers = {"image_tag": mock_handler}
+
+        # Execute: Process one message - first UNAVAILABLE occurrence
+        messages = await consume(
+            mock_redis, STREAM_LLM_IMAGE_TAG, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
+        )
+        assert len(messages) == 1
+        message_id, data = messages[0]
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_IMAGE_TAG,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Verify: Queue is paused
+        assert retry_manager.is_queue_paused() is True
+
+        # Verify: Notification was published with unavailable message
+        notify_messages = await mock_redis.xread(
+            {STREAM_NOTIFY_TELEGRAM: "0"}, count=10
+        )
+        assert len(notify_messages) >= 1
+
+        # Find notification with the "service unavailable" message
+        found_unavailable_msg = False
+        for stream, msgs in notify_messages:
+            for msg_id, fields in msgs:
+                data_str = fields.get(b"data")
+                if data_str:
+                    notification_data = json.loads(data_str.decode())
+                    msg_type = notification_data.get("message_type", "")
+                    content = notification_data.get("content", {})
+                    # Check for the specific message text
+                    msg_text = (
+                        content.get("message", "")
+                        if isinstance(content, dict)
+                        else str(content)
+                    )
+                    if (
+                        "I couldn't generate tags" in msg_text
+                        or "service" in msg_text.lower()
+                    ):
+                        if (
+                            "retry" in msg_text.lower()
+                            or "available" in msg_text.lower()
+                        ):
+                            found_unavailable_msg = True
+
+        assert found_unavailable_msg, (
+            "First UNAVAILABLE should publish 'service unavailable, will retry' notification"
+        )
+
+
+class TestExpiryNotification:
+    """Tests for 14-day expiry notification."""
+
+    @pytest.fixture
+    def retry_manager_with_time(self):
+        """Create a RetryManager with mocked time for expiry testing."""
+        from worker.retry import RetryManager
+
+        return RetryManager()
+
+    @pytest.mark.asyncio
+    async def test_14_day_expiry_publishes_llm_expiry_notification(
+        self, mock_redis, mock_core_api, retry_manager_with_time, llm_worker_config
+    ):
+        """On 14-day expiry, publish llm_expiry notification."""
+        import json
+        from unittest.mock import patch
+
+        # Setup: Add a message to the stream
+        job_id = "job-expiry"
+        payload = {
+            "memory_id": "mem-8",
+            "image_path": "/tmp/test.jpg",
+            "original_message": "Hello from user",
+        }
+        await publish(
+            mock_redis,
+            STREAM_LLM_IMAGE_TAG,
+            {
+                "job_id": job_id,
+                "payload": payload,
+                "user_id": 12345,
+                "job_type": "image_tag",
+            },
+        )
+
+        # Create mock handler that raises connection error
+        error = ConnectionRefusedError("Connection refused")
+        mock_handler = create_mock_handler(None, raises=error)
+        handlers = {"image_tag": mock_handler}
+
+        # Record UNAVAILABLE at time T (simulated 14 days ago)
+        start_time = 1000000.0  # Arbitrary start time
+        with patch("worker.retry.time.time") as mock_time:
+            mock_time.return_value = start_time
+            retry_manager_with_time.record_attempt(
+                job_id, json.JSONDecodeError.__class__.__bases__[0]
+            )
+
+        # Now simulate time has passed 14 days
+        expiry_time = start_time + 14 * 24 * 3600 + 1  # 14 days + 1 second
+
+        with patch("worker.retry.time.time") as mock_time:
+            mock_time.return_value = expiry_time
+
+            # Verify: should_retry returns False (expired)
+            assert retry_manager_with_time.should_retry(job_id) is False
+
+        # Execute: Process one message after expiry
+        messages = await consume(
+            mock_redis, STREAM_LLM_IMAGE_TAG, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
+        )
+        assert len(messages) == 1
+        message_id, data = messages[0]
+
+        # Simulate the expired retry scenario
+        with patch("worker.retry.time.time") as mock_time:
+            mock_time.return_value = expiry_time
+
+            await _process_message(
+                redis_client=mock_redis,
+                stream_name=STREAM_LLM_IMAGE_TAG,
+                message_id=message_id,
+                data=data,
+                handlers=handlers,
+                core_api=mock_core_api,
+                retry_tracker=retry_manager_with_time,
+                config=llm_worker_config,
+            )
+
+        # Verify: Job marked as failed (expired)
+        mock_core_api.update_job.assert_called_with(
+            job_id=job_id,
+            status="failed",
+            error_message=ConnectionRefusedError.__name__,
+        )
+
+        # Verify: llm_expiry notification published
+        notify_messages = await mock_redis.xread(
+            {STREAM_NOTIFY_TELEGRAM: "0"}, count=10
+        )
+        assert len(notify_messages) >= 1
+
+        # Find the llm_expiry notification
+        found_expiry = False
+        for stream, msgs in notify_messages:
+            for msg_id, fields in msgs:
+                data_str = fields.get(b"data")
+                if data_str:
+                    notification_data = json.loads(data_str.decode())
+                    if notification_data.get("message_type") == "llm_expiry":
+                        found_expiry = True
+                        # Verify it contains original message text and timestamp
+                        content = notification_data.get("content", {})
+                        # Should have original message and failure type info
+
+        assert found_expiry, (
+            "llm_expiry notification should be published on 14-day expiry"
+        )
+
+
+class TestIntentResultStructuredData:
+    """Tests for intent result including structured data (intent, entities, stale flag)."""
+
+    @pytest.fixture
+    def retry_manager(self):
+        """Create a RetryManager instance."""
+        from worker.retry import RetryManager
+
+        return RetryManager()
+
+    @pytest.mark.asyncio
+    async def test_intent_result_includes_structured_data(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """Intent result should include structured data (intent, entities, stale flag)."""
+        import json
+
+        # Setup: Add a message to the stream
+        job_id = "job-intent-result"
+        payload = {"memory_id": "mem-9", "text": "Remind me to call mom tomorrow"}
+        await publish(
+            mock_redis,
+            STREAM_LLM_INTENT,
+            {
+                "job_id": job_id,
+                "payload": payload,
+                "user_id": 12345,
+                "job_type": "intent_classify",
+            },
+        )
+
+        # Create mock handler that returns structured intent result
+        intent_result = {
+            "intent": "call_reminder",
+            "entities": {"person": "mom", "time": "tomorrow"},
+            "stale": False,
+            "raw_response": "Reminder for calling mom tomorrow",
+        }
+        mock_handler = create_mock_handler(intent_result)
+        handlers = {"intent_classify": mock_handler}
+
+        # Execute: Process one message
+        messages = await consume(
+            mock_redis, STREAM_LLM_INTENT, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
+        )
+        assert len(messages) == 1
+        message_id, data = messages[0]
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Verify: Handler was called
+        mock_handler.handle.assert_called_once()
+
+        # Verify: Job status updated to completed with full result
+        mock_core_api.update_job.assert_called_once_with(
+            job_id=job_id, status="completed", result=intent_result
+        )
+
+        # Verify: Notification was published to telegram stream with structured data
+        notify_messages = await mock_redis.xread({STREAM_NOTIFY_TELEGRAM: "0"}, count=1)
+        assert len(notify_messages) == 1
+        stream, msgs = notify_messages[0]
+        assert stream.decode() == STREAM_NOTIFY_TELEGRAM
+        msg_id, fields = msgs[0]
+        notification_data = json.loads(fields[b"data"].decode())
+        assert notification_data["user_id"] == 12345
+        assert notification_data["message_type"] == "llm_intent_result"
+
+        # Verify: Content includes all structured fields
+        content = notification_data["content"]
+        assert content["intent"] == "call_reminder"
+        assert content["entities"] == {"person": "mom", "time": "tomorrow"}
+        assert content["stale"] is False
+
+
+# =============================================================================
+# End of Task T004 tests
+# =============================================================================

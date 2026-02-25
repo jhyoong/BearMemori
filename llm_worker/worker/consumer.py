@@ -1,8 +1,10 @@
 """LLM Worker consumer - processes jobs from Redis streams."""
 
 import asyncio
+import json
 import logging
 from typing import Any
+from urllib.error import HTTPError
 
 from shared_lib.redis_streams import (
     GROUP_LLM_WORKER,
@@ -20,7 +22,7 @@ from shared_lib.redis_streams import (
 
 from worker.core_api_client import CoreAPIClient
 from worker.handlers.base import BaseHandler
-from worker.retry import RetryTracker
+from worker.retry import RetryManager, FailureType
 from worker.config import LLMWorkerSettings
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,46 @@ STREAM_NOTIFICATION_TYPE = {
 }
 
 
+def _classify_failure_type(exception: Exception) -> FailureType:
+    """Classify an exception into a FailureType.
+
+    - Connection errors, timeouts, HTTP 5xx → UNAVAILABLE
+    - Unparseable/invalid JSON, missing required fields → INVALID_RESPONSE
+    """
+    error_msg = str(exception).lower()
+    error_type = type(exception).__name__
+
+    # Connection errors and timeouts → UNAVAILABLE
+    if isinstance(exception, (ConnectionRefusedError, ConnectionError, OSError)):
+        if "connection" in error_msg or "refused" in error_msg or "reset" in error_msg:
+            return FailureType.UNAVAILABLE
+    if isinstance(exception, asyncio.TimeoutError):
+        return FailureType.UNAVAILABLE
+
+    # HTTP 5xx errors → UNAVAILABLE
+    if isinstance(exception, HTTPError):
+        if exception.code >= 500:
+            return FailureType.UNAVAILABLE
+
+    # JSON decode errors → INVALID_RESPONSE
+    if isinstance(exception, json.JSONDecodeError):
+        return FailureType.INVALID_RESPONSE
+
+    # Missing required fields → INVALID_RESPONSE
+    if isinstance(exception, ValueError):
+        if "missing required field" in error_msg or "required field" in error_msg:
+            return FailureType.INVALID_RESPONSE
+
+    # Default to UNAVAILABLE for connection/timeout-like errors
+    if isinstance(
+        exception, (ConnectionRefusedError, asyncio.TimeoutError, ConnectionError)
+    ):
+        return FailureType.UNAVAILABLE
+
+    # Default to INVALID_RESPONSE for other parsing errors
+    return FailureType.INVALID_RESPONSE
+
+
 async def _process_message(
     redis_client,
     stream_name: str,
@@ -54,7 +96,7 @@ async def _process_message(
     data: dict[str, Any],
     handlers: dict[str, BaseHandler],
     core_api: CoreAPIClient,
-    retry_tracker: RetryTracker,
+    retry_tracker: RetryManager,
     config: LLMWorkerSettings,
 ) -> None:
     """Process a single message from a Redis stream.
@@ -66,7 +108,7 @@ async def _process_message(
         data: Deserialized message data containing job_id, payload, user_id, job_type
         handlers: Dict mapping handler keys to handler instances
         core_api: Core API client for updating job status
-        retry_tracker: Retry tracker for managing retry logic
+        retry_tracker: Retry manager for managing retry logic
         config: LLM worker configuration
     """
     job_id = data.get("job_id")
@@ -93,13 +135,6 @@ async def _process_message(
         await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
         return
 
-    # Check if we should retry (pre-check for retry case)
-    current_attempt = retry_tracker.record_attempt(job_id)
-    should_retry = retry_tracker.should_retry(job_id)
-
-    # Note: We call "processing" only when handler fails (in except block)
-    # For success, we directly call "completed"
-
     try:
         # Call the handler
         result = await handler.handle(job_id, payload, user_id)
@@ -111,12 +146,18 @@ async def _process_message(
 
             # Publish notification in wrapper format for Telegram consumer
             if user_id is not None:
-                msg_type = STREAM_NOTIFICATION_TYPE.get(stream_name, "event_confirmation")
-                await publish(redis_client, STREAM_NOTIFY_TELEGRAM, {
-                    "user_id": user_id,
-                    "message_type": msg_type,
-                    "content": result,
-                })
+                msg_type = STREAM_NOTIFICATION_TYPE.get(
+                    stream_name, "event_confirmation"
+                )
+                await publish(
+                    redis_client,
+                    STREAM_NOTIFY_TELEGRAM,
+                    {
+                        "user_id": user_id,
+                        "message_type": msg_type,
+                        "content": result,
+                    },
+                )
         else:
             # Job completed but no notification needed
             await core_api.update_job(job_id=job_id, status="completed", result=None)
@@ -126,45 +167,214 @@ async def _process_message(
         await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
 
     except Exception as e:
-        error_message = str(e)
-        logger.exception(f"Error processing job {job_id}: {error_message}")
+        logger.exception(f"Error processing job {job_id}: {str(e)}")
 
-        if should_retry:
-            # Should retry - update status to processing, don't ack
-            await core_api.update_job(
-                job_id=job_id, status="processing", error_message=None
-            )
-            logger.info(f"Job {job_id} failed (attempt {current_attempt}), will retry")
-            # Add a small delay before returning to allow for backoff
-            await asyncio.sleep(retry_tracker.backoff_seconds(job_id))
+        # Classify the failure type
+        failure_type = _classify_failure_type(e)
+
+        # Set error_message based on failure type
+        if failure_type == FailureType.INVALID_RESPONSE:
+            error_message = type(e).__name__
         else:
-            # Max retries exceeded - mark as failed
-            logger.error(f"Job {job_id} failed after {current_attempt} attempts")
-            await core_api.update_job(
-                job_id=job_id, status="failed", error_message=error_message
+            error_message = str(e)
+
+        if failure_type == FailureType.INVALID_RESPONSE:
+            # Record the attempt
+            current_attempt = retry_tracker.record_attempt(
+                job_id, FailureType.INVALID_RESPONSE
+            )
+            should_retry = retry_tracker.should_retry(job_id)
+
+            if should_retry:
+                # Should retry - update status to processing, don't ack
+                await core_api.update_job(
+                    job_id=job_id, status="processing", error_message=None
+                )
+                logger.info(
+                    f"Job {job_id} failed (attempt {current_attempt}), will retry"
+                )
+                # Add backoff delay before returning (message not acked, will be retried)
+                await asyncio.sleep(retry_tracker.backoff_seconds(job_id))
+            else:
+                # Max retries exceeded - mark as failed
+                logger.error(f"Job {job_id} failed after {current_attempt} attempts")
+                await core_api.update_job(
+                    job_id=job_id, status="failed", error_message=error_message
+                )
+
+                # Publish llm_failure notification
+                if user_id is not None:
+                    await publish(
+                        redis_client,
+                        STREAM_NOTIFY_TELEGRAM,
+                        {
+                            "user_id": user_id,
+                            "message_type": "llm_failure",
+                            "content": {
+                                "job_type": job_type,
+                                "memory_id": payload.get("memory_id", ""),
+                                "message": f"I couldn't process your request after several attempts. Please try again later.",
+                            },
+                        },
+                    )
+
+                # Clear retry state and ack the message
+                retry_tracker.clear(job_id)
+                await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+
+        elif failure_type == FailureType.UNAVAILABLE:
+            # Check if job already has any failure type tracked - if so, check if expired
+            existing_failure_type = retry_tracker.get_failure_type(job_id)
+            if existing_failure_type is not None:
+                # Job already tracked - check if expired
+                should_retry = retry_tracker.should_retry(job_id)
+                if not should_retry:
+                    # 14-day expiry already reached - mark as failed
+                    logger.error(
+                        f"Job {job_id} expired after 14 days of unavailability"
+                    )
+                    await core_api.update_job(
+                        job_id=job_id, status="failed", error_message=type(e).__name__
+                    )
+
+                    # Publish llm_expiry notification
+                    if user_id is not None:
+                        await publish(
+                            redis_client,
+                            STREAM_NOTIFY_TELEGRAM,
+                            {
+                                "user_id": user_id,
+                                "message_type": "llm_expiry",
+                                "content": {
+                                    "job_type": job_type,
+                                    "memory_id": payload.get("memory_id", ""),
+                                    "original_message": payload.get(
+                                        "original_message", payload.get("text", "")
+                                    ),
+                                    "failure_type": "unavailable",
+                                },
+                            },
+                        )
+
+                    # Clear retry state and ack the message
+                    retry_tracker.clear(job_id)
+                    await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+                    return
+
+            # Record unavailability
+            retry_tracker.record_attempt(job_id, FailureType.UNAVAILABLE)
+            should_retry = retry_tracker.should_retry(job_id)
+
+            # Check if this is first occurrence (queue just paused)
+            queue_just_paused = (
+                retry_tracker._first_unavailable_time.get(job_id) is not None
             )
 
-            # Publish failure notification in wrapper format
-            if user_id is not None:
-                await publish(redis_client, STREAM_NOTIFY_TELEGRAM, {
-                    "user_id": user_id,
-                    "message_type": "llm_failure",
-                    "content": {
-                        "job_type": job_type,
-                        "memory_id": payload.get("memory_id", ""),
-                    },
-                })
+            if not should_retry:
+                # 14-day expiry already reached - mark as failed
+                logger.error(f"Job {job_id} expired after 14 days of unavailability")
+                await core_api.update_job(
+                    job_id=job_id, status="failed", error_message=type(e).__name__
+                )
 
-            # Clear retry tracker and ack the message
-            retry_tracker.clear(job_id)
-            await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+                # Publish llm_expiry notification
+                if user_id is not None:
+                    await publish(
+                        redis_client,
+                        STREAM_NOTIFY_TELEGRAM,
+                        {
+                            "user_id": user_id,
+                            "message_type": "llm_expiry",
+                            "content": {
+                                "job_type": job_type,
+                                "memory_id": payload.get("memory_id", ""),
+                                "original_message": payload.get(
+                                    "original_message", payload.get("text", "")
+                                ),
+                                "failure_type": "unavailable",
+                            },
+                        },
+                    )
+
+                # Clear retry state and ack the message
+                retry_tracker.clear(job_id)
+                await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+                return
+
+            # Record unavailability
+            retry_tracker.record_attempt(job_id, FailureType.UNAVAILABLE)
+            should_retry = retry_tracker.should_retry(job_id)
+
+            # Check if this is first occurrence (queue just paused)
+            queue_just_paused = (
+                retry_tracker._first_unavailable_time.get(job_id) is not None
+            )
+
+            if not should_retry:
+                # 14-day expiry reached - mark as failed
+                logger.error(f"Job {job_id} expired after 14 days of unavailability")
+                await core_api.update_job(
+                    job_id=job_id, status="failed", error_message=type(e).__name__
+                )
+
+                # Publish llm_expiry notification
+                if user_id is not None:
+                    await publish(
+                        redis_client,
+                        STREAM_NOTIFY_TELEGRAM,
+                        {
+                            "user_id": user_id,
+                            "message_type": "llm_expiry",
+                            "content": {
+                                "job_type": job_type,
+                                "memory_id": payload.get("memory_id", ""),
+                                "original_message": payload.get(
+                                    "original_message", payload.get("text", "")
+                                ),
+                                "failure_type": "unavailable",
+                            },
+                        },
+                    )
+
+                # Clear retry state and ack the message
+                retry_tracker.clear(job_id)
+                await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+            else:
+                # Within 14-day window - update status to processing, don't ack
+                await core_api.update_job(
+                    job_id=job_id, status="processing", error_message=None
+                )
+                logger.info(
+                    f"Job {job_id} failed due to service unavailability, will retry"
+                )
+
+                # On first occurrence, publish service unavailable notification
+                if queue_just_paused and user_id is not None:
+                    # Check if this is the first time for this job
+                    first_time_for_job = job_id in retry_tracker._first_unavailable_time
+                    if first_time_for_job:
+                        await publish(
+                            redis_client,
+                            STREAM_NOTIFY_TELEGRAM,
+                            {
+                                "user_id": user_id,
+                                "message_type": "llm_failure",
+                                "content": {
+                                    "job_type": job_type,
+                                    "memory_id": payload.get("memory_id", ""),
+                                    "message": "I couldn't generate tags right now due to a temporary service issue. I'll retry automatically once the service becomes available.",
+                                },
+                            },
+                        )
+
+                # Message not acked - will be retried later
 
 
 async def run_consumer(
     redis_client,
     handlers: dict[str, BaseHandler],
     core_api: CoreAPIClient,
-    retry_tracker: RetryTracker,
+    retry_tracker: RetryManager,
     config: LLMWorkerSettings,
 ) -> None:
     """Run the LLM worker consumer loop.
@@ -176,7 +386,7 @@ async def run_consumer(
         redis_client: Async Redis client instance
         handlers: Dict mapping handler keys to handler instances
         core_api: Core API client
-        retry_tracker: Retry tracker for managing retry logic
+        retry_tracker: Retry manager for managing retry logic
         config: LLM worker configuration
     """
     # Get stream names from the mapping values

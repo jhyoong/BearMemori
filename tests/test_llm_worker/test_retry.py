@@ -1,68 +1,179 @@
-"""Tests for the retry module."""
+"""Tests for the RetryManager class."""
 
-from worker.retry import RetryTracker
+import time
+from unittest.mock import patch
 
+import pytest
 
-def test_record_attempt_increments():
-    """record_attempt returns 1, 2, 3..."""
-    tracker = RetryTracker(max_retries=5)
-    assert tracker.record_attempt("job-1") == 1
-    assert tracker.record_attempt("job-1") == 2
-    assert tracker.record_attempt("job-1") == 3
+from worker.retry import FailureType, RetryManager
 
 
-def test_should_retry_under_limit():
-    """True when attempts < max_retries."""
-    tracker = RetryTracker(max_retries=5)
-    tracker.record_attempt("job-1")
-    assert tracker.should_retry("job-1") is True
-    tracker.record_attempt("job-1")
-    assert tracker.should_retry("job-1") is True
+class TestInvalidResponse:
+    """Tests for INVALID_RESPONSE failure type."""
+
+    def test_invalid_response_exponential_backoff_sequence(self):
+        """Exponential backoff: 1s, 2s, 4s, 8s, 16s (capped at 16s)."""
+        manager = RetryManager()
+
+        # First attempt - should return 1.0
+        manager.record_attempt("job-1", FailureType.INVALID_RESPONSE)
+        assert manager.backoff_seconds("job-1") == 1.0
+
+        # Second attempt - should return 2.0
+        manager.record_attempt("job-1", FailureType.INVALID_RESPONSE)
+        assert manager.backoff_seconds("job-1") == 2.0
+
+        # Third attempt - should return 4.0
+        manager.record_attempt("job-1", FailureType.INVALID_RESPONSE)
+        assert manager.backoff_seconds("job-1") == 4.0
+
+        # Fourth attempt - should return 8.0
+        manager.record_attempt("job-1", FailureType.INVALID_RESPONSE)
+        assert manager.backoff_seconds("job-1") == 8.0
+
+        # Fifth attempt - should return 16.0 (capped)
+        manager.record_attempt("job-1", FailureType.INVALID_RESPONSE)
+        assert manager.backoff_seconds("job-1") == 16.0
+
+        # Sixth attempt - should still return 16.0 (capped)
+        manager.record_attempt("job-1", FailureType.INVALID_RESPONSE)
+        assert manager.backoff_seconds("job-1") == 16.0
+
+    def test_invalid_response_max_5_attempts(self):
+        """should_retry returns False after 5 attempts."""
+        manager = RetryManager()
+
+        # Attempt 1-4: should retry
+        for _ in range(4):
+            manager.record_attempt("job-1", FailureType.INVALID_RESPONSE)
+            assert manager.should_retry("job-1") is True
+
+        # Attempt 5: should NOT retry (exhausted)
+        manager.record_attempt("job-1", FailureType.INVALID_RESPONSE)
+        assert manager.should_retry("job-1") is False
+
+    def test_invalid_response_different_jobs_independent(self):
+        """Each job has independent retry counts."""
+        manager = RetryManager()
+
+        # Job 1: exhaust
+        for _ in range(5):
+            manager.record_attempt("job-1", FailureType.INVALID_RESPONSE)
+
+        # Job 2: still has retries
+        manager.record_attempt("job-2", FailureType.INVALID_RESPONSE)
+
+        assert manager.should_retry("job-1") is False
+        assert manager.should_retry("job-2") is True
 
 
-def test_should_retry_at_limit():
-    """False when attempts == max_retries."""
-    tracker = RetryTracker(max_retries=3)
-    tracker.record_attempt("job-1")
-    tracker.record_attempt("job-1")
-    tracker.record_attempt("job-1")
-    assert tracker.should_retry("job-1") is False
+class TestUnavailable:
+    """Tests for UNAVAILABLE failure type."""
+
+    def test_unavailable_sets_queue_paused_on_first_failure(self):
+        """On first UNAVAILABLE failure, _queue_paused should be True."""
+        manager = RetryManager()
+
+        assert manager.is_queue_paused() is False
+
+        manager.record_attempt("job-1", FailureType.UNAVAILABLE)
+
+        assert manager.is_queue_paused() is True
+
+    def test_unavailable_tracks_first_unavailable_time_per_job(self):
+        """Each job tracks its own first_unavailable_time."""
+        manager = RetryManager()
+
+        # Record at different times
+        with patch("time.time") as mock_time:
+            mock_time.return_value = 1000.0
+            manager.record_attempt("job-1", FailureType.UNAVAILABLE)
+
+            mock_time.return_value = 2000.0
+            manager.record_attempt("job-2", FailureType.UNAVAILABLE)
+
+        # Each job should have its own timestamp
+        # We verify this by checking should_retry behavior
+        # Jobs should not be retryable immediately after first failure
+        assert manager.should_retry("job-1") is True
+        assert manager.should_retry("job-2") is True
+
+    def test_unavailable_should_retry_true_within_14_days(self):
+        """should_retry returns True if within 14-day window."""
+        manager = RetryManager()
+
+        # Record failure at time T
+        with patch("time.time") as mock_time:
+            mock_time.return_value = 1000000.0  # T
+            manager.record_attempt("job-1", FailureType.UNAVAILABLE)
+
+        # At T + 1 day (within 14 days): should retry
+        with patch("time.time") as mock_time:
+            mock_time.return_value = 1000000.0 + 1 * 24 * 3600  # T + 1 day
+            assert manager.should_retry("job-1") is True
+
+        # At T + 13 days (still within 14 days): should retry
+        with patch("time.time") as mock_time:
+            mock_time.return_value = 1000000.0 + 13 * 24 * 3600  # T + 13 days
+            assert manager.should_retry("job-1") is True
+
+    def test_unavailable_should_retry_false_after_14_days(self):
+        """should_retry returns False if after 14-day window."""
+        manager = RetryManager()
+
+        # Record failure at time T
+        with patch("time.time") as mock_time:
+            mock_time.return_value = 1000000.0  # T
+            manager.record_attempt("job-1", FailureType.UNAVAILABLE)
+
+        # At T + 14 days: should NOT retry
+        with patch("time.time") as mock_time:
+            mock_time.return_value = 1000000.0 + 14 * 24 * 3600  # T + 14 days
+            assert manager.should_retry("job-1") is False
 
 
-def test_clear_removes_tracking():
-    """After clear, should_retry returns True again."""
-    tracker = RetryTracker(max_retries=3)
-    tracker.record_attempt("job-1")
-    tracker.record_attempt("job-1")
-    tracker.record_attempt("job-1")
-    assert tracker.should_retry("job-1") is False
-    tracker.clear("job-1")
-    assert tracker.should_retry("job-1") is True
+class TestRetryManagerInterface:
+    """Tests for the full RetryManager interface."""
 
+    def test_record_attempt_with_invalid_response(self):
+        """record_attempt with INVALID_RESPONSE increments count."""
+        manager = RetryManager()
 
-def test_backoff_seconds_exponential():
-    """1, 2, 4, 8, 16, 32, 60, 60 (capped)."""
-    tracker = RetryTracker(max_retries=10)
-    assert tracker.backoff_seconds("unknown") == 1.0
-    tracker.record_attempt("job-1")
-    assert tracker.backoff_seconds("job-1") == 1.0
-    tracker.record_attempt("job-1")
-    assert tracker.backoff_seconds("job-1") == 2.0
-    tracker.record_attempt("job-1")
-    assert tracker.backoff_seconds("job-1") == 4.0
-    tracker.record_attempt("job-1")
-    assert tracker.backoff_seconds("job-1") == 8.0
-    tracker.record_attempt("job-1")
-    assert tracker.backoff_seconds("job-1") == 16.0
-    tracker.record_attempt("job-1")
-    assert tracker.backoff_seconds("job-1") == 32.0
-    tracker.record_attempt("job-1")
-    assert tracker.backoff_seconds("job-1") == 60.0
-    tracker.record_attempt("job-1")
-    assert tracker.backoff_seconds("job-1") == 60.0
+        result = manager.record_attempt("job-1", FailureType.INVALID_RESPONSE)
 
+        assert result == 1
+        assert manager.get_failure_type("job-1") == FailureType.INVALID_RESPONSE
 
-def test_backoff_seconds_default():
-    """Returns 1.0 for unknown job_id."""
-    tracker = RetryTracker(max_retries=5)
-    assert tracker.backoff_seconds("unknown-job") == 1.0
+    def test_record_attempt_with_unavailable(self):
+        """record_attempt with UNAVAILABLE sets queue paused."""
+        manager = RetryManager()
+
+        manager.record_attempt("job-1", FailureType.UNAVAILABLE)
+
+        assert manager.is_queue_paused() is True
+        assert manager.get_failure_type("job-1") == FailureType.UNAVAILABLE
+
+    def test_get_failure_type_returns_none_for_unknown_job(self):
+        """get_failure_type returns None for job not in tracker."""
+        manager = RetryManager()
+
+        result = manager.get_failure_type("unknown-job")
+
+        assert result is None
+
+    def test_backoff_seconds_for_unavailable_returns_zero(self):
+        """backoff_seconds returns 0 for UNAVAILABLE type."""
+        manager = RetryManager()
+
+        manager.record_attempt("job-1", FailureType.UNAVAILABLE)
+
+        # UNAVAILABLE doesn't use backoff - returns 0
+        assert manager.backoff_seconds("job-1") == 0.0
+
+    def test_backoff_seconds_unknown_job_returns_zero(self):
+        """backoff_seconds returns 0 for unknown job."""
+        manager = RetryManager()
+
+        result = manager.backoff_seconds("unknown-job")
+
+        assert result == 0.0

@@ -9,17 +9,75 @@ Respond ONLY with valid JSON in this exact format:
 {{"description": "A short description of the image", "tags": ["tag1", "tag2", "tag3"]}}"""
 
 INTENT_CLASSIFY_PROMPT = """\
-Classify the search intent of this query: "{query}"
+Classify the intent of this user message and extract structured entities.
+
+User message: {message}
+Original timestamp: {original_timestamp}
 
 Possible intents:
-- memory_search: looking for a saved memory or note
-- task_lookup: looking for a task or to-do item
-- reminder_check: looking for a reminder
-- event_search: looking for an event or appointment
-- ambiguous: cannot determine intent
+- reminder: user wants to be reminded about something at a specific time
+- task: user wants to create a task or to-do item with a due date
+- search: user is searching for a memory, note, or past information
+- general_note: user is saving a general note or thought without specific time/action requirements
+- ambiguous: cannot determine intent with confidence, need more context
 
-Respond ONLY with valid JSON:
-{{"intent": "one_of_the_above", "keywords": ["extracted", "keywords"]}}"""
+For each intent, extract the following structured entities:
+
+If intent is "reminder":
+{{"intent": "reminder", "action": "what the user wants to be reminded about", "time": "raw time reference from message", "resolved_time": "absolute ISO8601 datetime resolved relative to original_timestamp"}}
+
+If intent is "task":
+{{"intent": "task", "description": "task description", "due_time": "raw due date from message", "resolved_due_time": "absolute ISO8601 datetime resolved relative to original_timestamp"}}
+
+If intent is "search":
+{{"intent": "search", "query": "search query", "keywords": ["extracted", "keywords"]}}
+
+If intent is "general_note":
+{{"intent": "general_note", "suggested_tags": ["relevant", "tags"]}}
+
+If intent is "ambiguous":
+{{"intent": "ambiguous", "followup_question": "natural follow-up question to clarify intent", "possible_intents": ["list", "of", "possible", "intents"]}}
+
+Resolve relative time references (like "tomorrow", "next week", "in 2 hours") to absolute ISO8601 datetimes relative to the original_timestamp provided.
+Generate a natural, conversational follow-up question for ambiguous intents.
+
+Respond ONLY with valid JSON in the appropriate format above."""
+
+RECLASSIFY_PROMPT = """\
+The user originally sent: {original_message}
+A clarifying question was asked: {followup_question}
+The user answered: {user_answer}
+Original timestamp: {original_timestamp}
+
+Based on this conversation context, re-classify the intent and extract entities.
+
+Possible intents:
+- reminder: user wants to be reminded about something at a specific time
+- task: user wants to create a task or to-do item with a due date
+- search: user is searching for a memory, note, or past information
+- general_note: user is saving a general note or thought without specific time/action requirements
+- ambiguous: cannot determine intent with confidence, need more context
+
+For each intent, extract the following structured entities:
+
+If intent is "reminder":
+{{"intent": "reminder", "action": "what the user wants to be reminded about", "time": "raw time reference from message", "resolved_time": "absolute ISO8601 datetime resolved relative to original_timestamp"}}
+
+If intent is "task":
+{{"intent": "task", "description": "task description", "due_time": "raw due date from message", "resolved_due_time": "absolute ISO8601 datetime resolved relative to original_timestamp"}}
+
+If intent is "search":
+{{"intent": "search", "query": "search query", "keywords": ["extracted", "keywords"]}}
+
+If intent is "general_note":
+{{"intent": "general_note", "suggested_tags": ["relevant", "tags"]}}
+
+If intent is "ambiguous":
+{{"intent": "ambiguous", "followup_question": "natural follow-up question to clarify intent", "possible_intents": ["list", "of", "possible", "intents"]}}
+
+Use the full conversation context to make a more accurate classification.
+
+Respond ONLY with valid JSON in the appropriate format above."""
 
 FOLLOWUP_PROMPT = """\
 The user searched for: "{message}"
