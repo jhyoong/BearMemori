@@ -346,6 +346,7 @@ class TestHandleConfirmDeletePhoto:
     def mock_context(self):
         """Create a mock context."""
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {}
         return context
 
     @pytest.fixture

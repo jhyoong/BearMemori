@@ -10,6 +10,7 @@ from tg_gateway.handlers.callback import (
     handle_callback,
     handle_invalid,
     _parse_callback_data,
+    _clear_conversation_state,
     handle_memory_action,
     handle_due_date_choice,
     handle_reminder_time_choice,
@@ -17,6 +18,8 @@ from tg_gateway.handlers.callback import (
     handle_search_detail,
     handle_task_action,
     handle_tag_confirm,
+    handle_intent_confirm,
+    handle_reschedule_action,
 )
 from tg_gateway.callback_data import (
     MemoryAction,
@@ -30,6 +33,12 @@ from tg_gateway.callback_data import (
     RescheduleAction,
 )
 from tg_gateway.core_client import CoreUnavailableError, CoreNotFoundError
+from tg_gateway.handlers.conversation import (
+    AWAITING_BUTTON_ACTION,
+    PENDING_LLM_CONVERSATION,
+    PENDING_REMINDER_MEMORY_ID,
+    USER_QUEUE_COUNT,
+)
 
 
 class TestParseCallbackData:
@@ -178,7 +187,10 @@ class TestHandleCallback:
     def mock_context(self):
         """Create a mock context."""
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        context.bot_data = {"core_client": MagicMock()}
+        core_client = MagicMock()
+        core_client.update_memory = AsyncMock()
+        context.bot_data = {"core_client": core_client}
+        context.user_data = {}
         return context
 
     @pytest.mark.asyncio
@@ -376,7 +388,9 @@ class TestStubHandlers:
     async def test_memory_action_stub(self, mock_update):
         """Test that handle_memory_action can be called."""
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {}
         core_client = MagicMock()
+        core_client.update_memory = AsyncMock()
         callback_data = MemoryAction(action="set_task", memory_id="123")
 
         # Should not raise - should complete without error
@@ -452,6 +466,7 @@ class TestStubHandlers:
 
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
         context.bot_data = {"user_id": 12345}
+        context.user_data = {}
 
         core_client = MagicMock()
         # Set up async mocks for core_client methods
@@ -551,6 +566,7 @@ class TestStubHandlers:
         update.callback_query.edit_message_text = AsyncMock()
 
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {}
 
         core_client = MagicMock()
         mock_memory = MagicMock()
@@ -659,27 +675,402 @@ class TestDispatchNewCallbackTypes:
         """Create a mock context."""
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
         context.bot_data = {"core_client": MagicMock()}
+        context.user_data = {}
         return context
 
     @pytest.mark.asyncio
-    async def test_intent_confirm_is_recognized(self, mock_update, mock_context):
-        """Test that IntentConfirm callback data is recognized and does not fall through."""
+    async def test_intent_confirm_dispatches_to_handler(self, mock_update, mock_context):
+        """Test that IntentConfirm callback data dispatches to handle_intent_confirm."""
         mock_update.callback_query.data = '{"memory_id": "123", "action": "confirm_task"}'
 
-        with patch("tg_gateway.handlers.callback.logger") as mock_logger:
+        with patch(
+            "tg_gateway.handlers.callback.handle_intent_confirm", new_callable=AsyncMock
+        ) as mock_handler:
             await handle_callback(mock_update, mock_context)
-            # Should log a warning about unimplemented handler, not "Unknown callback data"
-            warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
-            assert any("IntentConfirm" in c for c in warning_calls)
-            assert not any("Unknown callback data" in c for c in warning_calls)
+            mock_handler.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_reschedule_action_is_recognized(self, mock_update, mock_context):
-        """Test that RescheduleAction callback data is recognized and does not fall through."""
+    async def test_reschedule_action_dispatches_to_handler(self, mock_update, mock_context):
+        """Test that RescheduleAction callback data dispatches to handle_reschedule_action."""
         mock_update.callback_query.data = '{"memory_id": "123", "action": "reschedule"}'
 
-        with patch("tg_gateway.handlers.callback.logger") as mock_logger:
+        with patch(
+            "tg_gateway.handlers.callback.handle_reschedule_action", new_callable=AsyncMock
+        ) as mock_handler:
             await handle_callback(mock_update, mock_context)
-            warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
-            assert any("RescheduleAction" in c for c in warning_calls)
-            assert not any("Unknown callback data" in c for c in warning_calls)
+            mock_handler.assert_called_once()
+
+
+class TestClearConversationState:
+    """Tests for _clear_conversation_state helper."""
+
+    def test_clears_awaiting_button_action(self):
+        """Test that AWAITING_BUTTON_ACTION is removed from user_data."""
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {AWAITING_BUTTON_ACTION: True, USER_QUEUE_COUNT: 2}
+        _clear_conversation_state(context)
+        assert AWAITING_BUTTON_ACTION not in context.user_data
+
+    def test_clears_pending_llm_conversation(self):
+        """Test that PENDING_LLM_CONVERSATION is removed from user_data."""
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {PENDING_LLM_CONVERSATION: {"memory_id": "1"}, USER_QUEUE_COUNT: 1}
+        _clear_conversation_state(context)
+        assert PENDING_LLM_CONVERSATION not in context.user_data
+
+    def test_decrements_queue_count(self):
+        """Test that USER_QUEUE_COUNT is decremented by one."""
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {USER_QUEUE_COUNT: 3}
+        _clear_conversation_state(context)
+        assert context.user_data[USER_QUEUE_COUNT] == 2
+
+    def test_queue_count_clamps_at_zero(self):
+        """Test that USER_QUEUE_COUNT never goes below zero."""
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {USER_QUEUE_COUNT: 0}
+        _clear_conversation_state(context)
+        assert context.user_data[USER_QUEUE_COUNT] == 0
+
+    def test_handles_missing_keys_gracefully(self):
+        """Test that missing keys in user_data do not raise exceptions."""
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {}
+        # Should not raise
+        _clear_conversation_state(context)
+        assert context.user_data[USER_QUEUE_COUNT] == 0
+
+
+class TestHandleIntentConfirm:
+    """Tests for handle_intent_confirm handler."""
+
+    @pytest.fixture
+    def mock_update(self):
+        update = MagicMock(spec=Update)
+        update.callback_query = MagicMock()
+        update.callback_query.edit_message_text = AsyncMock()
+        return update
+
+    @pytest.fixture
+    def mock_context(self):
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {AWAITING_BUTTON_ACTION: True, PENDING_LLM_CONVERSATION: {}, USER_QUEUE_COUNT: 1}
+        return context
+
+    @pytest.fixture
+    def mock_core_client(self):
+        client = MagicMock()
+        client.update_memory = AsyncMock()
+        return client
+
+    @pytest.mark.asyncio
+    async def test_confirm_reminder_shows_reminder_time_keyboard(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """Test confirm_reminder shows reminder time keyboard."""
+        callback_data = IntentConfirm(memory_id="mem-1", action="confirm_reminder")
+        await handle_intent_confirm(mock_update, mock_context, callback_data, mock_core_client)
+
+        mock_core_client.update_memory.assert_awaited_once()
+        call_args = mock_update.callback_query.edit_message_text.call_args
+        assert call_args[0][0] == "Select when to be reminded:"
+        assert call_args[1]["reply_markup"] is not None
+
+    @pytest.mark.asyncio
+    async def test_edit_reminder_time_shows_reminder_time_keyboard(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """Test edit_reminder_time shows reminder time keyboard."""
+        callback_data = IntentConfirm(memory_id="mem-1", action="edit_reminder_time")
+        await handle_intent_confirm(mock_update, mock_context, callback_data, mock_core_client)
+
+        mock_core_client.update_memory.assert_awaited_once()
+        call_args = mock_update.callback_query.edit_message_text.call_args
+        assert call_args[0][0] == "Select a new reminder time:"
+        assert call_args[1]["reply_markup"] is not None
+
+    @pytest.mark.asyncio
+    async def test_confirm_task_shows_due_date_keyboard(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """Test confirm_task shows due date keyboard."""
+        callback_data = IntentConfirm(memory_id="mem-1", action="confirm_task")
+        await handle_intent_confirm(mock_update, mock_context, callback_data, mock_core_client)
+
+        mock_core_client.update_memory.assert_awaited_once()
+        call_args = mock_update.callback_query.edit_message_text.call_args
+        assert call_args[0][0] == "Select a due date for the task:"
+        assert call_args[1]["reply_markup"] is not None
+
+    @pytest.mark.asyncio
+    async def test_edit_task_shows_due_date_keyboard(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """Test edit_task shows due date keyboard."""
+        callback_data = IntentConfirm(memory_id="mem-1", action="edit_task")
+        await handle_intent_confirm(mock_update, mock_context, callback_data, mock_core_client)
+
+        mock_core_client.update_memory.assert_awaited_once()
+        call_args = mock_update.callback_query.edit_message_text.call_args
+        assert call_args[0][0] == "Select a due date:"
+        assert call_args[1]["reply_markup"] is not None
+
+    @pytest.mark.asyncio
+    async def test_just_a_note_replies_with_kept_as_note(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """Test just_a_note confirms memory and shows memory_actions keyboard."""
+        callback_data = IntentConfirm(memory_id="mem-1", action="just_a_note")
+        await handle_intent_confirm(mock_update, mock_context, callback_data, mock_core_client)
+
+        mock_core_client.update_memory.assert_awaited_once()
+        call_args = mock_update.callback_query.edit_message_text.call_args
+        assert call_args[0][0] == "Kept as a note."
+        assert call_args[1]["reply_markup"] is not None
+
+    @pytest.mark.asyncio
+    async def test_all_actions_confirm_memory(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """Test that all IntentConfirm actions confirm the memory."""
+        actions = ("confirm_reminder", "edit_reminder_time", "confirm_task", "edit_task", "just_a_note")
+        for action in actions:
+            mock_core_client.update_memory.reset_mock()
+            context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+            context.user_data = {USER_QUEUE_COUNT: 1}
+            callback_data = IntentConfirm(memory_id="mem-1", action=action)
+            await handle_intent_confirm(mock_update, context, callback_data, mock_core_client)
+            mock_core_client.update_memory.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_all_actions_clear_conversation_state(
+        self, mock_update, mock_core_client
+    ):
+        """Test that all IntentConfirm actions clear conversation state."""
+        actions = ("confirm_reminder", "edit_reminder_time", "confirm_task", "edit_task", "just_a_note")
+        for action in actions:
+            context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+            context.user_data = {
+                AWAITING_BUTTON_ACTION: True,
+                PENDING_LLM_CONVERSATION: {},
+                USER_QUEUE_COUNT: 2,
+            }
+            callback_data = IntentConfirm(memory_id="mem-1", action=action)
+            await handle_intent_confirm(mock_update, context, callback_data, mock_core_client)
+            assert AWAITING_BUTTON_ACTION not in context.user_data
+            assert PENDING_LLM_CONVERSATION not in context.user_data
+            assert context.user_data[USER_QUEUE_COUNT] == 1
+
+
+class TestHandleRescheduleAction:
+    """Tests for handle_reschedule_action handler."""
+
+    @pytest.fixture
+    def mock_update(self):
+        update = MagicMock(spec=Update)
+        update.callback_query = MagicMock()
+        update.callback_query.edit_message_text = AsyncMock()
+        return update
+
+    @pytest.fixture
+    def mock_context(self):
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {AWAITING_BUTTON_ACTION: True, USER_QUEUE_COUNT: 1}
+        return context
+
+    @pytest.fixture
+    def mock_core_client(self):
+        client = MagicMock()
+        client.update_memory = AsyncMock()
+        return client
+
+    @pytest.mark.asyncio
+    async def test_reschedule_sets_pending_reminder_and_prompts(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """Test reschedule sets PENDING_REMINDER_MEMORY_ID and prompts for date/time."""
+        callback_data = RescheduleAction(memory_id="mem-2", action="reschedule")
+        await handle_reschedule_action(mock_update, mock_context, callback_data, mock_core_client)
+
+        mock_core_client.update_memory.assert_awaited_once()
+        assert mock_context.user_data.get(PENDING_REMINDER_MEMORY_ID) == "mem-2"
+        call_text = mock_update.callback_query.edit_message_text.call_args[0][0]
+        assert "2024-12-31 14:30" in call_text
+
+    @pytest.mark.asyncio
+    async def test_dismiss_replies_dismissed(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """Test dismiss confirms memory and replies with Dismissed."""
+        callback_data = RescheduleAction(memory_id="mem-2", action="dismiss")
+        await handle_reschedule_action(mock_update, mock_context, callback_data, mock_core_client)
+
+        mock_core_client.update_memory.assert_awaited_once()
+        mock_update.callback_query.edit_message_text.assert_awaited_once_with("Dismissed.")
+
+    @pytest.mark.asyncio
+    async def test_both_actions_confirm_memory(
+        self, mock_update, mock_core_client
+    ):
+        """Test that both RescheduleAction actions confirm the memory."""
+        for action in ("reschedule", "dismiss"):
+            mock_core_client.update_memory.reset_mock()
+            context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+            context.user_data = {USER_QUEUE_COUNT: 1}
+            callback_data = RescheduleAction(memory_id="mem-2", action=action)
+            await handle_reschedule_action(mock_update, context, callback_data, mock_core_client)
+            mock_core_client.update_memory.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_both_actions_clear_conversation_state(
+        self, mock_update, mock_core_client
+    ):
+        """Test that both RescheduleAction actions clear conversation state."""
+        for action in ("reschedule", "dismiss"):
+            context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+            context.user_data = {
+                AWAITING_BUTTON_ACTION: True,
+                PENDING_LLM_CONVERSATION: {},
+                USER_QUEUE_COUNT: 2,
+            }
+            callback_data = RescheduleAction(memory_id="mem-2", action=action)
+            await handle_reschedule_action(mock_update, context, callback_data, mock_core_client)
+            assert AWAITING_BUTTON_ACTION not in context.user_data
+            assert PENDING_LLM_CONVERSATION not in context.user_data
+            assert context.user_data[USER_QUEUE_COUNT] == 1
+
+
+class TestExistingHandlersStateClearingAndConfirmation:
+    """Tests that existing handlers confirm pending memories and clear conversation state."""
+
+    @pytest.fixture
+    def mock_update(self):
+        update = MagicMock(spec=Update)
+        update.callback_query = MagicMock()
+        update.callback_query.edit_message_text = AsyncMock()
+        update.callback_query.edit_message_caption = AsyncMock()
+        update.callback_query.message = MagicMock()
+        update.callback_query.message.photo = None
+        update.effective_user = MagicMock()
+        update.effective_user.id = 12345
+        return update
+
+    @pytest.fixture
+    def mock_context_with_state(self):
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {
+            AWAITING_BUTTON_ACTION: True,
+            PENDING_LLM_CONVERSATION: {"memory_id": "1"},
+            USER_QUEUE_COUNT: 2,
+        }
+        return context
+
+    @pytest.fixture
+    def mock_core_client(self):
+        client = MagicMock()
+        client.update_memory = AsyncMock()
+        client.delete_memory = AsyncMock()
+        client.get_memory = AsyncMock()
+        client.add_tags = AsyncMock()
+        return client
+
+    @pytest.mark.asyncio
+    async def test_memory_action_set_task_confirms_and_clears_state(
+        self, mock_update, mock_context_with_state, mock_core_client
+    ):
+        """Test that set_task confirms memory and clears conversation state."""
+        callback_data = MemoryAction(action="set_task", memory_id="mem-1")
+        await handle_memory_action(
+            mock_update, mock_context_with_state, callback_data, mock_core_client
+        )
+
+        mock_core_client.update_memory.assert_awaited_once()
+        assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
+        assert PENDING_LLM_CONVERSATION not in mock_context_with_state.user_data
+
+    @pytest.mark.asyncio
+    async def test_memory_action_set_reminder_confirms_and_clears_state(
+        self, mock_update, mock_context_with_state, mock_core_client
+    ):
+        """Test that set_reminder confirms memory and clears conversation state."""
+        callback_data = MemoryAction(action="set_reminder", memory_id="mem-1")
+        await handle_memory_action(
+            mock_update, mock_context_with_state, callback_data, mock_core_client
+        )
+
+        mock_core_client.update_memory.assert_awaited_once()
+        assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
+
+    @pytest.mark.asyncio
+    async def test_memory_action_add_tag_confirms_and_clears_state(
+        self, mock_update, mock_context_with_state, mock_core_client
+    ):
+        """Test that add_tag confirms memory and clears conversation state."""
+        callback_data = MemoryAction(action="add_tag", memory_id="mem-1")
+        await handle_memory_action(
+            mock_update, mock_context_with_state, callback_data, mock_core_client
+        )
+
+        mock_core_client.update_memory.assert_awaited_once()
+        assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
+
+    @pytest.mark.asyncio
+    async def test_memory_action_toggle_pin_clears_state(
+        self, mock_update, mock_context_with_state, mock_core_client
+    ):
+        """Test that toggle_pin clears conversation state."""
+        callback_data = MemoryAction(action="toggle_pin", memory_id="mem-1")
+        await handle_memory_action(
+            mock_update, mock_context_with_state, callback_data, mock_core_client
+        )
+
+        mock_core_client.update_memory.assert_awaited_once()
+        assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
+
+    @pytest.mark.asyncio
+    async def test_confirm_delete_confirmed_clears_state(
+        self, mock_update, mock_context_with_state, mock_core_client
+    ):
+        """Test that confirmed delete clears conversation state."""
+        callback_data = ConfirmDelete(memory_id="mem-1", confirmed=True)
+        await handle_confirm_delete(
+            mock_update, mock_context_with_state, callback_data, mock_core_client
+        )
+
+        mock_core_client.delete_memory.assert_awaited_once()
+        assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
+        assert PENDING_LLM_CONVERSATION not in mock_context_with_state.user_data
+
+    @pytest.mark.asyncio
+    async def test_tag_confirm_confirm_all_clears_state(
+        self, mock_update, mock_context_with_state, mock_core_client
+    ):
+        """Test that tag confirm_all clears conversation state."""
+        mock_memory = MagicMock()
+        mock_tag = MagicMock()
+        mock_tag.tag = "work"
+        mock_tag.status = "suggested"
+        mock_memory.tags = [mock_tag]
+        mock_core_client.get_memory.return_value = mock_memory
+
+        callback_data = TagConfirm(memory_id="mem-1", action="confirm_all")
+        await handle_tag_confirm(
+            mock_update, mock_context_with_state, callback_data, mock_core_client
+        )
+
+        assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
+        assert PENDING_LLM_CONVERSATION not in mock_context_with_state.user_data
+
+    @pytest.mark.asyncio
+    async def test_tag_confirm_edit_confirms_memory_and_clears_state(
+        self, mock_update, mock_context_with_state, mock_core_client
+    ):
+        """Test that tag edit confirms memory and clears conversation state."""
+        callback_data = TagConfirm(memory_id="mem-1", action="edit")
+        await handle_tag_confirm(
+            mock_update, mock_context_with_state, callback_data, mock_core_client
+        )
+
+        mock_core_client.update_memory.assert_awaited_once()
+        assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
+        assert PENDING_LLM_CONVERSATION not in mock_context_with_state.user_data
