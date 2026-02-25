@@ -26,6 +26,8 @@ from tg_gateway.callback_data import (
     SearchDetail,
     TaskAction,
     TagConfirm,
+    IntentConfirm,
+    RescheduleAction,
 )
 from tg_gateway.core_client import CoreUnavailableError, CoreNotFoundError
 
@@ -96,6 +98,50 @@ class TestParseCallbackData:
         assert isinstance(result, TagConfirm)
         assert result.memory_id == "123"
         assert result.action == "confirm_all"
+
+    def test_parse_intent_confirm_confirm_reminder(self):
+        """Test parsing IntentConfirm callback data - confirm_reminder action."""
+        result = _parse_callback_data('{"memory_id": "123", "action": "confirm_reminder"}')
+        assert isinstance(result, IntentConfirm)
+        assert result.memory_id == "123"
+        assert result.action == "confirm_reminder"
+
+    def test_parse_intent_confirm_edit_reminder_time(self):
+        """Test parsing IntentConfirm callback data - edit_reminder_time action."""
+        result = _parse_callback_data('{"memory_id": "123", "action": "edit_reminder_time"}')
+        assert isinstance(result, IntentConfirm)
+        assert result.action == "edit_reminder_time"
+
+    def test_parse_intent_confirm_confirm_task(self):
+        """Test parsing IntentConfirm callback data - confirm_task action."""
+        result = _parse_callback_data('{"memory_id": "123", "action": "confirm_task"}')
+        assert isinstance(result, IntentConfirm)
+        assert result.action == "confirm_task"
+
+    def test_parse_intent_confirm_edit_task(self):
+        """Test parsing IntentConfirm callback data - edit_task action."""
+        result = _parse_callback_data('{"memory_id": "123", "action": "edit_task"}')
+        assert isinstance(result, IntentConfirm)
+        assert result.action == "edit_task"
+
+    def test_parse_intent_confirm_just_a_note(self):
+        """Test parsing IntentConfirm callback data - just_a_note action."""
+        result = _parse_callback_data('{"memory_id": "123", "action": "just_a_note"}')
+        assert isinstance(result, IntentConfirm)
+        assert result.action == "just_a_note"
+
+    def test_parse_reschedule_action_reschedule(self):
+        """Test parsing RescheduleAction callback data - reschedule action."""
+        result = _parse_callback_data('{"memory_id": "123", "action": "reschedule"}')
+        assert isinstance(result, RescheduleAction)
+        assert result.memory_id == "123"
+        assert result.action == "reschedule"
+
+    def test_parse_reschedule_action_dismiss(self):
+        """Test parsing RescheduleAction callback data - dismiss action."""
+        result = _parse_callback_data('{"memory_id": "123", "action": "dismiss"}')
+        assert isinstance(result, RescheduleAction)
+        assert result.action == "dismiss"
 
     def test_parse_invalid_json(self):
         """Test parsing invalid JSON returns None."""
@@ -538,3 +584,102 @@ class TestStubHandlers:
         update.callback_query.edit_message_text.assert_called_with(
             "Tags confirmed: tag1"
         )
+
+
+class TestIntentConfirmDataclass:
+    """Tests for IntentConfirm dataclass structure."""
+
+    def test_frozen_immutable(self):
+        """Test that IntentConfirm is frozen (immutable)."""
+        obj = IntentConfirm(memory_id="abc", action="confirm_reminder")
+        with pytest.raises(Exception):
+            obj.action = "something_else"  # type: ignore[misc]
+
+    def test_fields_stored_correctly(self):
+        """Test that field values are stored as provided."""
+        obj = IntentConfirm(memory_id="mem-42", action="confirm_task")
+        assert obj.memory_id == "mem-42"
+        assert obj.action == "confirm_task"
+
+    def test_all_valid_actions_parseable(self):
+        """Test that all five valid IntentConfirm actions parse correctly."""
+        valid_actions = (
+            "confirm_reminder",
+            "edit_reminder_time",
+            "confirm_task",
+            "edit_task",
+            "just_a_note",
+        )
+        for action in valid_actions:
+            result = _parse_callback_data(f'{{"memory_id": "1", "action": "{action}"}}')
+            assert isinstance(result, IntentConfirm), f"Expected IntentConfirm for action={action}"
+            assert result.action == action
+
+
+class TestRescheduleActionDataclass:
+    """Tests for RescheduleAction dataclass structure."""
+
+    def test_frozen_immutable(self):
+        """Test that RescheduleAction is frozen (immutable)."""
+        obj = RescheduleAction(memory_id="abc", action="reschedule")
+        with pytest.raises(Exception):
+            obj.action = "something_else"  # type: ignore[misc]
+
+    def test_fields_stored_correctly(self):
+        """Test that field values are stored as provided."""
+        obj = RescheduleAction(memory_id="mem-99", action="dismiss")
+        assert obj.memory_id == "mem-99"
+        assert obj.action == "dismiss"
+
+    def test_both_valid_actions_parseable(self):
+        """Test that both valid RescheduleAction actions parse correctly."""
+        for action in ("reschedule", "dismiss"):
+            result = _parse_callback_data(f'{{"memory_id": "1", "action": "{action}"}}')
+            assert isinstance(result, RescheduleAction), (
+                f"Expected RescheduleAction for action={action}"
+            )
+            assert result.action == action
+
+
+class TestDispatchNewCallbackTypes:
+    """Tests that handle_callback dispatches IntentConfirm and RescheduleAction."""
+
+    @pytest.fixture
+    def mock_update(self):
+        """Create a mock update with callback query."""
+        update = MagicMock(spec=Update)
+        update.callback_query = MagicMock()
+        update.callback_query.answer = AsyncMock()
+        update.callback_query.edit_message_text = AsyncMock()
+        update.callback_query.message = MagicMock()
+        return update
+
+    @pytest.fixture
+    def mock_context(self):
+        """Create a mock context."""
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.bot_data = {"core_client": MagicMock()}
+        return context
+
+    @pytest.mark.asyncio
+    async def test_intent_confirm_is_recognized(self, mock_update, mock_context):
+        """Test that IntentConfirm callback data is recognized and does not fall through."""
+        mock_update.callback_query.data = '{"memory_id": "123", "action": "confirm_task"}'
+
+        with patch("tg_gateway.handlers.callback.logger") as mock_logger:
+            await handle_callback(mock_update, mock_context)
+            # Should log a warning about unimplemented handler, not "Unknown callback data"
+            warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
+            assert any("IntentConfirm" in c for c in warning_calls)
+            assert not any("Unknown callback data" in c for c in warning_calls)
+
+    @pytest.mark.asyncio
+    async def test_reschedule_action_is_recognized(self, mock_update, mock_context):
+        """Test that RescheduleAction callback data is recognized and does not fall through."""
+        mock_update.callback_query.data = '{"memory_id": "123", "action": "reschedule"}'
+
+        with patch("tg_gateway.handlers.callback.logger") as mock_logger:
+            await handle_callback(mock_update, mock_context)
+            warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
+            assert any("RescheduleAction" in c for c in warning_calls)
+            assert not any("Unknown callback data" in c for c in warning_calls)

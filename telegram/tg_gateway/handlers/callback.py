@@ -27,6 +27,8 @@ from tg_gateway.callback_data import (
     SearchDetail,
     TaskAction,
     TagConfirm,
+    IntentConfirm,
+    RescheduleAction,
 )
 from tg_gateway.core_client import CoreClient, CoreUnavailableError, CoreNotFoundError
 from tg_gateway.handlers.conversation import (
@@ -85,6 +87,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await handle_task_action(update, context, callback_obj, core_client)
         elif isinstance(callback_obj, TagConfirm):
             await handle_tag_confirm(update, context, callback_obj, core_client)
+        elif isinstance(callback_obj, IntentConfirm):
+            logger.warning(f"IntentConfirm handler not yet implemented: {callback_obj}")
+        elif isinstance(callback_obj, RescheduleAction):
+            logger.warning(f"RescheduleAction handler not yet implemented: {callback_obj}")
         else:
             logger.warning(f"Unhandled callback type: {type(callback_obj)}")
     except CoreUnavailableError:
@@ -149,12 +155,25 @@ def _parse_callback_data(callback_data: str):
     elif "memory_id" in data and "action" not in data:
         return SearchDetail(memory_id=data["memory_id"])
     elif "action" in data and "memory_id" in data:
-        # Distinguish between MemoryAction and TagConfirm based on action value
+        # Distinguish between MemoryAction, TagConfirm, IntentConfirm, and RescheduleAction
+        # based on action value.
         # MemoryAction: set_task, set_reminder, add_tag, toggle_pin, confirm_delete
         # TagConfirm: confirm_all, edit
+        # IntentConfirm: confirm_reminder, edit_reminder_time, confirm_task, edit_task, just_a_note
+        # RescheduleAction: reschedule, dismiss
         action = data["action"]
         if action in ("confirm_all", "edit"):
             return TagConfirm(memory_id=data["memory_id"], action=action)
+        elif action in (
+            "confirm_reminder",
+            "edit_reminder_time",
+            "confirm_task",
+            "edit_task",
+            "just_a_note",
+        ):
+            return IntentConfirm(memory_id=data["memory_id"], action=action)
+        elif action in ("reschedule", "dismiss"):
+            return RescheduleAction(memory_id=data["memory_id"], action=action)
         elif action in (
             "set_task",
             "set_reminder",

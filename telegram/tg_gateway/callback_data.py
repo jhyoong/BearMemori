@@ -40,3 +40,15 @@ class SearchDetail:
 class TagConfirm:
     memory_id: str
     action: str
+
+
+@dataclass(frozen=True)
+class IntentConfirm:
+    memory_id: str
+    action: str
+
+
+@dataclass(frozen=True)
+class RescheduleAction:
+    memory_id: str
+    action: str
