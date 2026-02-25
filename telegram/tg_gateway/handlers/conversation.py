@@ -6,12 +6,81 @@ The next text message from the user is routed to the appropriate handler here.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+from typing import Optional
 
 from telegram import Update
+from telegram.ext import ContextTypes
+
+from shared_lib.enums import JobType
+from shared_lib.schemas import LLMJobCreate, TagsAddRequest, TaskCreate, ReminderCreate
+
+logger = logging.getLogger(__name__)
+
+# Conversation pending state keys
+PENDING_TAG_MEMORY_ID = "pending_tag_memory_id"
+PENDING_TASK_MEMORY_ID = "pending_task_memory_id"
+PENDING_REMINDER_MEMORY_ID = "pending_reminder_memory_id"
+PENDING_LLM_CONVERSATION = "pending_llm_conversation"
+AWAITING_BUTTON_ACTION = "awaiting_button_action"
+
+# Queue counter key — tracks how many LLM jobs are in flight for this user
+USER_QUEUE_COUNT = "user_queue_count"
 
 
-def parse_datetime(text: str) -> datetime | None:
+# ---------------------------------------------------------------------------
+# Queue counter helpers
+# ---------------------------------------------------------------------------
+
+
+def increment_queue(context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Increment the in-flight LLM job counter for the current user.
+
+    Args:
+        context: The Telegram context with user_data.
+
+    Returns:
+        The new queue count after incrementing.
+    """
+    count = context.user_data.get(USER_QUEUE_COUNT, 0) + 1
+    context.user_data[USER_QUEUE_COUNT] = count
+    return count
+
+
+def decrement_queue(context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Decrement the in-flight LLM job counter for the current user.
+
+    Clamps at zero so the counter never goes negative.
+
+    Args:
+        context: The Telegram context with user_data.
+
+    Returns:
+        The new queue count after decrementing (minimum 0).
+    """
+    count = max(0, context.user_data.get(USER_QUEUE_COUNT, 0) - 1)
+    context.user_data[USER_QUEUE_COUNT] = count
+    return count
+
+
+def get_queue_count(context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Return the current in-flight LLM job count for the user.
+
+    Args:
+        context: The Telegram context with user_data.
+
+    Returns:
+        Current queue count (0 if not set).
+    """
+    return context.user_data.get(USER_QUEUE_COUNT, 0)
+
+
+# ---------------------------------------------------------------------------
+# Date/time parsing utility
+# ---------------------------------------------------------------------------
+
+
+def parse_datetime(text: str) -> Optional[datetime]:
     """Parse date/time strings in multiple formats.
 
     Args:
@@ -37,16 +106,9 @@ def parse_datetime(text: str) -> datetime | None:
     return None
 
 
-from telegram.ext import ContextTypes
-
-from shared_lib.schemas import TagAdd, TagsAddRequest, TaskCreate, ReminderCreate
-
-logger = logging.getLogger(__name__)
-
-# Conversation pending state keys
-PENDING_TAG_MEMORY_ID = "pending_tag_memory_id"
-PENDING_TASK_MEMORY_ID = "pending_task_memory_id"
-PENDING_REMINDER_MEMORY_ID = "pending_reminder_memory_id"
+# ---------------------------------------------------------------------------
+# Conversation state handlers
+# ---------------------------------------------------------------------------
 
 
 async def receive_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -85,7 +147,7 @@ async def receive_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         tags_request = TagsAddRequest(tags=tags, status="confirmed")
         await core_client.add_tags(memory_id, tags_request)
         await update.message.reply_text(f"Tags added: {', '.join(tags)}")
-    except Exception as e:
+    except Exception:
         logger.exception(f"Failed to add tags to memory {memory_id}")
         await update.message.reply_text("Failed to add tags. Please try again.")
         # Re-set the pending state so user can retry
@@ -98,7 +160,8 @@ async def receive_custom_date(
     """Handle custom due date submitted by the user in a conversation flow.
 
     Called when the user sends text while pending_task_memory_id is set in user_data.
-    Parses the text as a custom due date and creates a task.
+    Fetches the memory content from core and creates a task with that content as
+    the description, using the user-supplied date as the due date.
 
     Args:
         update: The Telegram update.
@@ -119,7 +182,8 @@ async def receive_custom_date(
 
     if due_at is None:
         await update.message.reply_text(
-            "Could not parse the date. Please use format YYYY-MM-DD HH:MM (e.g., 2024-12-25 09:00)."
+            "Could not parse the date. Please use format YYYY-MM-DD HH:MM"
+            " (e.g., 2024-12-25 09:00)."
         )
         # Re-set the pending state
         context.user_data[PENDING_TASK_MEMORY_ID] = memory_id
@@ -128,11 +192,20 @@ async def receive_custom_date(
     # Get core client from bot_data
     core_client = context.bot_data["core_client"]
 
-    # Create task with custom due date
+    # Fetch memory content to use as the task description
+    description = "Task"
+    try:
+        memory = await core_client.get_memory(memory_id)
+        if memory and memory.content:
+            description = memory.content
+    except Exception:
+        logger.exception(f"Failed to fetch memory {memory_id} content for task description")
+
+    # Create task with custom due date and real memory content
     task_data = TaskCreate(
         memory_id=memory_id,
         owner_user_id=user.id,
-        description=f"Task for memory",
+        description=description,
         due_at=due_at,
     )
 
@@ -141,7 +214,7 @@ async def receive_custom_date(
         await update.message.reply_text(
             f"Task created with due date: {due_at.strftime('%Y-%m-%d %H:%M')}"
         )
-    except Exception as e:
+    except Exception:
         logger.exception(f"Failed to create task for memory {memory_id}")
         await update.message.reply_text("Failed to create task. Please try again.")
 
@@ -152,7 +225,7 @@ async def receive_custom_reminder(
     """Handle custom reminder time submitted by the user in a conversation flow.
 
     Called when the user sends text while pending_reminder_memory_id is set in user_data.
-    Parses the text as a custom reminder time and creates a reminder.
+    Fetches the memory content from core and uses it as the reminder text.
 
     Args:
         update: The Telegram update.
@@ -182,11 +255,20 @@ async def receive_custom_reminder(
     # Get core client from bot_data
     core_client = context.bot_data["core_client"]
 
-    # Create reminder with custom time
+    # Fetch memory content to use as the reminder text
+    reminder_text = "Reminder"
+    try:
+        memory = await core_client.get_memory(memory_id)
+        if memory and memory.content:
+            reminder_text = memory.content
+    except Exception:
+        logger.exception(f"Failed to fetch memory {memory_id} content for reminder text")
+
+    # Create reminder with custom time and real memory content
     reminder_data = ReminderCreate(
         memory_id=memory_id,
         owner_user_id=user.id,
-        text="Custom reminder",
+        text=reminder_text,
         fire_at=remind_at,
     )
 
@@ -195,6 +277,77 @@ async def receive_custom_reminder(
         await update.message.reply_text(
             f"Reminder set for: {remind_at.strftime('%Y-%m-%d %H:%M')}"
         )
-    except Exception as e:
+    except Exception:
         logger.exception(f"Failed to create reminder for memory {memory_id}")
         await update.message.reply_text("Failed to create reminder. Please try again.")
+
+
+async def receive_followup_answer(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle the user's reply to an LLM follow-up question.
+
+    Called when the user sends text while PENDING_LLM_CONVERSATION is set in
+    user_data. Extracts the original message, the LLM's question, and the
+    associated memory_id from context, then creates a new followup LLM job
+    with the user's answer included in the payload.
+
+    Expected context.user_data[PENDING_LLM_CONVERSATION] structure:
+        {
+            "memory_id": str,
+            "original_text": str,
+            "followup_question": str,
+        }
+
+    Args:
+        update: The Telegram update.
+        context: The context with user_data containing the pending conversation state.
+    """
+    user = update.message.from_user
+    user_answer = update.message.text.strip()
+
+    # Pop the pending conversation state
+    pending = context.user_data.pop(PENDING_LLM_CONVERSATION, None)
+    if pending is None:
+        logger.warning(
+            f"User {user.id} sent followup answer but no pending LLM conversation state"
+        )
+        await update.message.reply_text("Something went wrong. Please try again.")
+        return
+
+    memory_id = pending.get("memory_id")
+    original_text = pending.get("original_text", "")
+    followup_question = pending.get("followup_question", "")
+
+    if not memory_id:
+        logger.error(f"PENDING_LLM_CONVERSATION for user {user.id} missing memory_id")
+        await update.message.reply_text("Something went wrong. Please try again.")
+        return
+
+    # Get core client from bot_data
+    core_client = context.bot_data["core_client"]
+
+    # Create followup LLM job with the original context + user's answer
+    try:
+        await core_client.create_llm_job(
+            LLMJobCreate(
+                job_type=JobType.followup,
+                payload={
+                    "memory_id": memory_id,
+                    "original_text": original_text,
+                    "followup_question": followup_question,
+                    "user_answer": user_answer,
+                },
+                user_id=user.id,
+            )
+        )
+        await update.message.reply_text("Processing...")
+    except Exception:
+        logger.exception(
+            f"Failed to create followup LLM job for memory {memory_id}, user {user.id}"
+        )
+        await update.message.reply_text(
+            "Failed to submit your answer. Please try again."
+        )
+        # Re-set the pending state so the user can retry
+        context.user_data[PENDING_LLM_CONVERSATION] = pending
