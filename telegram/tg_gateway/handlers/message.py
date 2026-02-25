@@ -15,26 +15,30 @@ from shared_lib.schemas import LLMJobCreate, MemoryCreate
 from tg_gateway.core_client import CoreUnavailableError
 from tg_gateway.keyboards import memory_actions_keyboard
 from tg_gateway.handlers import conversation
+from tg_gateway.handlers.conversation import (
+    AWAITING_BUTTON_ACTION,
+    PENDING_LLM_CONVERSATION,
+    PENDING_REMINDER_MEMORY_ID,
+    PENDING_TAG_MEMORY_ID,
+    PENDING_TASK_MEMORY_ID,
+    get_queue_count,
+    increment_queue,
+)
 from tg_gateway.media import download_and_upload_image
 
 logger = logging.getLogger(__name__)
-
-# Conversation pending state keys (for checking in text handler)
-PENDING_TAG_MEMORY_ID = "pending_tag_memory_id"
-PENDING_TASK_MEMORY_ID = "pending_task_memory_id"
-PENDING_REMINDER_MEMORY_ID = "pending_reminder_memory_id"
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle incoming text messages.
 
-    This handler has two roles:
-    1. Primary: Capture new text memories
-    2. Secondary: Handle pending conversation actions (tag entry, custom date, custom reminder)
-
-    When a callback handler starts a multi-step flow, it sets a key in
-    context.user_data. The next text message should be routed to the
-    conversation handler, not treated as a new memory.
+    Routing priority (checked in order):
+    1. PENDING_TAG_MEMORY_ID — route to conversation.receive_tags
+    2. PENDING_TASK_MEMORY_ID — route to conversation.receive_custom_date
+    3. PENDING_REMINDER_MEMORY_ID — route to conversation.receive_custom_reminder
+    4. PENDING_LLM_CONVERSATION — route to conversation.receive_followup_answer
+    5. AWAITING_BUTTON_ACTION (without PENDING_LLM_CONVERSATION) — fall through to queue
+    6. Default — queue text for LLM intent classification
 
     Args:
         update: The Telegram update.
@@ -56,27 +60,45 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await conversation.receive_custom_reminder(update, context)
         return
 
-    # Capture as new memory
+    if PENDING_LLM_CONVERSATION in context.user_data:
+        await conversation.receive_followup_answer(update, context)
+        return
+
+    # If AWAITING_BUTTON_ACTION is set (but no PENDING_LLM_CONVERSATION above),
+    # the user is sending new text while buttons are displayed — fall through to queue.
+
+    # Queue text for LLM intent classification
     core_client = context.bot_data["core_client"]
 
     try:
         await core_client.ensure_user(user.id, user.full_name)
-        memory_data = MemoryCreate(
-            owner_user_id=user.id,
-            content=msg.text,
-            source_chat_id=msg.chat_id,
-            source_message_id=msg.message_id,
+
+        # Reply based on current queue depth
+        queue_count = get_queue_count(context)
+        if queue_count == 0:
+            await msg.reply_text("Processing...")
+        else:
+            await msg.reply_text("Added to queue")
+
+        increment_queue(context)
+
+        await core_client.create_llm_job(
+            LLMJobCreate(
+                job_type=JobType.intent_classify,
+                payload={
+                    "text": msg.text,
+                    "source_chat_id": msg.chat_id,
+                    "source_message_id": msg.message_id,
+                    "message_timestamp": msg.date.isoformat() if msg.date else None,
+                },
+                user_id=user.id,
+            )
         )
-        memory = await core_client.create_memory(memory_data)
     except CoreUnavailableError:
         await msg.reply_text(
             "I'm having trouble right now, please try again in a moment."
         )
         return
-
-    # Build keyboard and reply
-    keyboard = memory_actions_keyboard(memory.id, is_image=False)
-    await msg.reply_text("Saved!", reply_markup=keyboard)
 
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
