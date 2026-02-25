@@ -4,8 +4,10 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from tg_gateway.callback_data import (
     ConfirmDelete,
     DueDateChoice,
+    IntentConfirm,
     MemoryAction,
     ReminderTimeChoice,
+    RescheduleAction,
     SearchDetail,
     TagConfirm,
     TaskAction,
@@ -286,6 +288,156 @@ def tag_suggestion_keyboard(memory_id: str) -> InlineKeyboardMarkup:
                 text="Edit Tags",
                 callback_data=_serialize_callback(
                     TagConfirm(memory_id=memory_id, action="edit")
+                ),
+            ),
+        ],
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def reminder_proposal_keyboard(memory_id: str) -> InlineKeyboardMarkup:
+    """Create keyboard for reminder intent proposal.
+
+    Args:
+        memory_id: The ID of the memory.
+
+    Returns:
+        InlineKeyboardMarkup with confirm/edit time/just a note buttons.
+    """
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="Confirm",
+                callback_data=_serialize_callback(
+                    IntentConfirm(memory_id=memory_id, action="confirm_reminder")
+                ),
+            ),
+            InlineKeyboardButton(
+                text="Edit time",
+                callback_data=_serialize_callback(
+                    IntentConfirm(memory_id=memory_id, action="edit_reminder_time")
+                ),
+            ),
+            InlineKeyboardButton(
+                text="Just a note",
+                callback_data=_serialize_callback(
+                    IntentConfirm(memory_id=memory_id, action="just_a_note")
+                ),
+            ),
+        ],
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def task_proposal_keyboard(memory_id: str) -> InlineKeyboardMarkup:
+    """Create keyboard for task intent proposal.
+
+    Args:
+        memory_id: The ID of the memory.
+
+    Returns:
+        InlineKeyboardMarkup with confirm/edit/just a note buttons.
+    """
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="Confirm",
+                callback_data=_serialize_callback(
+                    IntentConfirm(memory_id=memory_id, action="confirm_task")
+                ),
+            ),
+            InlineKeyboardButton(
+                text="Edit",
+                callback_data=_serialize_callback(
+                    IntentConfirm(memory_id=memory_id, action="edit_task")
+                ),
+            ),
+            InlineKeyboardButton(
+                text="Just a note",
+                callback_data=_serialize_callback(
+                    IntentConfirm(memory_id=memory_id, action="just_a_note")
+                ),
+            ),
+        ],
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def general_note_keyboard(memory_id: str, suggested_tags: list[str]) -> InlineKeyboardMarkup:
+    """Create keyboard for a general note with tag suggestions and action options.
+
+    Args:
+        memory_id: The ID of the memory.
+        suggested_tags: List of suggested tag strings.
+
+    Returns:
+        InlineKeyboardMarkup with tag confirm/edit row and task/remind row.
+    """
+    keyboard = []
+
+    # First row - tag confirmation
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                text="Confirm Tags",
+                callback_data=_serialize_callback(
+                    TagConfirm(memory_id=memory_id, action="confirm_all")
+                ),
+            ),
+            InlineKeyboardButton(
+                text="Edit Tags",
+                callback_data=_serialize_callback(
+                    TagConfirm(memory_id=memory_id, action="edit")
+                ),
+            ),
+        ]
+    )
+
+    # Second row - task and reminder options
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                text="Make Task",
+                callback_data=_serialize_callback(
+                    MemoryAction(action="set_task", memory_id=memory_id)
+                ),
+            ),
+            InlineKeyboardButton(
+                text="Set Reminder",
+                callback_data=_serialize_callback(
+                    MemoryAction(action="set_reminder", memory_id=memory_id)
+                ),
+            ),
+        ]
+    )
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def reschedule_keyboard(memory_id: str) -> InlineKeyboardMarkup:
+    """Create keyboard for rescheduling a reminder.
+
+    Args:
+        memory_id: The ID of the memory.
+
+    Returns:
+        InlineKeyboardMarkup with reschedule/dismiss buttons.
+    """
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="Reschedule",
+                callback_data=_serialize_callback(
+                    RescheduleAction(memory_id=memory_id, action="reschedule")
+                ),
+            ),
+            InlineKeyboardButton(
+                text="Dismiss",
+                callback_data=_serialize_callback(
+                    RescheduleAction(memory_id=memory_id, action="dismiss")
                 ),
             ),
         ],

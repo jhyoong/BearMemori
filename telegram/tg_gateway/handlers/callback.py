@@ -27,12 +27,17 @@ from tg_gateway.callback_data import (
     SearchDetail,
     TaskAction,
     TagConfirm,
+    IntentConfirm,
+    RescheduleAction,
 )
 from tg_gateway.core_client import CoreClient, CoreUnavailableError, CoreNotFoundError
 from tg_gateway.handlers.conversation import (
+    AWAITING_BUTTON_ACTION,
+    PENDING_LLM_CONVERSATION,
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
     PENDING_REMINDER_MEMORY_ID,
+    USER_QUEUE_COUNT,
 )
 from tg_gateway.keyboards import (
     due_date_keyboard,
@@ -42,6 +47,21 @@ from tg_gateway.keyboards import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _clear_conversation_state(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear pending LLM conversation state and decrement the queue counter.
+
+    Called by button handlers that conclude a conversation flow so that
+    subsequent messages from the user are not misrouted.
+
+    Args:
+        context: The Telegram context with user_data.
+    """
+    context.user_data.pop(AWAITING_BUTTON_ACTION, None)
+    context.user_data.pop(PENDING_LLM_CONVERSATION, None)
+    count = context.user_data.get(USER_QUEUE_COUNT, 0)
+    context.user_data[USER_QUEUE_COUNT] = max(0, count - 1)
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -85,6 +105,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await handle_task_action(update, context, callback_obj, core_client)
         elif isinstance(callback_obj, TagConfirm):
             await handle_tag_confirm(update, context, callback_obj, core_client)
+        elif isinstance(callback_obj, IntentConfirm):
+            await handle_intent_confirm(update, context, callback_obj, core_client)
+        elif isinstance(callback_obj, RescheduleAction):
+            await handle_reschedule_action(update, context, callback_obj, core_client)
         else:
             logger.warning(f"Unhandled callback type: {type(callback_obj)}")
     except CoreUnavailableError:
@@ -149,12 +173,25 @@ def _parse_callback_data(callback_data: str):
     elif "memory_id" in data and "action" not in data:
         return SearchDetail(memory_id=data["memory_id"])
     elif "action" in data and "memory_id" in data:
-        # Distinguish between MemoryAction and TagConfirm based on action value
+        # Distinguish between MemoryAction, TagConfirm, IntentConfirm, and RescheduleAction
+        # based on action value.
         # MemoryAction: set_task, set_reminder, add_tag, toggle_pin, confirm_delete
         # TagConfirm: confirm_all, edit
+        # IntentConfirm: confirm_reminder, edit_reminder_time, confirm_task, edit_task, just_a_note
+        # RescheduleAction: reschedule, dismiss
         action = data["action"]
         if action in ("confirm_all", "edit"):
             return TagConfirm(memory_id=data["memory_id"], action=action)
+        elif action in (
+            "confirm_reminder",
+            "edit_reminder_time",
+            "confirm_task",
+            "edit_task",
+            "just_a_note",
+        ):
+            return IntentConfirm(memory_id=data["memory_id"], action=action)
+        elif action in ("reschedule", "dismiss"):
+            return RescheduleAction(memory_id=data["memory_id"], action=action)
         elif action in (
             "set_task",
             "set_reminder",
@@ -189,33 +226,39 @@ async def handle_memory_action(
     action = callback_data.action
 
     if action == "set_task":
-        # Show due date options keyboard
+        # Confirm the memory and show due date options keyboard
+        await core_client.update_memory(memory_id, MemoryUpdate(status=MemoryStatus.confirmed))
+        _clear_conversation_state(context)
         await callback_query.edit_message_text(
             "Select a due date for the task:",
             reply_markup=due_date_keyboard(memory_id),
         )
 
     elif action == "set_reminder":
-        # Show reminder time options keyboard
+        # Confirm the memory and show reminder time options keyboard
+        await core_client.update_memory(memory_id, MemoryUpdate(status=MemoryStatus.confirmed))
+        _clear_conversation_state(context)
         await callback_query.edit_message_text(
             "Select when to be reminded:",
             reply_markup=reminder_time_keyboard(memory_id),
         )
 
     elif action == "add_tag":
-        # Set conversation state key for message handler
+        # Confirm the memory and set conversation state key for message handler
+        await core_client.update_memory(memory_id, MemoryUpdate(status=MemoryStatus.confirmed))
+        _clear_conversation_state(context)
         context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
         # Prompt user for tags (send message asking for comma-separated tags)
         await callback_query.edit_message_text(
             "Please send the tags for this memory as a comma-separated list (e.g., work, important, project)."
         )
-        # Note: The actual tag input handling would be done by a message handler
 
     elif action == "toggle_pin":
         # Pin/unpin the memory and update status to "confirmed"
         await core_client.update_memory(
             memory_id, MemoryUpdate(is_pinned=True, status=MemoryStatus.confirmed)
         )
+        _clear_conversation_state(context)
         await callback_query.edit_message_text("Memory pinned and confirmed.")
 
     elif action == "confirm_delete":
@@ -418,6 +461,7 @@ async def handle_confirm_delete(
     if confirmed:
         # Delete the memory and show confirmation message
         await core_client.delete_memory(memory_id)
+        _clear_conversation_state(context)
         # Check if the original message has a photo
         if callback_query.message.photo is not None:
             # Use edit_message_caption for photo messages
@@ -591,16 +635,130 @@ async def handle_tag_confirm(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
 
+        _clear_conversation_state(context)
         tags_str = ", ".join(suggested_tags) if suggested_tags else "all tags"
         await callback_query.edit_message_text(f"Tags confirmed: {tags_str}")
 
     elif action == "edit":
-        # Set conversation state key for message handler
+        # Confirm the memory and set conversation state key for message handler
+        await core_client.update_memory(
+            memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
+        )
+        _clear_conversation_state(context)
         context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
         # Prompt user for comma-separated tag input
         await callback_query.edit_message_text(
             "Please send the tags for this memory as a comma-separated list (e.g., work, important, project)."
         )
+
+
+async def handle_intent_confirm(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    callback_data: IntentConfirm,
+    core_client: CoreClient,
+) -> None:
+    """Handle IntentConfirm callbacks.
+
+    Confirms the memory and routes to the appropriate follow-up flow depending
+    on the action chosen by the user.
+
+    Actions:
+        confirm_reminder: Confirm memory, show reminder time keyboard.
+        edit_reminder_time: Confirm memory, show reminder time keyboard.
+        confirm_task: Confirm memory, show due date keyboard.
+        edit_task: Confirm memory, show due date keyboard.
+        just_a_note: Confirm memory, acknowledge as a note.
+
+    Args:
+        update: The Telegram update.
+        context: The context with user_data.
+        callback_data: The parsed callback data.
+        core_client: The Core API client.
+    """
+    callback_query = update.callback_query
+    memory_id = callback_data.memory_id
+    action = callback_data.action
+
+    # All actions confirm the memory first
+    await core_client.update_memory(memory_id, MemoryUpdate(status=MemoryStatus.confirmed))
+    _clear_conversation_state(context)
+
+    if action == "confirm_reminder":
+        await callback_query.edit_message_text(
+            "Select when to be reminded:",
+            reply_markup=reminder_time_keyboard(memory_id),
+        )
+
+    elif action == "edit_reminder_time":
+        await callback_query.edit_message_text(
+            "Select a new reminder time:",
+            reply_markup=reminder_time_keyboard(memory_id),
+        )
+
+    elif action == "confirm_task":
+        await callback_query.edit_message_text(
+            "Select a due date for the task:",
+            reply_markup=due_date_keyboard(memory_id),
+        )
+
+    elif action == "edit_task":
+        await callback_query.edit_message_text(
+            "Select a due date:",
+            reply_markup=due_date_keyboard(memory_id),
+        )
+
+    elif action == "just_a_note":
+        await callback_query.edit_message_text(
+            "Kept as a note.",
+            reply_markup=memory_actions_keyboard(memory_id),
+        )
+
+    else:
+        logger.warning(f"Unknown IntentConfirm action: {action}")
+
+
+async def handle_reschedule_action(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    callback_data: RescheduleAction,
+    core_client: CoreClient,
+) -> None:
+    """Handle RescheduleAction callbacks.
+
+    Confirms the memory and either prompts for a new reminder time or dismisses.
+
+    Actions:
+        reschedule: Confirm memory, prompt user for a new date/time using the
+                    existing receive_custom_reminder flow.
+        dismiss: Confirm memory, dismiss without rescheduling.
+
+    Args:
+        update: The Telegram update.
+        context: The context with user_data.
+        callback_data: The parsed callback data.
+        core_client: The Core API client.
+    """
+    callback_query = update.callback_query
+    memory_id = callback_data.memory_id
+    action = callback_data.action
+
+    # All actions confirm the memory first
+    await core_client.update_memory(memory_id, MemoryUpdate(status=MemoryStatus.confirmed))
+    _clear_conversation_state(context)
+
+    if action == "reschedule":
+        # Reuse the existing receive_custom_reminder flow
+        context.user_data[PENDING_REMINDER_MEMORY_ID] = memory_id
+        await callback_query.edit_message_text(
+            "Please enter a new date/time (e.g., 2024-12-31 14:30):"
+        )
+
+    elif action == "dismiss":
+        await callback_query.edit_message_text("Dismissed.")
+
+    else:
+        logger.warning(f"Unknown RescheduleAction action: {action}")
 
 
 # Export handler functions for registration in main.py

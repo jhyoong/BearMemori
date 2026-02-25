@@ -1,14 +1,27 @@
 """Redis consumer for Telegram notification stream."""
 
 import asyncio
-import json
 import logging
+from datetime import datetime, timezone
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 
 from tg_gateway.callback_data import TaskAction
-from tg_gateway.keyboards import tag_suggestion_keyboard
+from tg_gateway.handlers.conversation import (
+    AWAITING_BUTTON_ACTION,
+    PENDING_LLM_CONVERSATION,
+    USER_QUEUE_COUNT,
+)
+from tg_gateway.keyboards import (
+    _serialize_callback,
+    general_note_keyboard,
+    reminder_proposal_keyboard,
+    reschedule_keyboard,
+    search_results_keyboard,
+    tag_suggestion_keyboard,
+    task_proposal_keyboard,
+)
 
 from shared_lib.redis_streams import (
     GROUP_TELEGRAM,
@@ -22,6 +35,9 @@ logger = logging.getLogger(__name__)
 
 CONSUMER_NAME = "telegram-gw-1"
 
+# Delay in seconds between consecutive messages sent to the same user.
+FLOOD_CONTROL_DELAY_SECONDS = 1.0
+
 
 async def run_notify_consumer(application: Application) -> None:
     """Main consumer loop for processing notifications from the Telegram stream.
@@ -32,10 +48,11 @@ async def run_notify_consumer(application: Application) -> None:
     logger.info("notify:telegram consumer started")
 
     redis = application.bot_data["redis"]
-    bot = application.bot
 
     # Create consumer group on start
     await create_consumer_group(redis, STREAM_NOTIFY_TELEGRAM, GROUP_TELEGRAM)
+
+    last_user_id: str | None = None
 
     while True:
         try:
@@ -49,8 +66,16 @@ async def run_notify_consumer(application: Application) -> None:
             )
 
             for message_id, data in messages:
-                await _dispatch_notification(bot, data)
+                current_user_id = data.get("user_id")
+
+                # Flood control: delay if same user received the previous message.
+                if last_user_id is not None and current_user_id == last_user_id:
+                    await asyncio.sleep(FLOOD_CONTROL_DELAY_SECONDS)
+
+                await _dispatch_notification(application, data)
                 await ack(redis, STREAM_NOTIFY_TELEGRAM, GROUP_TELEGRAM, message_id)
+
+                last_user_id = current_user_id
 
         except asyncio.CancelledError:
             logger.info("notify:telegram consumer shutting down")
@@ -60,15 +85,15 @@ async def run_notify_consumer(application: Application) -> None:
             await asyncio.sleep(5)
 
 
-async def _dispatch_notification(bot, data: dict) -> None:
+async def _dispatch_notification(application: Application, data: dict) -> None:
     """Dispatch a notification to the Telegram bot.
 
-    Handles 'reminder' and 'event_reprompt' message types.
-
     Args:
-        bot: The Telegram bot instance.
+        application: The Telegram bot application instance.
         data: The notification data to dispatch.
     """
+    bot = application.bot
+
     user_id = data.get("user_id")
     message_type = data.get("message_type")
     content = data.get("content", {})
@@ -113,31 +138,7 @@ async def _dispatch_notification(bot, data: dict) -> None:
         logger.info("Sent llm_image_tag_result to user %s: %s", user_id, text[:50])
 
     elif message_type == "llm_intent_result":
-        query = content.get("query", "")
-        intent = content.get("intent", "")
-        results = content.get("results", [])
-
-        # Format base message with query and intent
-        if intent == "ambiguous":
-            text = f'Your query "{query}" is ambiguous. Could you please clarify what you\'re looking for?'
-        else:
-            text = f'Query: "{query}"\nDetected intent: {intent}'
-
-        # If results exist, add them to the message
-        if results:
-            result_count = len(results)
-            text += f"\n\nFound {result_count} result(s):"
-
-            # Show first few titles
-            for i, result in enumerate(results[:3]):
-                title = result.get("title", "Untitled")
-                text += f"\n{i + 1}. {title}"
-
-            if result_count > 3:
-                text += f"\n... and {result_count - 3} more"
-
-        await bot.send_message(chat_id=user_id, text=text)
-        logger.info("Sent llm_intent_result to user %s: %s", user_id, text[:100])
+        await _handle_intent_result(application, user_id, content)
 
     elif message_type == "llm_followup_result":
         question = content.get("question", "")
@@ -155,11 +156,6 @@ async def _dispatch_notification(bot, data: dict) -> None:
         # Create inline keyboard with Yes/No buttons
         # "Yes" uses TaskAction with mark_done
         # "No" uses TaskAction with cancel action
-
-        def _serialize_callback(data: object) -> str:
-            if hasattr(data, "__dataclass_fields__"):
-                return json.dumps(data.__dict__)
-            return json.dumps(data)
 
         keyboard = InlineKeyboardMarkup(
             [
@@ -201,3 +197,129 @@ async def _dispatch_notification(bot, data: dict) -> None:
 
     else:
         logger.warning("Unknown message type: %s", message_type)
+
+
+async def _handle_intent_result(
+    application: Application, user_id: str, content: dict
+) -> None:
+    """Handle an llm_intent_result notification with intent-specific routing.
+
+    Creates or references pending memories, sends appropriate keyboards, and
+    sets conversation state in application.user_data.
+
+    Args:
+        application: The Telegram bot application instance (for bot and user_data).
+        user_id: Telegram user ID to send the message to.
+        content: The notification content dict from the LLM worker.
+    """
+    bot = application.bot
+    intent = content.get("intent", "")
+    query = content.get("query", "")
+    memory_id = content.get("memory_id", "")
+    extracted_datetime = content.get("extracted_datetime")
+    suggested_tags = content.get("suggested_tags", [])
+    followup_question = content.get("followup_question", "")
+    search_results = content.get("search_results", [])
+
+    # Access user_data for state management; default to empty dict if not present.
+    uid = int(user_id)
+    if uid not in application.user_data:
+        application.user_data[uid] = {}
+    user_data = application.user_data[uid]
+
+    if intent == "reminder":
+        # Check whether the extracted datetime is stale (in the past).
+        if extracted_datetime and _is_stale(extracted_datetime):
+            text = f'Your reminder "{query}" had a time that has already passed. Would you like to reschedule?'
+            keyboard = reschedule_keyboard(memory_id)
+        else:
+            dt_str = extracted_datetime or "unspecified time"
+            text = f'Reminder: "{query}" at {dt_str}'
+            keyboard = reminder_proposal_keyboard(memory_id)
+
+        await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+        user_data[AWAITING_BUTTON_ACTION] = {"memory_id": memory_id}
+        logger.info("Sent reminder intent proposal to user %s for memory %s", user_id, memory_id)
+
+    elif intent == "task":
+        # Check whether the extracted datetime is stale (in the past).
+        if extracted_datetime and _is_stale(extracted_datetime):
+            text = f'Your task "{query}" had a due date that has already passed. Would you like to reschedule?'
+            keyboard = reschedule_keyboard(memory_id)
+        else:
+            dt_str = extracted_datetime or "unspecified date"
+            text = f'Task: "{query}" due {dt_str}'
+            keyboard = task_proposal_keyboard(memory_id)
+
+        await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+        user_data[AWAITING_BUTTON_ACTION] = {"memory_id": memory_id}
+        logger.info("Sent task intent proposal to user %s for memory %s", user_id, memory_id)
+
+    elif intent == "search":
+        # Build (label, memory_id) tuples for the keyboard.
+        results_tuples = [
+            (r.get("title", "Untitled"), r.get("memory_id", ""))
+            for r in search_results
+        ]
+
+        if results_tuples:
+            text = f'Search results for "{query}":'
+            keyboard = search_results_keyboard(results_tuples)
+            await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+        else:
+            text = f'No results found for "{query}".'
+            await bot.send_message(chat_id=user_id, text=text)
+
+        # Decrement queue: search is self-contained; no button action needed.
+        user_data[USER_QUEUE_COUNT] = max(0, user_data.get(USER_QUEUE_COUNT, 0) - 1)
+        logger.info("Sent search results to user %s for query %s", user_id, query)
+
+    elif intent == "general_note":
+        text = f'Note saved: "{query}"'
+        keyboard = general_note_keyboard(memory_id, suggested_tags)
+        await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+        user_data[AWAITING_BUTTON_ACTION] = {"memory_id": memory_id}
+        logger.info(
+            "Sent general_note proposal to user %s for memory %s", user_id, memory_id
+        )
+
+    elif intent == "ambiguous":
+        await bot.send_message(chat_id=user_id, text=followup_question)
+        user_data[PENDING_LLM_CONVERSATION] = {
+            "memory_id": memory_id,
+            "original_text": query,
+            "followup_question": followup_question,
+        }
+        logger.info(
+            "Sent ambiguous followup question to user %s for memory %s",
+            user_id,
+            memory_id,
+        )
+
+    else:
+        logger.warning(
+            "Unknown intent type '%s' for user %s, memory %s", intent, user_id, memory_id
+        )
+        text = f'Processed: "{query}"'
+        await bot.send_message(chat_id=user_id, text=text)
+
+
+def _is_stale(dt_string: str) -> bool:
+    """Return True if the ISO datetime string represents a past moment.
+
+    Args:
+        dt_string: ISO 8601 datetime string (e.g. "2024-01-01T09:00:00").
+
+    Returns:
+        True if the parsed datetime is before now (UTC), False otherwise.
+        Returns False on parse error so we do not wrongly flag valid datetimes.
+    """
+    try:
+        dt = datetime.fromisoformat(dt_string)
+        # If no timezone info, assume UTC.
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt < datetime.now(tz=timezone.utc)
+    except (ValueError, TypeError):
+        logger.warning("Could not parse extracted_datetime: %s", dt_string)
+        return False
