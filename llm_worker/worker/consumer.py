@@ -55,13 +55,9 @@ def _classify_failure_type(exception: Exception) -> FailureType:
     - Connection errors, timeouts, HTTP 5xx → UNAVAILABLE
     - Unparseable/invalid JSON, missing required fields → INVALID_RESPONSE
     """
-    error_msg = str(exception).lower()
-    error_type = type(exception).__name__
-
     # Connection errors and timeouts → UNAVAILABLE
     if isinstance(exception, (ConnectionRefusedError, ConnectionError, OSError)):
-        if "connection" in error_msg or "refused" in error_msg or "reset" in error_msg:
-            return FailureType.UNAVAILABLE
+        return FailureType.UNAVAILABLE
     if isinstance(exception, asyncio.TimeoutError):
         return FailureType.UNAVAILABLE
 
@@ -76,16 +72,11 @@ def _classify_failure_type(exception: Exception) -> FailureType:
 
     # Missing required fields → INVALID_RESPONSE
     if isinstance(exception, ValueError):
+        error_msg = str(exception).lower()
         if "missing required field" in error_msg or "required field" in error_msg:
             return FailureType.INVALID_RESPONSE
 
-    # Default to UNAVAILABLE for connection/timeout-like errors
-    if isinstance(
-        exception, (ConnectionRefusedError, asyncio.TimeoutError, ConnectionError)
-    ):
-        return FailureType.UNAVAILABLE
-
-    # Default to INVALID_RESPONSE for other parsing errors
+    # Default to INVALID_RESPONSE for other errors
     return FailureType.INVALID_RESPONSE
 
 
@@ -223,96 +214,19 @@ async def _process_message(
                 await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
 
         elif failure_type == FailureType.UNAVAILABLE:
-            # Check if job already has any failure type tracked - if so, check if expired
-            existing_failure_type = retry_tracker.get_failure_type(job_id)
-            if existing_failure_type is not None:
-                # Job already tracked - check if expired
-                should_retry = retry_tracker.should_retry(job_id)
-                if not should_retry:
-                    # 14-day expiry already reached - mark as failed
-                    logger.error(
-                        f"Job {job_id} expired after 14 days of unavailability"
-                    )
-                    await core_api.update_job(
-                        job_id=job_id, status="failed", error_message=type(e).__name__
-                    )
-
-                    # Publish llm_expiry notification
-                    if user_id is not None:
-                        await publish(
-                            redis_client,
-                            STREAM_NOTIFY_TELEGRAM,
-                            {
-                                "user_id": user_id,
-                                "message_type": "llm_expiry",
-                                "content": {
-                                    "job_type": job_type,
-                                    "memory_id": payload.get("memory_id", ""),
-                                    "original_message": payload.get(
-                                        "original_message", payload.get("text", "")
-                                    ),
-                                    "failure_type": "unavailable",
-                                },
-                            },
-                        )
-
-                    # Clear retry state and ack the message
-                    retry_tracker.clear(job_id)
-                    await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
-                    return
-
-            # Record unavailability
-            retry_tracker.record_attempt(job_id, FailureType.UNAVAILABLE)
-            should_retry = retry_tracker.should_retry(job_id)
-
-            # Check if this is first occurrence (queue just paused)
-            queue_just_paused = (
-                retry_tracker._first_unavailable_time.get(job_id) is not None
+            # Check if this is the first time we see this job as unavailable
+            is_first_occurrence = (
+                retry_tracker.get_failure_type(job_id) is None
             )
 
-            if not should_retry:
-                # 14-day expiry already reached - mark as failed
-                logger.error(f"Job {job_id} expired after 14 days of unavailability")
-                await core_api.update_job(
-                    job_id=job_id, status="failed", error_message=type(e).__name__
-                )
-
-                # Publish llm_expiry notification
-                if user_id is not None:
-                    await publish(
-                        redis_client,
-                        STREAM_NOTIFY_TELEGRAM,
-                        {
-                            "user_id": user_id,
-                            "message_type": "llm_expiry",
-                            "content": {
-                                "job_type": job_type,
-                                "memory_id": payload.get("memory_id", ""),
-                                "original_message": payload.get(
-                                    "original_message", payload.get("text", "")
-                                ),
-                                "failure_type": "unavailable",
-                            },
-                        },
-                    )
-
-                # Clear retry state and ack the message
-                retry_tracker.clear(job_id)
-                await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
-                return
-
-            # Record unavailability
+            # Record unavailability (sets _queue_paused, tracks first time)
             retry_tracker.record_attempt(job_id, FailureType.UNAVAILABLE)
-            should_retry = retry_tracker.should_retry(job_id)
 
-            # Check if this is first occurrence (queue just paused)
-            queue_just_paused = (
-                retry_tracker._first_unavailable_time.get(job_id) is not None
-            )
-
-            if not should_retry:
+            if not retry_tracker.should_retry(job_id):
                 # 14-day expiry reached - mark as failed
-                logger.error(f"Job {job_id} expired after 14 days of unavailability")
+                logger.error(
+                    f"Job {job_id} expired after 14 days of unavailability"
+                )
                 await core_api.update_job(
                     job_id=job_id, status="failed", error_message=type(e).__name__
                 )
@@ -349,23 +263,20 @@ async def _process_message(
                 )
 
                 # On first occurrence, publish service unavailable notification
-                if queue_just_paused and user_id is not None:
-                    # Check if this is the first time for this job
-                    first_time_for_job = job_id in retry_tracker._first_unavailable_time
-                    if first_time_for_job:
-                        await publish(
-                            redis_client,
-                            STREAM_NOTIFY_TELEGRAM,
-                            {
-                                "user_id": user_id,
-                                "message_type": "llm_failure",
-                                "content": {
-                                    "job_type": job_type,
-                                    "memory_id": payload.get("memory_id", ""),
-                                    "message": "I couldn't generate tags right now due to a temporary service issue. I'll retry automatically once the service becomes available.",
-                                },
+                if is_first_occurrence and user_id is not None:
+                    await publish(
+                        redis_client,
+                        STREAM_NOTIFY_TELEGRAM,
+                        {
+                            "user_id": user_id,
+                            "message_type": "llm_failure",
+                            "content": {
+                                "job_type": job_type,
+                                "memory_id": payload.get("memory_id", ""),
+                                "message": "I couldn't generate tags right now due to a temporary service issue. I'll retry automatically once the service becomes available.",
                             },
-                        )
+                        },
+                    )
 
                 # Message not acked - will be retried later
 

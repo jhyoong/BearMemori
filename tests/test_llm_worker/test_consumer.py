@@ -306,12 +306,13 @@ async def test_consumer_max_retries_exceeded(
 
     handlers = {"task_match": mock_handler}
 
-    # Simulate max retries exceeded
-    for i in range(3):  # max_retries is 3
-        retry_tracker.record_attempt(job_id)
-    assert not retry_tracker.should_retry(job_id)
+    # Simulate max retries exceeded (MAX_RETRIES=5, pre-seed 4 so the next
+    # attempt in _process_message pushes it to 5 and exhausts retries)
+    for i in range(4):
+        retry_tracker.record_attempt(job_id, FailureType.INVALID_RESPONSE)
+    assert retry_tracker.should_retry(job_id)
 
-    # Execute: Process one message after max retries
+    # Execute: Process one message - this attempt will be the 5th, exhausting retries
     messages = await consume(
         mock_redis, STREAM_LLM_TASK_MATCH, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
     )
@@ -331,8 +332,9 @@ async def test_consumer_max_retries_exceeded(
     )
 
     # Verify: Job status updated to "failed"
+    # Consumer uses type(e).__name__ as error_message for INVALID_RESPONSE
     mock_core_api.update_job.assert_called_with(
-        job_id=job_id, status="failed", error_message="LLM API error"
+        job_id=job_id, status="failed", error_message="Exception"
     )
 
     # Verify: Failure notification was published in wrapper format
@@ -992,20 +994,18 @@ class TestUnavailableNotification:
 class TestExpiryNotification:
     """Tests for 14-day expiry notification."""
 
-    @pytest.fixture
-    def retry_manager_with_time(self):
-        """Create a RetryManager with mocked time for expiry testing."""
-        from worker.retry import RetryManager
-
-        return RetryManager()
-
     @pytest.mark.asyncio
     async def test_14_day_expiry_publishes_llm_expiry_notification(
-        self, mock_redis, mock_core_api, retry_manager_with_time, llm_worker_config
+        self, mock_redis, mock_core_api, llm_worker_config
     ):
         """On 14-day expiry, publish llm_expiry notification."""
         import json
-        from unittest.mock import patch
+        from worker.retry import RetryManager, FailureType
+
+        # Use a controllable time function via RetryManager's time_func param
+        start_time = 1000000.0
+        current_time = [start_time]  # Mutable so we can advance it
+        retry_manager = RetryManager(time_func=lambda: current_time[0])
 
         # Setup: Add a message to the stream
         job_id = "job-expiry"
@@ -1030,22 +1030,14 @@ class TestExpiryNotification:
         mock_handler = create_mock_handler(None, raises=error)
         handlers = {"image_tag": mock_handler}
 
-        # Record UNAVAILABLE at time T (simulated 14 days ago)
-        start_time = 1000000.0  # Arbitrary start time
-        with patch("worker.retry.time.time") as mock_time:
-            mock_time.return_value = start_time
-            retry_manager_with_time.record_attempt(
-                job_id, json.JSONDecodeError.__class__.__bases__[0]
-            )
+        # Record UNAVAILABLE at start_time (simulated 14 days ago)
+        retry_manager.record_attempt(job_id, FailureType.UNAVAILABLE)
 
-        # Now simulate time has passed 14 days
-        expiry_time = start_time + 14 * 24 * 3600 + 1  # 14 days + 1 second
+        # Advance time past the 14-day expiry window
+        current_time[0] = start_time + 14 * 24 * 3600 + 1
 
-        with patch("worker.retry.time.time") as mock_time:
-            mock_time.return_value = expiry_time
-
-            # Verify: should_retry returns False (expired)
-            assert retry_manager_with_time.should_retry(job_id) is False
+        # Verify: should_retry returns False (expired)
+        assert retry_manager.should_retry(job_id) is False
 
         # Execute: Process one message after expiry
         messages = await consume(
@@ -1054,20 +1046,16 @@ class TestExpiryNotification:
         assert len(messages) == 1
         message_id, data = messages[0]
 
-        # Simulate the expired retry scenario
-        with patch("worker.retry.time.time") as mock_time:
-            mock_time.return_value = expiry_time
-
-            await _process_message(
-                redis_client=mock_redis,
-                stream_name=STREAM_LLM_IMAGE_TAG,
-                message_id=message_id,
-                data=data,
-                handlers=handlers,
-                core_api=mock_core_api,
-                retry_tracker=retry_manager_with_time,
-                config=llm_worker_config,
-            )
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_IMAGE_TAG,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
 
         # Verify: Job marked as failed (expired)
         mock_core_api.update_job.assert_called_with(
@@ -1091,9 +1079,9 @@ class TestExpiryNotification:
                     notification_data = json.loads(data_str.decode())
                     if notification_data.get("message_type") == "llm_expiry":
                         found_expiry = True
-                        # Verify it contains original message text and timestamp
                         content = notification_data.get("content", {})
-                        # Should have original message and failure type info
+                        assert content.get("failure_type") == "unavailable"
+                        assert content.get("original_message") == "Hello from user"
 
         assert found_expiry, (
             "llm_expiry notification should be published on 14-day expiry"

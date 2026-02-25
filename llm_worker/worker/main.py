@@ -11,7 +11,7 @@ from worker.config import load_llm_worker_settings
 from worker.consumer import run_consumer
 from worker.core_api_client import CoreAPIClient
 from worker.llm_client import LLMClient
-from worker.retry import RetryTracker
+from worker.retry import RetryManager
 
 from worker.handlers.image_tag import ImageTagHandler
 from worker.handlers.intent import IntentHandler
@@ -37,7 +37,7 @@ async def main():
     session = aiohttp.ClientSession()
     llm_client = LLMClient(base_url=config.llm_base_url, api_key=config.llm_api_key)
     core_api = CoreAPIClient(config.core_api_url, session)
-    retry_tracker = RetryTracker(max_retries=config.llm_max_retries)
+    retry_tracker = RetryManager()
 
     # Create handlers
     handlers = {

@@ -82,54 +82,47 @@ class TestUnavailable:
 
     def test_unavailable_tracks_first_unavailable_time_per_job(self):
         """Each job tracks its own first_unavailable_time."""
-        manager = RetryManager()
+        current_time = [1000.0]
+        manager = RetryManager(time_func=lambda: current_time[0])
 
         # Record at different times
-        with patch("time.time") as mock_time:
-            mock_time.return_value = 1000.0
-            manager.record_attempt("job-1", FailureType.UNAVAILABLE)
+        current_time[0] = 1000.0
+        manager.record_attempt("job-1", FailureType.UNAVAILABLE)
 
-            mock_time.return_value = 2000.0
-            manager.record_attempt("job-2", FailureType.UNAVAILABLE)
+        current_time[0] = 2000.0
+        manager.record_attempt("job-2", FailureType.UNAVAILABLE)
 
-        # Each job should have its own timestamp
-        # We verify this by checking should_retry behavior
-        # Jobs should not be retryable immediately after first failure
+        # Each job should have its own timestamp and be retryable
         assert manager.should_retry("job-1") is True
         assert manager.should_retry("job-2") is True
 
     def test_unavailable_should_retry_true_within_14_days(self):
         """should_retry returns True if within 14-day window."""
-        manager = RetryManager()
+        current_time = [1000000.0]
+        manager = RetryManager(time_func=lambda: current_time[0])
 
         # Record failure at time T
-        with patch("time.time") as mock_time:
-            mock_time.return_value = 1000000.0  # T
-            manager.record_attempt("job-1", FailureType.UNAVAILABLE)
+        manager.record_attempt("job-1", FailureType.UNAVAILABLE)
 
         # At T + 1 day (within 14 days): should retry
-        with patch("time.time") as mock_time:
-            mock_time.return_value = 1000000.0 + 1 * 24 * 3600  # T + 1 day
-            assert manager.should_retry("job-1") is True
+        current_time[0] = 1000000.0 + 1 * 24 * 3600
+        assert manager.should_retry("job-1") is True
 
         # At T + 13 days (still within 14 days): should retry
-        with patch("time.time") as mock_time:
-            mock_time.return_value = 1000000.0 + 13 * 24 * 3600  # T + 13 days
-            assert manager.should_retry("job-1") is True
+        current_time[0] = 1000000.0 + 13 * 24 * 3600
+        assert manager.should_retry("job-1") is True
 
     def test_unavailable_should_retry_false_after_14_days(self):
         """should_retry returns False if after 14-day window."""
-        manager = RetryManager()
+        current_time = [1000000.0]
+        manager = RetryManager(time_func=lambda: current_time[0])
 
         # Record failure at time T
-        with patch("time.time") as mock_time:
-            mock_time.return_value = 1000000.0  # T
-            manager.record_attempt("job-1", FailureType.UNAVAILABLE)
+        manager.record_attempt("job-1", FailureType.UNAVAILABLE)
 
         # At T + 14 days: should NOT retry
-        with patch("time.time") as mock_time:
-            mock_time.return_value = 1000000.0 + 14 * 24 * 3600  # T + 14 days
-            assert manager.should_retry("job-1") is False
+        current_time[0] = 1000000.0 + 14 * 24 * 3600
+        assert manager.should_retry("job-1") is False
 
 
 class TestRetryManagerInterface:

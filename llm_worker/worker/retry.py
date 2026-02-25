@@ -20,7 +20,7 @@ class RetryManager:
     unacknowledged Redis messages will be redelivered.
     """
 
-    MAX_RETRIES = 3
+    MAX_RETRIES = 5
     MAX_AGE_SECONDS = 14 * 24 * 3600  # 14 days
 
     def __init__(self, time_func: Optional[Callable[[], float]] = None):
@@ -85,15 +85,6 @@ class RetryManager:
             first_time = self._first_unavailable_time[job_id]
             current_time = self._time_func()
             age_seconds = current_time - first_time
-
-            # If age is huge (> 1 billion seconds ≈ 32 years), it means time wasn't mocked
-            # for should_retry call. This happens in tests where record_attempt is
-            # patched but should_retry isn't. In that case, check if stored timestamp
-            # suggests a test scenario (small value indicates mocked time).
-            if age_seconds > 1_000_000_000 and first_time < 1_000_000:
-                # Test scenario: mock timestamps, always retry within test window
-                return True
-
             return age_seconds < self.MAX_AGE_SECONDS
 
         return False

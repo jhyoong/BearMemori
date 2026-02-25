@@ -93,11 +93,11 @@ class TestIntentHandler:
         - Return structured result with intent, action, resolved_time
         """
         # Current timestamp for original_timestamp
-        original_ts = "2026-02-24T10:00:00Z"
+        original_ts = "2030-06-14T10:00:00Z"
 
-        # Mock LLM returns structured reminder response
+        # Mock LLM returns structured reminder response with a future resolved_time
         mock_llm_client.complete = AsyncMock(
-            return_value='{"intent": "reminder", "action": "buy groceries", "time": "tomorrow", "resolved_time": "2026-02-25T10:00:00Z"}'
+            return_value='{"intent": "reminder", "action": "buy groceries", "time": "tomorrow", "resolved_time": "2030-06-15T10:00:00Z"}'
         )
 
         result = await handler.handle(
@@ -114,7 +114,7 @@ class TestIntentHandler:
         assert result is not None
         assert result.get("intent") == "reminder"
         assert result.get("action") == "buy groceries"
-        assert result.get("resolved_time") == "2026-02-25T10:00:00Z"
+        assert result.get("resolved_time") == "2030-06-15T10:00:00Z"
         # stale should not be set (future timestamp)
         assert "stale" not in result or result.get("stale") is False
 
