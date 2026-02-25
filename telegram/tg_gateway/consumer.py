@@ -1,14 +1,13 @@
 """Redis consumer for Telegram notification stream."""
 
 import asyncio
-import json
 import logging
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
 
 from tg_gateway.callback_data import TaskAction
-from tg_gateway.keyboards import tag_suggestion_keyboard
+from tg_gateway.keyboards import _serialize_callback, tag_suggestion_keyboard
 
 from shared_lib.redis_streams import (
     GROUP_TELEGRAM,
@@ -155,11 +154,6 @@ async def _dispatch_notification(bot, data: dict) -> None:
         # Create inline keyboard with Yes/No buttons
         # "Yes" uses TaskAction with mark_done
         # "No" uses TaskAction with cancel action
-
-        def _serialize_callback(data: object) -> str:
-            if hasattr(data, "__dataclass_fields__"):
-                return json.dumps(data.__dict__)
-            return json.dumps(data)
 
         keyboard = InlineKeyboardMarkup(
             [
