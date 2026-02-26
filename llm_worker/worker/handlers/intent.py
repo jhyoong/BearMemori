@@ -19,6 +19,7 @@ class IntentHandler(BaseHandler):
     ) -> dict[str, Any] | None:
         # Extract message from payload (support both 'message' and 'query' for backward compatibility)
         message = payload.get("message") or payload.get("query")
+        memory_id = payload.get("memory_id", "")
         original_timestamp = payload.get("original_timestamp")
         followup_context = payload.get("followup_context")
 
@@ -62,6 +63,7 @@ class IntentHandler(BaseHandler):
         structured_result = {
             "query": message,
             "intent": intent,
+            "memory_id": memory_id,
             "results": [],
         }
 

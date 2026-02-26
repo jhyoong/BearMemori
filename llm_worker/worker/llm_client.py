@@ -11,6 +11,10 @@ class LLMError(Exception):
     """Raised when LLM API call fails."""
 
 
+class LLMTimeoutError(LLMError):
+    """Raised when an LLM API call times out."""
+
+
 class LLMClient:
     """Async client for OpenAI-compatible LLM APIs."""
 
@@ -41,6 +45,8 @@ class LLMClient:
                 temperature=0.3,
             )
             return response.choices[0].message.content or ""
+        except openai.APITimeoutError as e:
+            raise LLMTimeoutError(f"LLM API error: {e}") from e
         except (openai.APIError, openai.APIConnectionError) as e:
             raise LLMError(f"LLM API error: {e}") from e
 
@@ -83,6 +89,8 @@ class LLMClient:
                 timeout=120.0,
             )
             return response.choices[0].message.content or ""
+        except openai.APITimeoutError as e:
+            raise LLMTimeoutError(f"LLM vision API error: {e}") from e
         except (openai.APIError, openai.APIConnectionError) as e:
             raise LLMError(f"LLM vision API error: {e}") from e
 

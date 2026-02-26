@@ -327,16 +327,19 @@ async def receive_followup_answer(
     # Get core client from bot_data
     core_client = context.bot_data["core_client"]
 
-    # Create followup LLM job with the original context + user's answer
+    # Re-submit as an intent_classify job with followup_context so the
+    # IntentHandler uses RECLASSIFY_PROMPT with the full conversation history.
     try:
         await core_client.create_llm_job(
             LLMJobCreate(
-                job_type=JobType.followup,
+                job_type=JobType.intent_classify,
                 payload={
+                    "message": original_text,
                     "memory_id": memory_id,
-                    "original_text": original_text,
-                    "followup_question": followup_question,
-                    "user_answer": user_answer,
+                    "followup_context": {
+                        "followup_question": followup_question,
+                        "user_answer": user_answer,
+                    },
                 },
                 user_id=user.id,
             )

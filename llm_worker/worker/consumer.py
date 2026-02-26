@@ -22,6 +22,7 @@ from shared_lib.redis_streams import (
 
 from worker.core_api_client import CoreAPIClient
 from worker.handlers.base import BaseHandler
+from worker.llm_client import LLMTimeoutError
 from worker.retry import RetryManager, FailureType
 from worker.config import LLMWorkerSettings
 
@@ -55,6 +56,10 @@ def _classify_failure_type(exception: Exception) -> FailureType:
     - Connection errors, timeouts, HTTP 5xx → UNAVAILABLE
     - Unparseable/invalid JSON, missing required fields → INVALID_RESPONSE
     """
+    # LLM timeout → UNAVAILABLE
+    if isinstance(exception, LLMTimeoutError):
+        return FailureType.UNAVAILABLE
+
     # Connection errors and timeouts → UNAVAILABLE
     if isinstance(exception, (ConnectionRefusedError, ConnectionError, OSError)):
         return FailureType.UNAVAILABLE
@@ -158,10 +163,16 @@ async def _process_message(
         await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
 
     except Exception as e:
-        logger.exception(f"Error processing job {job_id}: {str(e)}")
-
-        # Classify the failure type
+        # Classify the failure type before logging so we can choose the right log level.
+        # UNAVAILABLE failures (timeouts, connection errors) are expected and transient —
+        # log without traceback. INVALID_RESPONSE failures indicate a logic/parsing bug
+        # and warrant the full traceback.
         failure_type = _classify_failure_type(e)
+
+        if failure_type == FailureType.UNAVAILABLE:
+            logger.error(f"Error processing job {job_id}: {str(e)}")
+        else:
+            logger.exception(f"Error processing job {job_id}: {str(e)}")
 
         # Set error_message based on failure type
         if failure_type == FailureType.INVALID_RESPONSE:
@@ -181,11 +192,13 @@ async def _process_message(
                 await core_api.update_job(
                     job_id=job_id, status="processing", error_message=None
                 )
+                backoff = retry_tracker.backoff_seconds(job_id)
                 logger.info(
-                    f"Job {job_id} failed (attempt {current_attempt}), will retry"
+                    f"Job {job_id} failed (attempt {current_attempt}), "
+                    f"will retry in {backoff:.0f}s"
                 )
                 # Add backoff delay before returning (message not acked, will be retried)
-                await asyncio.sleep(retry_tracker.backoff_seconds(job_id))
+                await asyncio.sleep(backoff)
             else:
                 # Max retries exceeded - mark as failed
                 logger.error(f"Job {job_id} failed after {current_attempt} attempts")
@@ -259,7 +272,8 @@ async def _process_message(
                     job_id=job_id, status="processing", error_message=None
                 )
                 logger.info(
-                    f"Job {job_id} failed due to service unavailability, will retry"
+                    f"Job {job_id} failed due to service unavailability, "
+                    f"will retry on next consumer cycle"
                 )
 
                 # On first occurrence, publish service unavailable notification
