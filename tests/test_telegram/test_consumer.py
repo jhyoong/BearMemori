@@ -323,8 +323,9 @@ class TestHandleIntentResultGeneralNote:
 
         call_kwargs = app.bot.send_message.call_args[1]
         text = call_kwargs.get("text", "")
-        assert "Note saved" in text
-        assert "Remember to water the plants" in text
+        assert "Suggested tags" in text
+        assert "plants" in text
+        assert "home" in text
         assert call_kwargs.get("reply_markup") is not None
         assert app.user_data[12345][AWAITING_BUTTON_ACTION] == {"memory_id": "mem-n1"}
 

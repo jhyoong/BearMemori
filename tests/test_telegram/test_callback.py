@@ -1074,3 +1074,98 @@ class TestExistingHandlersStateClearingAndConfirmation:
         mock_core_client.update_memory.assert_awaited_once()
         assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
         assert PENDING_LLM_CONVERSATION not in mock_context_with_state.user_data
+
+
+class TestTogglePinAutoSavesTags:
+    """Tests that toggle_pin auto-saves any suggested tags before pinning."""
+
+    @pytest.fixture
+    def mock_update(self):
+        update = MagicMock(spec=Update)
+        update.callback_query = MagicMock()
+        update.callback_query.edit_message_text = AsyncMock()
+        return update
+
+    @pytest.fixture
+    def mock_context(self):
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {AWAITING_BUTTON_ACTION: True, USER_QUEUE_COUNT: 1}
+        return context
+
+    @pytest.fixture
+    def mock_core_client(self):
+        client = MagicMock()
+        client.update_memory = AsyncMock()
+        client.get_memory = AsyncMock()
+        client.add_tags = AsyncMock()
+        return client
+
+    @pytest.mark.asyncio
+    async def test_pin_saves_suggested_tags(self, mock_update, mock_context, mock_core_client):
+        """toggle_pin should save suggested tags before pinning."""
+        mock_tag = MagicMock()
+        mock_tag.tag = "groceries"
+        mock_tag.status = "suggested"
+        mock_memory = MagicMock()
+        mock_memory.tags = [mock_tag]
+        mock_core_client.get_memory.return_value = mock_memory
+
+        callback_data = MemoryAction(action="toggle_pin", memory_id="mem-1")
+        await handle_memory_action(mock_update, mock_context, callback_data, mock_core_client)
+
+        mock_core_client.add_tags.assert_awaited_once()
+        call_args = mock_core_client.add_tags.call_args
+        assert call_args[0][0] == "mem-1"
+        assert "groceries" in call_args[0][1].tags
+
+    @pytest.mark.asyncio
+    async def test_pin_skips_add_tags_when_no_suggested_tags(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """toggle_pin should not call add_tags when there are no suggested tags."""
+        mock_memory = MagicMock()
+        mock_memory.tags = []
+        mock_core_client.get_memory.return_value = mock_memory
+
+        callback_data = MemoryAction(action="toggle_pin", memory_id="mem-1")
+        await handle_memory_action(mock_update, mock_context, callback_data, mock_core_client)
+
+        mock_core_client.add_tags.assert_not_awaited()
+        mock_core_client.update_memory.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_pin_skips_add_tags_when_memory_not_found(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """toggle_pin should proceed with pinning even if get_memory returns None."""
+        mock_core_client.get_memory.return_value = None
+
+        callback_data = MemoryAction(action="toggle_pin", memory_id="mem-1")
+        await handle_memory_action(mock_update, mock_context, callback_data, mock_core_client)
+
+        mock_core_client.add_tags.assert_not_awaited()
+        mock_core_client.update_memory.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_pin_only_saves_suggested_not_confirmed_tags(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """toggle_pin should only auto-save tags with status 'suggested', not already confirmed."""
+        tag_suggested = MagicMock()
+        tag_suggested.tag = "work"
+        tag_suggested.status = "suggested"
+        tag_confirmed = MagicMock()
+        tag_confirmed.tag = "personal"
+        tag_confirmed.status = "confirmed"
+        mock_memory = MagicMock()
+        mock_memory.tags = [tag_suggested, tag_confirmed]
+        mock_core_client.get_memory.return_value = mock_memory
+
+        callback_data = MemoryAction(action="toggle_pin", memory_id="mem-1")
+        await handle_memory_action(mock_update, mock_context, callback_data, mock_core_client)
+
+        mock_core_client.add_tags.assert_awaited_once()
+        call_args = mock_core_client.add_tags.call_args
+        saved_tags = call_args[0][1].tags
+        assert "work" in saved_tags
+        assert "personal" not in saved_tags

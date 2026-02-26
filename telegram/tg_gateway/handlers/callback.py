@@ -254,7 +254,14 @@ async def handle_memory_action(
         )
 
     elif action == "toggle_pin":
-        # Pin/unpin the memory and update status to "confirmed"
+        # Auto-save any suggested tags, then pin and confirm the memory
+        memory = await core_client.get_memory(memory_id)
+        if memory is not None:
+            suggested_tags = [t.tag for t in memory.tags if t.status == "suggested"]
+            if suggested_tags:
+                await core_client.add_tags(
+                    memory_id, TagsAddRequest(tags=suggested_tags, status="confirmed")
+                )
         await core_client.update_memory(
             memory_id, MemoryUpdate(is_pinned=True, status=MemoryStatus.confirmed)
         )

@@ -278,7 +278,8 @@ async def _handle_intent_result(
         logger.info("Sent search results to user %s for query %s", user_id, query)
 
     elif intent == "general_note":
-        text = f'Note saved: "{query}"'
+        tags_display = ", ".join(suggested_tags) if suggested_tags else "none"
+        text = f"Suggested tags: {tags_display}."
         keyboard = general_note_keyboard(memory_id, suggested_tags)
         await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
         user_data[AWAITING_BUTTON_ACTION] = {"memory_id": memory_id}
