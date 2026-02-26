@@ -14,11 +14,11 @@ from tg_gateway.handlers.conversation import (
     USER_QUEUE_COUNT,
 )
 from tg_gateway.keyboards import (
-    _serialize_callback,
     general_note_keyboard,
     reminder_proposal_keyboard,
     reschedule_keyboard,
     search_results_keyboard,
+    serialize_callback,
     tag_suggestion_keyboard,
     task_proposal_keyboard,
 )
@@ -162,13 +162,13 @@ async def _dispatch_notification(application: Application, data: dict) -> None:
                 [
                     InlineKeyboardButton(
                         text="Yes, mark done",
-                        callback_data=_serialize_callback(
+                        callback_data=serialize_callback(
                             TaskAction(action="mark_done", task_id=task_id)
                         ),
                     ),
                     InlineKeyboardButton(
                         text="No",
-                        callback_data=_serialize_callback(
+                        callback_data=serialize_callback(
                             TaskAction(action="cancel", task_id=task_id)
                         ),
                     ),
@@ -239,7 +239,9 @@ async def _handle_intent_result(
 
         await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
         user_data[AWAITING_BUTTON_ACTION] = {"memory_id": memory_id}
-        logger.info("Sent reminder intent proposal to user %s for memory %s", user_id, memory_id)
+        logger.info(
+            "Sent reminder intent proposal to user %s for memory %s", user_id, memory_id
+        )
 
     elif intent == "task":
         # Check whether the extracted datetime is stale (in the past).
@@ -253,13 +255,14 @@ async def _handle_intent_result(
 
         await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
         user_data[AWAITING_BUTTON_ACTION] = {"memory_id": memory_id}
-        logger.info("Sent task intent proposal to user %s for memory %s", user_id, memory_id)
+        logger.info(
+            "Sent task intent proposal to user %s for memory %s", user_id, memory_id
+        )
 
     elif intent == "search":
         # Build (label, memory_id) tuples for the keyboard.
         results_tuples = [
-            (r.get("title", "Untitled"), r.get("memory_id", ""))
-            for r in search_results
+            (r.get("title", "Untitled"), r.get("memory_id", "")) for r in search_results
         ]
 
         if results_tuples:
@@ -298,7 +301,10 @@ async def _handle_intent_result(
 
     else:
         logger.warning(
-            "Unknown intent type '%s' for user %s, memory %s", intent, user_id, memory_id
+            "Unknown intent type '%s' for user %s, memory %s",
+            intent,
+            user_id,
+            memory_id,
         )
         text = f'Processed: "{query}"'
         await bot.send_message(chat_id=user_id, text=text)

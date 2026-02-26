@@ -14,10 +14,10 @@ from tg_gateway.callback_data import (
 )
 
 
-def _serialize_callback(data: object) -> str:
+def serialize_callback(data: object) -> str:
     """Serialize callback data object to string using JSON."""
     # Handle dataclasses by converting to dict
-    if hasattr(data, '__dataclass_fields__'):
+    if hasattr(data, "__dataclass_fields__"):
         return json.dumps(data.__dict__)
     return json.dumps(data)
 
@@ -42,13 +42,13 @@ def memory_actions_keyboard(
             [
                 InlineKeyboardButton(
                     text="Confirm Tags",
-                    callback_data=_serialize_callback(
+                    callback_data=serialize_callback(
                         TagConfirm(memory_id=memory_id, action="confirm_all")
                     ),
                 ),
                 InlineKeyboardButton(
                     text="Edit Tags",
-                    callback_data=_serialize_callback(
+                    callback_data=serialize_callback(
                         TagConfirm(memory_id=memory_id, action="edit")
                     ),
                 ),
@@ -60,13 +60,13 @@ def memory_actions_keyboard(
         [
             InlineKeyboardButton(
                 text="Task",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     MemoryAction(action="set_task", memory_id=memory_id)
                 ),
             ),
             InlineKeyboardButton(
                 text="Remind",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     MemoryAction(action="set_reminder", memory_id=memory_id)
                 ),
             ),
@@ -78,19 +78,19 @@ def memory_actions_keyboard(
         [
             InlineKeyboardButton(
                 text="Tag",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     MemoryAction(action="add_tag", memory_id=memory_id)
                 ),
             ),
             InlineKeyboardButton(
                 text="Pin",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     MemoryAction(action="toggle_pin", memory_id=memory_id)
                 ),
             ),
             InlineKeyboardButton(
                 text="Delete",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     MemoryAction(action="confirm_delete", memory_id=memory_id)
                 ),
             ),
@@ -113,19 +113,19 @@ def due_date_keyboard(memory_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="Today",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     DueDateChoice(memory_id=memory_id, choice="today")
                 ),
             ),
             InlineKeyboardButton(
                 text="Tomorrow",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     DueDateChoice(memory_id=memory_id, choice="tomorrow")
                 ),
             ),
             InlineKeyboardButton(
                 text="Next Week",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     DueDateChoice(memory_id=memory_id, choice="next_week")
                 ),
             ),
@@ -133,13 +133,13 @@ def due_date_keyboard(memory_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="No Date",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     DueDateChoice(memory_id=memory_id, choice="no_date")
                 ),
             ),
             InlineKeyboardButton(
                 text="Custom",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     DueDateChoice(memory_id=memory_id, choice="custom")
                 ),
             ),
@@ -162,13 +162,13 @@ def reminder_time_keyboard(memory_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="1 Hour",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     ReminderTimeChoice(memory_id=memory_id, choice="1h")
                 ),
             ),
             InlineKeyboardButton(
                 text="Tomorrow 9am",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     ReminderTimeChoice(memory_id=memory_id, choice="tomorrow_9am")
                 ),
             ),
@@ -176,7 +176,7 @@ def reminder_time_keyboard(memory_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="Custom",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     ReminderTimeChoice(memory_id=memory_id, choice="custom")
                 ),
             ),
@@ -199,13 +199,13 @@ def delete_confirm_keyboard(memory_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="Yes, delete",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     ConfirmDelete(memory_id=memory_id, confirmed=True)
                 ),
             ),
             InlineKeyboardButton(
                 text="No, cancel",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     ConfirmDelete(memory_id=memory_id, confirmed=False)
                 ),
             ),
@@ -231,9 +231,7 @@ def search_results_keyboard(results: list[tuple[str, str]]) -> InlineKeyboardMar
             [
                 InlineKeyboardButton(
                     text=label,
-                    callback_data=_serialize_callback(
-                        SearchDetail(memory_id=memory_id)
-                    ),
+                    callback_data=serialize_callback(SearchDetail(memory_id=memory_id)),
                 ),
             ]
         )
@@ -257,7 +255,7 @@ def task_list_keyboard(tasks: list[tuple[str, str]]) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text=label,
-                    callback_data=_serialize_callback(
+                    callback_data=serialize_callback(
                         TaskAction(action="mark_done", task_id=task_id)
                     ),
                 ),
@@ -280,13 +278,13 @@ def tag_suggestion_keyboard(memory_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="Confirm Tags",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     TagConfirm(memory_id=memory_id, action="confirm_all")
                 ),
             ),
             InlineKeyboardButton(
                 text="Edit Tags",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     TagConfirm(memory_id=memory_id, action="edit")
                 ),
             ),
@@ -309,19 +307,19 @@ def reminder_proposal_keyboard(memory_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="Confirm",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     IntentConfirm(memory_id=memory_id, action="confirm_reminder")
                 ),
             ),
             InlineKeyboardButton(
                 text="Edit time",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     IntentConfirm(memory_id=memory_id, action="edit_reminder_time")
                 ),
             ),
             InlineKeyboardButton(
                 text="Just a note",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     IntentConfirm(memory_id=memory_id, action="just_a_note")
                 ),
             ),
@@ -344,19 +342,19 @@ def task_proposal_keyboard(memory_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="Confirm",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     IntentConfirm(memory_id=memory_id, action="confirm_task")
                 ),
             ),
             InlineKeyboardButton(
                 text="Edit",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     IntentConfirm(memory_id=memory_id, action="edit_task")
                 ),
             ),
             InlineKeyboardButton(
                 text="Just a note",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     IntentConfirm(memory_id=memory_id, action="just_a_note")
                 ),
             ),
@@ -366,7 +364,9 @@ def task_proposal_keyboard(memory_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
-def general_note_keyboard(memory_id: str, suggested_tags: list[str]) -> InlineKeyboardMarkup:
+def general_note_keyboard(
+    memory_id: str, suggested_tags: list[str]
+) -> InlineKeyboardMarkup:
     """Create keyboard for a general note with tag suggestions and action options.
 
     Args:
@@ -383,13 +383,13 @@ def general_note_keyboard(memory_id: str, suggested_tags: list[str]) -> InlineKe
         [
             InlineKeyboardButton(
                 text="Confirm Tags",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     TagConfirm(memory_id=memory_id, action="confirm_all")
                 ),
             ),
             InlineKeyboardButton(
                 text="Edit Tags",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     TagConfirm(memory_id=memory_id, action="edit")
                 ),
             ),
@@ -401,13 +401,13 @@ def general_note_keyboard(memory_id: str, suggested_tags: list[str]) -> InlineKe
         [
             InlineKeyboardButton(
                 text="Make Task",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     MemoryAction(action="set_task", memory_id=memory_id)
                 ),
             ),
             InlineKeyboardButton(
                 text="Set Reminder",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     MemoryAction(action="set_reminder", memory_id=memory_id)
                 ),
             ),
@@ -430,14 +430,43 @@ def reschedule_keyboard(memory_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="Reschedule",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     RescheduleAction(memory_id=memory_id, action="reschedule")
                 ),
             ),
             InlineKeyboardButton(
                 text="Dismiss",
-                callback_data=_serialize_callback(
+                callback_data=serialize_callback(
                     RescheduleAction(memory_id=memory_id, action="dismiss")
+                ),
+            ),
+        ],
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def llm_failure_keyboard(memory_id: str) -> InlineKeyboardMarkup:
+    """Create keyboard for LLM failure recovery.
+
+    Args:
+        memory_id: The ID of the memory.
+
+    Returns:
+        InlineKeyboardMarkup with edit tags and delete buttons.
+    """
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="Edit Tags",
+                callback_data=serialize_callback(
+                    TagConfirm(memory_id=memory_id, action="edit")
+                ),
+            ),
+            InlineKeyboardButton(
+                text="Delete",
+                callback_data=serialize_callback(
+                    MemoryAction(action="confirm_delete", memory_id=memory_id)
                 ),
             ),
         ],

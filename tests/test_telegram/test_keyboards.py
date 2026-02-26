@@ -4,30 +4,37 @@ import json
 
 import pytest
 
-from tg_gateway.callback_data import IntentConfirm, MemoryAction, RescheduleAction, TagConfirm
+from tg_gateway.callback_data import (
+    ConfirmDelete,
+    IntentConfirm,
+    MemoryAction,
+    RescheduleAction,
+    TagConfirm,
+)
 from tg_gateway.keyboards import (
-    _serialize_callback,
     general_note_keyboard,
+    llm_failure_keyboard,
     reminder_proposal_keyboard,
     reschedule_keyboard,
+    serialize_callback,
     task_proposal_keyboard,
 )
 
 
 class TestSerializeCallback:
-    """Tests for the exported _serialize_callback helper."""
+    """Tests for the exported serialize_callback helper."""
 
     def test_serializes_dataclass(self):
         """Test that a dataclass is serialized to a JSON string via __dict__."""
         obj = IntentConfirm(memory_id="mem-1", action="confirm_reminder")
-        result = _serialize_callback(obj)
+        result = serialize_callback(obj)
         parsed = json.loads(result)
         assert parsed["memory_id"] == "mem-1"
         assert parsed["action"] == "confirm_reminder"
 
     def test_serializes_plain_value(self):
         """Test that a plain value is serialized directly to JSON."""
-        result = _serialize_callback("hello")
+        result = serialize_callback("hello")
         assert json.loads(result) == "hello"
 
 
@@ -229,6 +236,46 @@ class TestRescheduleKeyboard:
         """Both buttons reference the correct memory_id."""
         memory_id = "reschedule-id-88"
         keyboard = reschedule_keyboard(memory_id)
+        for btn in keyboard.inline_keyboard[0]:
+            data = json.loads(btn.callback_data)
+            assert data["memory_id"] == memory_id
+
+
+class TestLLMFailureKeyboard:
+    """Tests for llm_failure_keyboard."""
+
+    def test_returns_single_row(self):
+        """Keyboard has exactly one row."""
+        keyboard = llm_failure_keyboard("mem-fail-1")
+        assert len(keyboard.inline_keyboard) == 1
+
+    def test_row_has_two_buttons(self):
+        """The single row contains exactly two buttons."""
+        keyboard = llm_failure_keyboard("mem-fail-1")
+        assert len(keyboard.inline_keyboard[0]) == 2
+
+    def test_button_labels(self):
+        """Buttons are labelled Edit Tags and Delete."""
+        keyboard = llm_failure_keyboard("mem-fail-1")
+        labels = [btn.text for btn in keyboard.inline_keyboard[0]]
+        assert labels == ["Edit Tags", "Delete"]
+
+    def test_edit_tags_callback_data(self):
+        """Edit Tags button carries TagConfirm with edit action."""
+        keyboard = llm_failure_keyboard("mem-fail-1")
+        data = json.loads(keyboard.inline_keyboard[0][0].callback_data)
+        assert data == {"memory_id": "mem-fail-1", "action": "edit"}
+
+    def test_delete_callback_data(self):
+        """Delete button carries MemoryAction with confirm_delete action."""
+        keyboard = llm_failure_keyboard("mem-fail-1")
+        data = json.loads(keyboard.inline_keyboard[0][1].callback_data)
+        assert data == {"action": "confirm_delete", "memory_id": "mem-fail-1"}
+
+    def test_memory_id_propagated(self):
+        """Both buttons reference the correct memory_id."""
+        memory_id = "llm-fail-id-777"
+        keyboard = llm_failure_keyboard(memory_id)
         for btn in keyboard.inline_keyboard[0]:
             data = json.loads(btn.callback_data)
             assert data["memory_id"] == memory_id
