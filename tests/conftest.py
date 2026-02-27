@@ -11,6 +11,10 @@ _llm_worker_path = os.path.join(PROJECT_ROOT, "llm_worker")
 if _llm_worker_path not in sys.path:
     sys.path.insert(0, _llm_worker_path)
 
+_assistant_path = os.path.join(PROJECT_ROOT, "assistant")
+if _assistant_path not in sys.path:
+    sys.path.insert(0, _assistant_path)
+
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 
