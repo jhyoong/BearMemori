@@ -1,7 +1,7 @@
 import logging
 
 import redis.asyncio
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -178,6 +178,16 @@ async def post_init(application: Application) -> None:
     application.bot_data["core_client"] = core_client
     application.bot_data["redis"] = redis_client
     application.bot_data["gateway"] = gateway
+
+    # Set up menu commands
+    commands = [
+        BotCommand("help", "Show this help message"),
+        BotCommand("find", "Search memories"),
+        BotCommand("tasks", "List your tasks"),
+        BotCommand("pinned", "Show pinned memories"),
+        BotCommand("cancel", "Cancel current action"),
+    ]
+    await application.bot.set_my_commands(commands)
 
     # Start Redis consumer task
     try:
