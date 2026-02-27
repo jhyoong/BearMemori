@@ -40,7 +40,9 @@ def _make_update(text: str = "hello world", user_id: int = 99) -> MagicMock:
     return update
 
 
-def _make_context(user_data: dict | None = None, bot_data: dict | None = None) -> MagicMock:
+def _make_context(
+    user_data: dict | None = None, bot_data: dict | None = None
+) -> MagicMock:
     """Return a minimal mock context with controllable user_data and bot_data."""
     context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
     context.user_data = user_data if user_data is not None else {}
@@ -52,6 +54,7 @@ def _make_core_client() -> MagicMock:
     """Return a mock CoreClient with async methods."""
     client = MagicMock()
     client.ensure_user = AsyncMock()
+    client.create_memory = AsyncMock()
     client.create_llm_job = AsyncMock()
     return client
 
@@ -102,7 +105,7 @@ class TestHandleTextQueueFlow:
         core_client.create_llm_job.assert_called_once()
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.job_type == JobType.intent_classify
-        assert job_arg.payload["text"] == "Note to self"
+        assert job_arg.payload["message"] == "Note to self"
 
     @pytest.mark.asyncio
     async def test_llm_job_payload_contains_source_fields(self):
@@ -119,7 +122,7 @@ class TestHandleTextQueueFlow:
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.payload["source_chat_id"] == 42
         assert job_arg.payload["source_message_id"] == 7
-        assert job_arg.payload["message_timestamp"] is None
+        assert job_arg.payload["original_timestamp"] is None
 
     @pytest.mark.asyncio
     async def test_llm_job_payload_timestamp_when_date_set(self):
@@ -135,7 +138,7 @@ class TestHandleTextQueueFlow:
         await handle_text(update, context)
 
         job_arg = core_client.create_llm_job.call_args[0][0]
-        assert job_arg.payload["message_timestamp"] == dt.isoformat()
+        assert job_arg.payload["original_timestamp"] == dt.isoformat()
 
     @pytest.mark.asyncio
     async def test_llm_job_user_id_matches_telegram_user(self):
@@ -183,6 +186,21 @@ class TestHandleTextQueueFlow:
         await handle_text(update, context)
 
         core_client.create_memory.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_llm_job_payload_has_memory_id_none(self):
+        """The LLM job payload should have memory_id set to None, not a memory object."""
+        core_client = _make_core_client()
+        core_client.create_memory = AsyncMock()  # should not be called
+        update = _make_update(text="Remember to buy milk")
+        context = _make_context(bot_data={"core_client": core_client})
+
+        await handle_text(update, context)
+
+        core_client.create_llm_job.assert_called_once()
+        job_arg = core_client.create_llm_job.call_args[0][0]
+        # Memory ID should be None, not a memory object
+        assert job_arg.payload["memory_id"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -341,7 +359,7 @@ class TestHandleTextConversationRouting:
         core_client.create_llm_job.assert_called_once()
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.job_type == JobType.intent_classify
-        assert job_arg.payload["text"] == "New text while buttons shown"
+        assert job_arg.payload["message"] == "New text while buttons shown"
 
     @pytest.mark.asyncio
     async def test_pending_llm_conversation_takes_priority_over_awaiting_button(self):
@@ -400,3 +418,92 @@ class TestHandleTextConversationRouting:
                 await handle_text(update, context)
                 mock_receive_tags.assert_called_once_with(update, context)
                 mock_followup.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Specific phrase integration tests - full flow from user message
+# ---------------------------------------------------------------------------
+
+
+class TestHandleTextSpecificPhrases:
+    """Tests for specific user phrases to verify correct flow."""
+
+    @pytest.mark.asyncio
+    async def test_search_phrase_creates_llm_job(self):
+        """Test 'Search for all images about anime' creates LLM job."""
+        core_client = _make_core_client()
+        update = _make_update(text="Search for all images about anime")
+        context = _make_context(bot_data={"core_client": core_client})
+
+        await handle_text(update, context)
+
+        # Verify LLM job is created for search
+        core_client.create_llm_job.assert_called_once()
+        job_arg = core_client.create_llm_job.call_args[0][0]
+        assert job_arg.job_type == JobType.intent_classify
+        assert job_arg.payload["message"] == "Search for all images about anime"
+        # Memory ID should be None for new job (not yet created)
+        assert job_arg.payload["memory_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_reminder_phrase_creates_llm_job(self):
+        """Test 'Remind me to call mom tomorrow' creates LLM job."""
+        core_client = _make_core_client()
+        update = _make_update(text="Remind me to call mom tomorrow")
+        context = _make_context(bot_data={"core_client": core_client})
+
+        await handle_text(update, context)
+
+        # Verify LLM job is created for reminder
+        core_client.create_llm_job.assert_called_once()
+        job_arg = core_client.create_llm_job.call_args[0][0]
+        assert job_arg.job_type == JobType.intent_classify
+        assert job_arg.payload["message"] == "Remind me to call mom tomorrow"
+
+    @pytest.mark.asyncio
+    async def test_task_phrase_creates_llm_job(self):
+        """Test 'Add task to finish report by Friday' creates LLM job."""
+        core_client = _make_core_client()
+        update = _make_update(text="Add task to finish report by Friday")
+        context = _make_context(bot_data={"core_client": core_client})
+
+        await handle_text(update, context)
+
+        # Verify LLM job is created for task
+        core_client.create_llm_job.assert_called_once()
+        job_arg = core_client.create_llm_job.call_args[0][0]
+        assert job_arg.job_type == JobType.intent_classify
+        assert job_arg.payload["message"] == "Add task to finish report by Friday"
+
+    @pytest.mark.asyncio
+    async def test_search_phrase_queue_count_increments(self):
+        """Test that search phrase increments queue count."""
+        core_client = _make_core_client()
+        update = _make_update(text="Search for all images about anime")
+        context = _make_context(bot_data={"core_client": core_client})
+
+        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 0
+        await handle_text(update, context)
+        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 1
+
+    @pytest.mark.asyncio
+    async def test_reminder_phrase_queue_count_increments(self):
+        """Test that reminder phrase increments queue count."""
+        core_client = _make_core_client()
+        update = _make_update(text="Remind me to call mom tomorrow")
+        context = _make_context(bot_data={"core_client": core_client})
+
+        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 0
+        await handle_text(update, context)
+        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 1
+
+    @pytest.mark.asyncio
+    async def test_task_phrase_queue_count_increments(self):
+        """Test that task phrase increments queue count."""
+        core_client = _make_core_client()
+        update = _make_update(text="Add task to finish report by Friday")
+        context = _make_context(bot_data={"core_client": core_client})
+
+        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 0
+        await handle_text(update, context)
+        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 1

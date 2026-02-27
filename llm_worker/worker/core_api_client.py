@@ -81,3 +81,13 @@ class CoreAPIClient:
                 text = await resp.text()
                 raise CoreAPIError(f"GET {url} returned {resp.status}: {text}")
             return await resp.json()
+
+    async def create_memory(self, content: str, owner_user_id: int) -> dict[str, Any]:
+        """Create a memory via POST /memories."""
+        url = f"{self._base_url}/memories"
+        body = {"content": content, "owner_user_id": owner_user_id}
+        async with self._session.post(url, json=body) as resp:
+            if resp.status not in (200, 201):
+                text = await resp.text()
+                raise CoreAPIError(f"POST {url} returned {resp.status}: {text}")
+            return await resp.json()

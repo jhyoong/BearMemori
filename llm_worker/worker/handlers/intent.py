@@ -51,6 +51,15 @@ class IntentHandler(BaseHandler):
 
         logger.info("Classified query '%s' as intent: %s", message, intent)
 
+        # For non-search intents (reminder, task, general_note, ambiguous), create memory
+        # For search intents, no memory should be created (search is self-contained)
+        memory_id = None
+        if intent in ("reminder", "task", "general_note", "ambiguous"):
+            memory_response = await self.core_api.create_memory(
+                content=message, owner_user_id=user_id
+            )
+            memory_id = memory_response.get("memory_id")
+
         # For legacy format (old 'query' only, no 'original_timestamp'), maintain old behavior
         # But if search intent, still call the search API
         if is_legacy:
@@ -61,7 +70,9 @@ class IntentHandler(BaseHandler):
                     search_query = " ".join(keywords)
                 else:
                     search_query = str(keywords)
-                raw_results = await self.core_api.search(search_query, owner_user_id=user_id)
+                raw_results = await self.core_api.search(
+                    search_query, owner_user_id=user_id
+                )
                 return {
                     "query": message,
                     "intent": intent,
@@ -102,7 +113,9 @@ class IntentHandler(BaseHandler):
                 search_query = " ".join(keywords)
             else:
                 search_query = str(keywords)
-            raw_results = await self.core_api.search(search_query, owner_user_id=user_id)
+            raw_results = await self.core_api.search(
+                search_query, owner_user_id=user_id
+            )
             structured_result["results"] = self._normalize_search_results(raw_results)
 
         return structured_result
@@ -117,10 +130,12 @@ class IntentHandler(BaseHandler):
         for r in raw_results:
             mem = r.get("memory", {})
             if mem:
-                normalized.append({
-                    "memory_id": mem.get("id", ""),
-                    "title": mem.get("content", "Untitled"),
-                })
+                normalized.append(
+                    {
+                        "memory_id": mem.get("id", ""),
+                        "title": mem.get("content", "Untitled"),
+                    }
+                )
             else:
                 # Already flat format — pass through unchanged
                 normalized.append(r)

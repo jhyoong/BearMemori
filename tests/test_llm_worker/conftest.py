@@ -20,6 +20,7 @@ if _shared_path not in sys.path:
     sys.path.insert(0, _shared_path)
 
 from worker.config import LLMWorkerSettings
+from worker.handlers.intent import IntentHandler
 
 
 @pytest.fixture
@@ -55,4 +56,14 @@ def llm_worker_config():
         redis_url="redis://localhost:6379",
         core_api_url="http://localhost:8000",
         image_storage_path="/tmp/test-images",
+    )
+
+
+@pytest.fixture
+def handler(mock_llm_client, mock_core_api, llm_worker_config):
+    """Create IntentHandler instance with mocked dependencies."""
+    return IntentHandler(
+        llm_client=mock_llm_client,
+        core_api=mock_core_api,
+        config=llm_worker_config,
     )

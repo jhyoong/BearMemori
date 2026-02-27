@@ -82,21 +82,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         increment_queue(context)
 
-        memory = await core_client.create_memory(
-            MemoryCreate(
-                owner_user_id=user.id,
-                content=msg.text,
-                source_chat_id=msg.chat_id,
-                source_message_id=msg.message_id,
-            )
-        )
-
         await core_client.create_llm_job(
             LLMJobCreate(
                 job_type=JobType.intent_classify,
                 payload={
                     "message": msg.text,
-                    "memory_id": memory.id,
+                    "memory_id": None,
                     "original_timestamp": msg.date.isoformat() if msg.date else None,
                     "source_chat_id": msg.chat_id,
                     "source_message_id": msg.message_id,

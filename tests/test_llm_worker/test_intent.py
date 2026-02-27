@@ -304,3 +304,392 @@ class TestIntentHandler:
         assert result is not None
         assert result.get("intent") == "general_note"
         assert result.get("suggested_tags") == ["ideas", "project", "brainstorm"]
+
+    @pytest.mark.asyncio
+    async def test_search_intent_does_not_create_memory(
+        self, handler, mock_llm_client, mock_core_api
+    ):
+        """Test that search intent does NOT create a memory.
+
+        Given a search intent, the handler should:
+        - NOT call core_api.create_memory
+        - Return the search results without any memory_id
+        """
+        # Setup mock to track create_memory calls
+        mock_core_api.create_memory = AsyncMock()
+        mock_core_api.search = AsyncMock(
+            return_value=[{"memory": {"id": "mem-1", "content": "Test result"}}]
+        )
+
+        original_ts = "2026-02-24T10:00:00Z"
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "search", "query": "butter recipe", "keywords": ["butter", "recipe"]}'
+        )
+
+        result = await handler.handle(
+            "job-search-001",
+            {
+                "message": "Find my butter recipe",
+                "original_timestamp": original_ts,
+                "user_id": 12345,
+            },
+            user_id=12345,
+        )
+
+        # Verify search intent does NOT call create_memory
+        mock_core_api.create_memory.assert_not_called()
+
+        # Verify search results are returned
+        assert result is not None
+        assert result.get("intent") == "search"
+        assert "results" in result
+
+    @pytest.mark.asyncio
+    async def test_reminder_intent_creates_memory(
+        self, handler, mock_llm_client, mock_core_api
+    ):
+        """Test that reminder intent creates a memory via Core API.
+
+        Given a reminder intent, the handler should:
+        - Call core_api.create_memory with the original message text
+        - Add the returned memory_id to the result
+        """
+        # Setup mock to return a memory_id
+        mock_core_api.create_memory = AsyncMock(
+            return_value={"memory_id": "mem-reminder-123"}
+        )
+
+        original_ts = "2026-02-24T10:00:00Z"
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "reminder", "action": "buy groceries", "time": "tomorrow", "resolved_time": "2026-02-25T10:00:00Z"}'
+        )
+
+        result = await handler.handle(
+            "job-reminder-001",
+            {
+                "message": "Remind me to buy groceries",
+                "original_timestamp": original_ts,
+                "user_id": 12345,
+            },
+            user_id=12345,
+        )
+
+        # Verify create_memory was called with the message content
+        mock_core_api.create_memory.assert_called_once()
+        call_args = mock_core_api.create_memory.call_args
+        # Should be called with content = message text
+        assert (
+            call_args.kwargs.get("content") == "Remind me to buy groceries"
+            or call_args.args[0].get("content") == "Remind me to buy groceries"
+        )
+
+        # Verify memory_id is in result
+        assert result is not None
+        assert result.get("intent") == "reminder"
+        assert result.get("memory_id") == "mem-reminder-123"
+
+    @pytest.mark.asyncio
+    async def test_task_intent_creates_memory(
+        self, handler, mock_llm_client, mock_core_api
+    ):
+        """Test that task intent creates a memory via Core API.
+
+        Given a task intent, the handler should:
+        - Call core_api.create_memory with the original message text
+        - Add the returned memory_id to the result
+        """
+        # Setup mock to return a memory_id
+        mock_core_api.create_memory = AsyncMock(
+            return_value={"memory_id": "mem-task-456"}
+        )
+
+        original_ts = "2026-02-24T10:00:00Z"
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "task", "description": "submit report", "due_time": "next week", "resolved_due_time": "2026-03-03T10:00:00Z"}'
+        )
+
+        result = await handler.handle(
+            "job-task-001",
+            {
+                "message": "Create task to submit report",
+                "original_timestamp": original_ts,
+                "user_id": 12345,
+            },
+            user_id=12345,
+        )
+
+        # Verify create_memory was called with the message content
+        mock_core_api.create_memory.assert_called_once()
+
+        # Verify memory_id is in result
+        assert result is not None
+        assert result.get("intent") == "task"
+        assert result.get("memory_id") == "mem-task-456"
+
+    @pytest.mark.asyncio
+    async def test_general_note_intent_creates_memory(
+        self, handler, mock_llm_client, mock_core_api
+    ):
+        """Test that general_note intent creates a memory via Core API.
+
+        Given a general_note intent, the handler should:
+        - Call core_api.create_memory with the original message text
+        - Add the returned memory_id to the result
+        """
+        # Setup mock to return a memory_id
+        mock_core_api.create_memory = AsyncMock(
+            return_value={"memory_id": "mem-note-789"}
+        )
+
+        original_ts = "2026-02-24T10:00:00Z"
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "general_note", "suggested_tags": ["ideas", "project"]}'
+        )
+
+        result = await handler.handle(
+            "job-note-001",
+            {
+                "message": "Note: Great idea for the project",
+                "original_timestamp": original_ts,
+                "user_id": 12345,
+            },
+            user_id=12345,
+        )
+
+        # Verify create_memory was called with the message content
+        mock_core_api.create_memory.assert_called_once()
+
+        # Verify memory_id is in result
+        assert result is not None
+        assert result.get("intent") == "general_note"
+        assert result.get("memory_id") == "mem-note-789"
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_intent_creates_memory(
+        self, handler, mock_llm_client, mock_core_api
+    ):
+        """Test that ambiguous intent creates a memory via Core API.
+
+        Given an ambiguous intent, the handler should:
+        - Call core_api.create_memory with the original message text (for followup context)
+        - Add the returned memory_id to the result
+        """
+        # Setup mock to return a memory_id
+        mock_core_api.create_memory = AsyncMock(
+            return_value={"memory_id": "mem-ambiguous-999"}
+        )
+
+        original_ts = "2026-02-24T10:00:00Z"
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "ambiguous", "keywords": []}'
+        )
+
+        result = await handler.handle(
+            "job-ambiguous-001",
+            {
+                "message": "do something",
+                "original_timestamp": original_ts,
+                "user_id": 12345,
+            },
+            user_id=12345,
+        )
+
+        # Verify create_memory was called with the message content
+        mock_core_api.create_memory.assert_called_once()
+
+        # Verify memory_id is in result
+        assert result is not None
+        assert result.get("intent") == "ambiguous"
+        assert result.get("memory_id") == "mem-ambiguous-999"
+
+
+# ---------------------------------------------------------------------------
+# Specific phrase tests - exact examples from acceptance criteria
+# ---------------------------------------------------------------------------
+
+
+class TestIntentSpecificPhrases:
+    """Test specific example phrases from acceptance criteria."""
+
+    @pytest.mark.asyncio
+    async def test_search_all_images_about_anime_no_memory_created(
+        self, handler, mock_llm_client, mock_core_api
+    ):
+        """Test 'Search for all images about anime' does NOT create memory.
+
+        Given a search query, the handler should:
+        - NOT call core_api.create_memory
+        - Call core_api.search with keywords
+        - Return search results without memory_id
+        """
+        # Setup mock to track create_memory calls
+        mock_core_api.create_memory = AsyncMock()
+        mock_core_api.search = AsyncMock(
+            return_value=[
+                {"memory": {"id": "mem-1", "content": "Anime image 1"}},
+                {"memory": {"id": "mem-2", "content": "Anime image 2"}},
+            ]
+        )
+
+        original_ts = "2026-02-24T10:00:00Z"
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "search", "query": "all images about anime", "keywords": ["anime", "images"]}'
+        )
+
+        result = await handler.handle(
+            "job-search-anime-001",
+            {
+                "message": "Search for all images about anime",
+                "original_timestamp": original_ts,
+                "user_id": 12345,
+            },
+            user_id=12345,
+        )
+
+        # Verify search intent does NOT call create_memory
+        mock_core_api.create_memory.assert_not_called()
+
+        # Verify search is called with the keywords
+        mock_core_api.search.assert_called_once()
+        search_call = mock_core_api.search.call_args
+        assert (
+            "anime images" in str(search_call).lower()
+            or "anime" in str(search_call).lower()
+        )
+
+        # Verify result contains search results
+        assert result is not None
+        assert result.get("intent") == "search"
+        assert "results" in result
+        assert len(result.get("results", [])) == 2
+        # memory_id should be None for search (not created)
+        assert result.get("memory_id") is None
+
+    @pytest.mark.asyncio
+    async def test_remind_me_to_call_mom_tomorrow_creates_memory(
+        self, handler, mock_llm_client, mock_core_api
+    ):
+        """Test 'Remind me to call mom tomorrow' creates memory.
+
+        Given a reminder intent, the handler should:
+        - Call core_api.create_memory with the original message text
+        - Return the memory_id in result
+        """
+        # Setup mock to return a memory_id
+        mock_core_api.create_memory = AsyncMock(
+            return_value={"memory_id": "mem-reminder-mom-123"}
+        )
+
+        original_ts = "2026-02-24T10:00:00Z"
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "reminder", "action": "call mom", "time": "tomorrow", "resolved_time": "2026-02-25T10:00:00Z"}'
+        )
+
+        result = await handler.handle(
+            "job-reminder-mom-001",
+            {
+                "message": "Remind me to call mom tomorrow",
+                "original_timestamp": original_ts,
+                "user_id": 12345,
+            },
+            user_id=12345,
+        )
+
+        # Verify create_memory was called with the message content
+        mock_core_api.create_memory.assert_called_once()
+        call_args = mock_core_api.create_memory.call_args
+        # Check content contains the reminder text
+        content_arg = call_args.kwargs.get("content") or call_args.args[0].get(
+            "content"
+        )
+        assert "call mom" in content_arg.lower()
+
+        # Verify memory_id is in result
+        assert result is not None
+        assert result.get("intent") == "reminder"
+        assert result.get("memory_id") == "mem-reminder-mom-123"
+        # Verify action is extracted
+        assert result.get("action") == "call mom"
+
+    @pytest.mark.asyncio
+    async def test_add_task_to_finish_report_by_friday_creates_memory(
+        self, handler, mock_llm_client, mock_core_api
+    ):
+        """Test 'Add task to finish report by Friday' creates memory.
+
+        Given a task intent, the handler should:
+        - Call core_api.create_memory with the original message text
+        - Return the memory_id in result
+        """
+        # Setup mock to return a memory_id
+        mock_core_api.create_memory = AsyncMock(
+            return_value={"memory_id": "mem-task-report-456"}
+        )
+
+        original_ts = "2026-02-24T10:00:00Z"
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "task", "description": "finish report", "due_time": "friday", "resolved_due_time": "2026-02-27T17:00:00Z"}'
+        )
+
+        result = await handler.handle(
+            "job-task-report-001",
+            {
+                "message": "Add task to finish report by Friday",
+                "original_timestamp": original_ts,
+                "user_id": 12345,
+            },
+            user_id=12345,
+        )
+
+        # Verify create_memory was called with the message content
+        mock_core_api.create_memory.assert_called_once()
+        call_args = mock_core_api.create_memory.call_args
+        # Check content contains the task description
+        content_arg = call_args.kwargs.get("content") or call_args.args[0].get(
+            "content"
+        )
+        assert "finish report" in content_arg.lower()
+
+        # Verify memory_id is in result
+        assert result is not None
+        assert result.get("intent") == "task"
+        assert result.get("memory_id") == "mem-task-report-456"
+        # Verify description is extracted
+        assert result.get("description") == "finish report"
+
+    @pytest.mark.asyncio
+    async def test_search_phrase_triggers_search_api(
+        self, handler, mock_llm_client, mock_core_api
+    ):
+        """Test that search phrase triggers Core API search endpoint.
+
+        Given a search query with keywords, the handler should:
+        - Call core_api.search with keywords
+        - Return search results
+        """
+        mock_core_api.create_memory = AsyncMock()
+        mock_core_api.search = AsyncMock(
+            return_value=[{"memory": {"id": "mem-1", "content": "Found result"}}]
+        )
+
+        original_ts = "2026-02-24T10:00:00Z"
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "search", "query": "butter recipe", "keywords": ["butter", "recipe"]}'
+        )
+
+        result = await handler.handle(
+            "job-search-recipe-001",
+            {
+                "message": "Find my butter recipe",
+                "original_timestamp": original_ts,
+                "user_id": 12345,
+            },
+            user_id=12345,
+        )
+
+        # Verify search was called
+        mock_core_api.search.assert_called_once()
+        # Verify search results are in response
+        assert result is not None
+        assert "results" in result
+        assert len(result["results"]) == 1
