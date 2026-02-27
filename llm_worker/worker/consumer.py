@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 from urllib.error import HTTPError
 
@@ -30,6 +31,11 @@ logger = logging.getLogger(__name__)
 
 # Consumer group name for this worker
 CONSUMER_NAME = "llm-worker-1"
+
+# Maximum age (in seconds) for a Redis stream message before it is considered stale.
+# Messages older than this are acked and skipped to avoid processing outdated jobs
+# after a restart.
+MAX_MESSAGE_AGE_SECONDS = 300  # 5 minutes
 
 # Map handler keys to stream names (for consumer loop iteration)
 STREAM_HANDLER_MAP = {
@@ -107,6 +113,25 @@ async def _process_message(
         retry_tracker: Retry manager for managing retry logic
         config: LLM worker configuration
     """
+    # Check message age using the Redis stream ID (format: {ms_timestamp}-{seq}).
+    # Skip stale messages that were queued before a restart to avoid processing
+    # outdated jobs against the wrong user context.
+    try:
+        msg_ts_ms = int(message_id.split("-")[0])
+        age_seconds = (time.time() * 1000 - msg_ts_ms) / 1000
+        if age_seconds > MAX_MESSAGE_AGE_SECONDS:
+            logger.warning(
+                "Skipping stale message %s from %s (age %.0fs > %ds)",
+                message_id,
+                stream_name,
+                age_seconds,
+                MAX_MESSAGE_AGE_SECONDS,
+            )
+            await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+            return
+    except (ValueError, IndexError):
+        pass  # If we can't parse the ID, process the message normally
+
     job_id = data.get("job_id")
     payload = data.get("payload", {})
     user_id = data.get("user_id")

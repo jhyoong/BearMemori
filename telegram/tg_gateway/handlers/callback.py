@@ -677,9 +677,9 @@ async def handle_intent_confirm(
     on the action chosen by the user.
 
     Actions:
-        confirm_reminder: Confirm memory, show reminder time keyboard.
+        confirm_reminder: Confirm memory, create reminder using LLM-resolved time.
         edit_reminder_time: Confirm memory, show reminder time keyboard.
-        confirm_task: Confirm memory, show due date keyboard.
+        confirm_task: Confirm memory, create task using LLM-resolved due time.
         edit_task: Confirm memory, show due date keyboard.
         just_a_note: Confirm memory, acknowledge as a note.
 
@@ -689,9 +689,16 @@ async def handle_intent_confirm(
         callback_data: The parsed callback data.
         core_client: The Core API client.
     """
+    from datetime import datetime, timezone
+
     callback_query = update.callback_query
     memory_id = callback_data.memory_id
     action = callback_data.action
+    user_id = update.effective_user.id
+
+    # Read the stored state before clearing it
+    raw_awaiting = context.user_data.get(AWAITING_BUTTON_ACTION)
+    awaiting = raw_awaiting if isinstance(raw_awaiting, dict) else {}
 
     # All actions confirm the memory first
     await core_client.update_memory(
@@ -700,6 +707,40 @@ async def handle_intent_confirm(
     _clear_conversation_state(context)
 
     if action == "confirm_reminder":
+        resolved_time = awaiting.get("resolved_time")
+        if resolved_time:
+            # Use the LLM-resolved time directly
+            try:
+                fire_at_str = resolved_time.strip()
+                if fire_at_str.endswith("Z"):
+                    fire_at = datetime.fromisoformat(
+                        fire_at_str.replace("Z", "+00:00")
+                    )
+                else:
+                    fire_at = datetime.fromisoformat(fire_at_str)
+                if fire_at.tzinfo is None:
+                    fire_at = fire_at.replace(tzinfo=timezone.utc)
+
+                # Get reminder text from memory content
+                reminder_text = awaiting.get("query", "Reminder")
+                reminder_data = ReminderCreate(
+                    memory_id=memory_id,
+                    owner_user_id=user_id,
+                    text=reminder_text,
+                    fire_at=fire_at,
+                )
+                await core_client.create_reminder(reminder_data)
+                await callback_query.edit_message_text(
+                    f"Reminder set for {fire_at.strftime('%Y-%m-%d %H:%M')}"
+                )
+                return
+            except (ValueError, TypeError):
+                logger.warning(
+                    "Could not parse resolved_time '%s', falling back to picker",
+                    resolved_time,
+                )
+
+        # Fallback: show time picker if no resolved time available
         await callback_query.edit_message_text(
             "Select when to be reminded:",
             reply_markup=reminder_time_keyboard(memory_id),
@@ -712,6 +753,39 @@ async def handle_intent_confirm(
         )
 
     elif action == "confirm_task":
+        resolved_due_time = awaiting.get("resolved_due_time")
+        if resolved_due_time:
+            # Use the LLM-resolved due time directly
+            try:
+                due_str = resolved_due_time.strip()
+                if due_str.endswith("Z"):
+                    due_at = datetime.fromisoformat(
+                        due_str.replace("Z", "+00:00")
+                    )
+                else:
+                    due_at = datetime.fromisoformat(due_str)
+                if due_at.tzinfo is None:
+                    due_at = due_at.replace(tzinfo=timezone.utc)
+
+                description = awaiting.get("query", "Task")
+                task_data = TaskCreate(
+                    memory_id=memory_id,
+                    owner_user_id=user_id,
+                    description=description,
+                    due_at=due_at,
+                )
+                await core_client.create_task(task_data)
+                await callback_query.edit_message_text(
+                    f"Task created with due date: {due_at.strftime('%Y-%m-%d %H:%M')}"
+                )
+                return
+            except (ValueError, TypeError):
+                logger.warning(
+                    "Could not parse resolved_due_time '%s', falling back to picker",
+                    resolved_due_time,
+                )
+
+        # Fallback: show due date picker if no resolved time available
         await callback_query.edit_message_text(
             "Select a due date for the task:",
             reply_markup=due_date_keyboard(memory_id),

@@ -15,8 +15,13 @@ class FollowupHandler(BaseHandler):
     async def handle(
         self, job_id: str, payload: dict[str, Any], user_id: int | None
     ) -> dict[str, Any] | None:
-        message = payload["message"]
-        context = payload.get("context", "No additional context available.")
+        message = payload.get("message", "")
+        if not message:
+            logger.error("Followup job %s missing 'message' in payload: %s", job_id, payload)
+            return None
+        context = payload.get("context") or payload.get(
+            "followup_context", "No additional context available."
+        )
 
         prompt = FOLLOWUP_PROMPT.format(message=message, context=context)
         raw_response = await self.llm.complete(self.config.llm_text_model, prompt)

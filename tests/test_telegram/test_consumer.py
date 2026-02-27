@@ -112,7 +112,8 @@ class TestHandleIntentResultReminder:
         assert "mem-r1" in str(call_kwargs.get("reply_markup", ""))
         assert "Call mom" in call_kwargs.get("text", "")
         # State set
-        assert app.user_data[12345][AWAITING_BUTTON_ACTION] == {"memory_id": "mem-r1"}
+        state = app.user_data[12345][AWAITING_BUTTON_ACTION]
+        assert state["memory_id"] == "mem-r1"
 
     @pytest.mark.asyncio
     async def test_reminder_stale_sends_reschedule_keyboard(self):
@@ -131,7 +132,8 @@ class TestHandleIntentResultReminder:
         text = call_kwargs.get("text", "")
         assert "passed" in text.lower() or "reschedule" in text.lower()
         # State still set (user needs to act)
-        assert app.user_data[12345][AWAITING_BUTTON_ACTION] == {"memory_id": "mem-r2"}
+        state = app.user_data[12345][AWAITING_BUTTON_ACTION]
+        assert state["memory_id"] == "mem-r2"
 
     @pytest.mark.asyncio
     async def test_reminder_no_datetime_shows_unspecified(self):
@@ -220,7 +222,8 @@ class TestHandleIntentResultReminder:
         await _handle_intent_result(app, "99", content)
 
         assert 99 in app.user_data
-        assert app.user_data[99][AWAITING_BUTTON_ACTION] == {"memory_id": "mem-x"}
+        state = app.user_data[99][AWAITING_BUTTON_ACTION]
+        assert state["memory_id"] == "mem-x"
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +248,8 @@ class TestHandleIntentResultTask:
         text = call_kwargs.get("text", "")
         assert "Finish report" in text
         assert "Task:" in text
-        assert app.user_data[12345][AWAITING_BUTTON_ACTION] == {"memory_id": "mem-t1"}
+        state = app.user_data[12345][AWAITING_BUTTON_ACTION]
+        assert state["memory_id"] == "mem-t1"
 
     @pytest.mark.asyncio
     async def test_task_stale_sends_reschedule_keyboard(self):
@@ -262,7 +266,8 @@ class TestHandleIntentResultTask:
         call_kwargs = app.bot.send_message.call_args[1]
         text = call_kwargs.get("text", "")
         assert "passed" in text.lower() or "reschedule" in text.lower()
-        assert app.user_data[12345][AWAITING_BUTTON_ACTION] == {"memory_id": "mem-t2"}
+        state = app.user_data[12345][AWAITING_BUTTON_ACTION]
+        assert state["memory_id"] == "mem-t2"
 
     @pytest.mark.asyncio
     async def test_task_no_datetime_shows_unspecified(self):

@@ -1,14 +1,23 @@
 # Bug list
 
 ## Critical
-1. Timeout from LLM doesn't seem to retry properly
+1. Natural language prompts not working properly. There was a follow up trigger that did specify a time to set the reminder, but when clicking on 'confirm', it did not actually save the reminder and changed to the `Select when to be reminded:` message instead. That behaviour is wrong. Extract of the text messages in telegram:
+```
+Jia Hui Yoong, [27/2/2026 4:52 PM]
+Remind me to test in 5 minutes
 
-2. Natural language prompts not working properly. E.g `remind me to leave house in 5 minutes` does not create a proper reminder with a trigger time.
-  - Detects as reminder, but doesn't automatically register the time to set even though it is clear
+TeleBearAssistant, [27/2/2026 4:52 PM]
+Processing...
 
-3. Search query not working properly. When asked `Search for all images about anime`, the search triggered for the specific `No results found for "all images about anime".` which isn't natural.
+TeleBearAssistant, [27/2/2026 4:53 PM]
+Could you clarify what you'd like to do? For example, are you setting a reminder, creating a task, searching for something, or just saving a note?
 
-4. Reminders are being saved as tasks. No clear definition between the two? Reminders only need to be fired off by the system on the time set. Reminders shouldn't have the 'mark as done' flow. 
+TeleBearAssistant, [27/2/2026 4:53 PM]
+Select when to be reminded:
 
-## Minor
-Old Telegram menu still showing up - need to replace with current ones
+TeleBearAssistant, [27/2/2026 4:53 PM]
+I couldn't process your request (followup). You can add tags or details manually.
+
+TeleBearAssistant, [27/2/2026 4:54 PM]
+I couldn't process your request (followup). You can add tags or details manually.
+```

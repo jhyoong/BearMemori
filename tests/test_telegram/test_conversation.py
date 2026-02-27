@@ -582,9 +582,9 @@ class TestReceiveFollowupAnswer:
         core_client.create_llm_job.assert_called_once()
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.payload["memory_id"] == "mem-20"
-        assert job_arg.payload["original_text"] == "Buy milk"
-        assert job_arg.payload["followup_question"] == "When do you need this done?"
-        assert job_arg.payload["user_answer"] == "Tomorrow morning"
+        assert job_arg.payload["message"] == "Buy milk"
+        assert job_arg.payload["followup_context"]["followup_question"] == "When do you need this done?"
+        assert job_arg.payload["followup_context"]["user_answer"] == "Tomorrow morning"
 
     @pytest.mark.asyncio
     async def test_job_type_is_followup(self):
@@ -609,7 +609,7 @@ class TestReceiveFollowupAnswer:
         await receive_followup_answer(update, context)
 
         job_arg = core_client.create_llm_job.call_args[0][0]
-        assert job_arg.job_type == JobType.followup
+        assert job_arg.job_type == JobType.intent_classify
 
     @pytest.mark.asyncio
     async def test_user_id_on_job(self):
@@ -760,4 +760,4 @@ class TestReceiveFollowupAnswer:
         await receive_followup_answer(update, context)
 
         job_arg = core_client.create_llm_job.call_args[0][0]
-        assert job_arg.payload["user_answer"] == "High"
+        assert job_arg.payload["followup_context"]["user_answer"] == "High"

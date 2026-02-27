@@ -241,7 +241,11 @@ async def _handle_intent_result(
             keyboard = reminder_proposal_keyboard(memory_id)
 
         await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
-        user_data[AWAITING_BUTTON_ACTION] = {"memory_id": memory_id}
+        user_data[AWAITING_BUTTON_ACTION] = {
+            "memory_id": memory_id,
+            "resolved_time": resolved_time,
+            "query": query,
+        }
         logger.info(
             "Sent reminder intent proposal to user %s for memory %s", user_id, memory_id
         )
@@ -260,7 +264,11 @@ async def _handle_intent_result(
             keyboard = task_proposal_keyboard(memory_id)
 
         await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
-        user_data[AWAITING_BUTTON_ACTION] = {"memory_id": memory_id}
+        user_data[AWAITING_BUTTON_ACTION] = {
+            "memory_id": memory_id,
+            "resolved_due_time": resolved_due_time,
+            "query": query,
+        }
         logger.info(
             "Sent task intent proposal to user %s for memory %s", user_id, memory_id
         )
