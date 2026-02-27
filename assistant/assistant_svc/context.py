@@ -7,8 +7,6 @@ import tiktoken
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT_ESTIMATE_TOKENS = 300
-
 
 class ContextManager:
     """Manages chat history in Redis with token-aware truncation."""
@@ -28,14 +26,18 @@ class ContextManager:
         self._session_timeout_seconds = session_timeout_seconds
         self._encoder = tiktoken.encoding_for_model("gpt-4o")
 
-    @property
-    def chat_budget_tokens(self) -> int:
-        """Available tokens for chat history after subtracting other segments."""
+    def chat_budget_tokens(self, system_prompt_tokens: int) -> int:
+        """Available tokens for chat history after subtracting other segments.
+
+        Args:
+            system_prompt_tokens: Actual token count of the system prompt
+                (including briefing text).
+        """
         return (
             self._context_window_tokens
             - self._briefing_budget_tokens
             - self._response_reserve_tokens
-            - SYSTEM_PROMPT_ESTIMATE_TOKENS
+            - system_prompt_tokens
         )
 
     def count_tokens(self, text: str) -> int:
@@ -53,9 +55,11 @@ class ContextManager:
                 total += self.count_tokens(json.dumps(content))
         return total
 
-    def needs_summarization(self, messages: list[dict]) -> bool:
+    def needs_summarization(
+        self, messages: list[dict], system_prompt_tokens: int = 0
+    ) -> bool:
         """Check if chat history exceeds 70% of the chat budget."""
-        threshold = int(self.chat_budget_tokens * 0.7)
+        threshold = int(self.chat_budget_tokens(system_prompt_tokens) * 0.7)
         return self.count_messages_tokens(messages) > threshold
 
     async def load_history(self, user_id: int) -> list[dict]:

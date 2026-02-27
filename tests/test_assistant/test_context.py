@@ -5,7 +5,7 @@ import pytest
 import pytest_asyncio
 import fakeredis.aioredis
 
-from assistant_svc.context import ContextManager, SYSTEM_PROMPT_ESTIMATE_TOKENS
+from assistant_svc.context import ContextManager
 
 
 @pytest_asyncio.fixture
@@ -66,24 +66,23 @@ class TestContextManager:
         assert total > 0
 
     def test_chat_budget_calculation(self, ctx):
-        """Chat budget = window - briefing - response reserve - system prompt estimate."""
-        budget = ctx.chat_budget_tokens
-        expected = 1000 - 200 - 100 - SYSTEM_PROMPT_ESTIMATE_TOKENS
+        """Chat budget = window - briefing - response reserve - system prompt tokens."""
+        budget = ctx.chat_budget_tokens(system_prompt_tokens=50)
+        expected = 1000 - 200 - 100 - 50
         assert budget == expected
 
     def test_needs_summarization_false(self, ctx):
         """Short history does not trigger summarization."""
         msgs = [{"role": "user", "content": "Hi"}]
-        assert ctx.needs_summarization(msgs) is False
+        assert ctx.needs_summarization(msgs, system_prompt_tokens=50) is False
 
     def test_needs_summarization_true(self, ctx):
         """Long history triggers summarization (over 70% of budget)."""
-        # Create messages that exceed 70% of the budget
-        # Budget is 1000 - 200 - 100 - 300 = 400. 70% = 280 tokens.
-        # Each word is roughly 1 token, so ~300 words should exceed.
-        long_msg = " ".join(["word"] * 300)
+        # With system_prompt_tokens=50, budget = 1000 - 200 - 100 - 50 = 650.
+        # 70% of 650 = 455 tokens. ~500 words should exceed that.
+        long_msg = " ".join(["word"] * 500)
         msgs = [{"role": "user", "content": long_msg}]
-        assert ctx.needs_summarization(msgs) is True
+        assert ctx.needs_summarization(msgs, system_prompt_tokens=50) is True
 
     @pytest.mark.asyncio
     async def test_save_session_summary(self, ctx):

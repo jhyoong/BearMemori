@@ -88,8 +88,8 @@ def build_components(config: AssistantConfig) -> dict:
 
     # Parse allowed user IDs
     allowed_ids = set()
-    if config.allowed_user_ids:
-        for uid in config.allowed_user_ids.split(","):
+    if config.assistant_allowed_user_ids:
+        for uid in config.assistant_allowed_user_ids.split(","):
             uid = uid.strip()
             if uid:
                 allowed_ids.add(int(uid))

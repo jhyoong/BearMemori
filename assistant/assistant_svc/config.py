@@ -22,7 +22,7 @@ class AssistantConfig(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o"
     assistant_telegram_bot_token: str = ""
-    allowed_user_ids: str = ""
+    assistant_allowed_user_ids: str = ""
     context_window_tokens: int = 128000
     briefing_budget_tokens: int = 5000
     response_reserve_tokens: int = 4000

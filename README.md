@@ -10,6 +10,9 @@ A personal memory management system built with a microservice architecture. Capt
 ```
 User (Telegram) -> Telegram Gateway -> Core API -> SQLite (aiosqlite)
                                                  -> Redis Streams -> LLM Worker
+User (Telegram) -> Assistant Bot -> Core API (read/write via HTTP)
+                                 -> OpenAI API (tool-calling)
+                                 -> Redis (chat history, session summaries)
 Email Poller -> Core API (events endpoint)
 ```
 
@@ -23,8 +26,9 @@ Each service lives in its own directory with its own Python package:
 |---------|-----------|-------------|--------|
 | **Core API** | `core/core_svc/` | FastAPI REST API (port 8000) | Implemented |
 | **Shared Library** | `shared/shared_lib/` | Pydantic models, enums, config, Redis stream utilities | Implemented |
-| **Telegram Gateway** | `telegram/tg_gateway/` | Telegram bot interface | Stub |
-| **LLM Worker** | `llm_worker/worker/` | Async LLM processing via OpenAI API | Stub |
+| **Telegram Gateway** | `telegram/tg_gateway/` | Telegram bot interface | ~95% |
+| **LLM Worker** | `llm_worker/worker/` | Async LLM processing via OpenAI API | Implemented |
+| **Assistant** | `assistant/assistant_svc/` | Conversational AI assistant with OpenAI tool-calling | Implemented |
 | **Email Poller** | `email_poller/poller/` | Email polling for calendar events | Stub |
 
 ### Core API Endpoints
@@ -53,7 +57,7 @@ When the Core API needs LLM processing (e.g., auto-tagging an image), it inserts
 docker-compose up --build
 ```
 
-This starts all services: Core API, Telegram Gateway, LLM Worker, Email Poller, and Redis.
+This starts all services: Core API, Telegram Gateway, LLM Worker, Assistant, Email Poller, and Redis.
 
 ### Run the Core API locally
 
@@ -103,3 +107,15 @@ mypy .
 ## Configuration
 
 Configuration is managed via environment variables, loaded through Pydantic Settings in `shared_lib.config`. Copy `.env.example` to `.env` (if available) and set the required values. When running with Docker Compose, the `.env` file is automatically loaded by all services.
+
+### Assistant Service
+
+The assistant requires its own Telegram bot token (separate from the main gateway bot) and an OpenAI API key:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ASSISTANT_TELEGRAM_BOT_TOKEN` | Telegram bot token for the assistant | (required) |
+| `ASSISTANT_ALLOWED_USER_IDS` | Comma-separated Telegram user IDs allowed to use the assistant | (empty) |
+| `OPENAI_API_KEY` | OpenAI API key | `not-needed` |
+| `OPENAI_BASE_URL` | OpenAI-compatible API base URL | `https://api.openai.com/v1` |
+| `OPENAI_MODEL` | Model to use for conversations | `gpt-4o` |

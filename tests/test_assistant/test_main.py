@@ -18,7 +18,7 @@ def mock_config():
     config.briefing_budget_tokens = 5000
     config.response_reserve_tokens = 4000
     config.session_timeout_seconds = 1800
-    config.allowed_user_ids = "1,2,3"
+    config.assistant_allowed_user_ids = "1,2,3"
     config.assistant_telegram_bot_token = "test-token"
     config.digest_default_hour = 8
     return config
@@ -53,7 +53,7 @@ class TestBuildComponents:
 
     def test_empty_allowed_user_ids(self, mock_config):
         """Empty allowed_user_ids string results in empty set."""
-        mock_config.allowed_user_ids = ""
+        mock_config.assistant_allowed_user_ids = ""
         components = build_components(mock_config)
         interface = components["interface"]
         assert interface._allowed_user_ids == set()

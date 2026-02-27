@@ -48,15 +48,17 @@ class Agent:
         # 1. Load history
         history = await self._context.load_history(user_id)
 
-        # 2. Summarize if needed
-        if history and self._context.needs_summarization(history):
+        # 3. Build briefing and system prompt
+        briefing = await self._briefing.build(user_id)
+        system_content = SYSTEM_PROMPT.format(briefing=briefing)
+        system_prompt_tokens = self._context.count_tokens(system_content)
+
+        # 2. Summarize if needed (uses actual system prompt token count)
+        if history and self._context.needs_summarization(history, system_prompt_tokens):
             history = await self._summarize_history(history)
 
-        # 3. Build briefing
-        briefing = await self._briefing.build(user_id)
-
         # 4. Construct messages
-        system_msg = {"role": "system", "content": SYSTEM_PROMPT.format(briefing=briefing)}
+        system_msg = {"role": "system", "content": system_content}
         messages = [system_msg] + history + [{"role": "user", "content": text}]
 
         # 5. Get tool schemas

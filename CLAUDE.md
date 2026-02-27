@@ -11,6 +11,7 @@ BearMemori is a personal memory management system with a microservice architectu
 - `shared/shared_lib/` — Pydantic models, enums, config, Redis stream utilities (installed as a dependency by other services)
 - `telegram/tg_gateway/` — Telegram bot gateway, substantially implemented (~95%)
 - `llm_worker/worker/` — LLM processing worker, fully implemented (consumer loop, all 5 handlers, clients, retry, `main.py`)
+- `assistant/assistant_svc/` — Conversational AI assistant with OpenAI tool-calling, fully implemented (agent, tools, briefing, digest scheduler, Telegram interface)
 - `email_poller/poller/` — Email polling service (stub, Phase 4 scope)
 
 ## Commands
@@ -56,6 +57,9 @@ mypy .
 ```
 User (Telegram) -> telegram gateway -> core API -> SQLite (aiosqlite)
                                                  -> Redis streams -> llm_worker
+User (Telegram) -> assistant bot -> core API (read/write via HTTP)
+                                 -> OpenAI API (tool-calling)
+                                 -> Redis (chat history, session summaries)
 email_poller -> core API (events endpoint)
 ```
 
@@ -115,6 +119,32 @@ Stream → handler mapping (defined in `consumer.py`):
 
 `main.py` is fully implemented: wires up config loading, Redis client, aiohttp session, `LLMClient`, `CoreAPIClient`, handler instances, signal handlers (SIGTERM/SIGINT), and calls `run_consumer()`.
 
+### Assistant Service Architecture (`assistant/assistant_svc/`)
+
+A conversational AI assistant that uses OpenAI tool-calling to help users interact with their BearMemori data. Runs as a separate Telegram bot with its own token.
+
+Key modules:
+- `agent.py` — core agent loop: builds system prompt with briefing, calls OpenAI with tool definitions, executes tool calls in a loop (max 10 iterations), manages summarize-and-truncate for chat history
+- `briefing.py` — builds pre-loaded context for each request: upcoming tasks (NOT_DONE, 7 days), upcoming reminders (unfired, 48h), previous session summary. Trimmed to a token budget.
+- `context.py` — manages chat history in Redis with token counting (tiktoken). Triggers summarization when history exceeds 70% of the chat budget. Stores session summaries (7-day TTL) and chat messages (24h TTL).
+- `core_client.py` — async HTTP client (httpx) for Core API. Methods: `search_memories`, `get_memory`, `list_tasks`, `list_reminders`, `list_events`, `create_task`, `create_reminder`, `get_settings`.
+- `tools/` — tool registry + 7 tool definitions (search_memories, get_memory, list_tasks, create_task, list_reminders, create_reminder, list_events). Each tool is an async function with an OpenAI function schema. `owner_user_id` is injected by the agent, not exposed in tool schemas.
+- `interfaces/base.py` — abstract `BaseInterface` (send_message, start, stop). `interfaces/telegram.py` — Telegram implementation using python-telegram-bot.
+- `digest.py` — daily morning briefing scheduler. Checks every 15 minutes, sends once per user per day (deduped via Redis key with 48h TTL). Respects user timezone from Core API settings.
+- `config.py` — `AssistantConfig(BaseSettings)` with env var overrides. Key settings: `ASSISTANT_TELEGRAM_BOT_TOKEN`, `ASSISTANT_ALLOWED_USER_IDS` (comma-separated), `OPENAI_API_KEY`, `OPENAI_MODEL`, token budget settings.
+- `main.py` — wires all components, registers SIGTERM/SIGINT handlers, starts Telegram polling and digest scheduler concurrently.
+
+**Adding a new tool:**
+1. Create or edit a file in `assistant/assistant_svc/tools/`
+2. Define an async function taking `client` + keyword args (including `owner_user_id`)
+3. Define an OpenAI tool schema dict (name, description, parameters — exclude `owner_user_id`)
+4. Register in `assistant/assistant_svc/main.py` via `tool_registry.register()`
+
+Redis keys used:
+- `assistant:chat:{user_id}` — chat message history (JSON list, 24h TTL)
+- `assistant:summary:{user_id}` — last session summary (string, 7-day TTL)
+- `assistant:digest_sent:{user_id}:{date}` — digest dedup flag (48h TTL)
+
 ### Test Fixtures
 
 `tests/conftest.py` (core tests):
@@ -122,11 +152,15 @@ Stream → handler mapping (defined in `consumer.py`):
 - `mock_redis` — `fakeredis.aioredis` instance (no real Redis needed)
 - `test_app` — `AsyncClient` with the FastAPI app wired to `test_db` and `mock_redis`
 - `test_user` — pre-inserted user with `telegram_user_id=12345`
+- Also injects `llm_worker/` and `assistant/` into `sys.path` for imports
 
 `tests/test_llm_worker/test_consumer.py` (llm_worker tests):
 - Fixtures are defined in the test file itself, not in a conftest
 - Uses `AsyncMock` for `CoreAPIClient` and handlers; `fakeredis.aioredis` for Redis
-- `tests/conftest.py` injects `llm_worker/` into `sys.path` so `from worker.xxx` imports work
+
+`tests/test_assistant/conftest.py` (assistant tests):
+- `mock_redis` — `fakeredis.aioredis` instance
+- Tests mock the OpenAI client and Core API client; use real `ContextManager`, `BriefingBuilder`, `ToolRegistry` where possible
 
 ## Code Conventions
 
