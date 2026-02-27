@@ -216,10 +216,10 @@ async def _handle_intent_result(
     intent = content.get("intent", "")
     query = content.get("query", "")
     memory_id = content.get("memory_id", "")
-    extracted_datetime = content.get("extracted_datetime")
     suggested_tags = content.get("suggested_tags", [])
     followup_question = content.get("followup_question", "")
-    search_results = content.get("search_results", [])
+    # Support both 'results' (from fixed intent handler) and 'search_results' (for backward compatibility)
+    results = content.get("results") or content.get("search_results", [])
 
     # Access user_data for state management; default to empty dict if not present.
     uid = int(user_id)
@@ -228,12 +228,15 @@ async def _handle_intent_result(
     user_data = application.user_data[uid]
 
     if intent == "reminder":
-        # Check whether the extracted datetime is stale (in the past).
-        if extracted_datetime and _is_stale(extracted_datetime):
+        resolved_time = content.get("resolved_time") or content.get(
+            "extracted_datetime"
+        )
+        # Check whether the resolved time is stale (in the past).
+        if resolved_time and _is_stale(resolved_time):
             text = f'Your reminder "{query}" had a time that has already passed. Would you like to reschedule?'
             keyboard = reschedule_keyboard(memory_id)
         else:
-            dt_str = extracted_datetime or "unspecified time"
+            dt_str = resolved_time or "unspecified time"
             text = f'Reminder: "{query}" at {dt_str}'
             keyboard = reminder_proposal_keyboard(memory_id)
 
@@ -244,12 +247,15 @@ async def _handle_intent_result(
         )
 
     elif intent == "task":
-        # Check whether the extracted datetime is stale (in the past).
-        if extracted_datetime and _is_stale(extracted_datetime):
+        resolved_due_time = content.get("resolved_due_time") or content.get(
+            "extracted_datetime"
+        )
+        # Check whether the resolved due time is stale (in the past).
+        if resolved_due_time and _is_stale(resolved_due_time):
             text = f'Your task "{query}" had a due date that has already passed. Would you like to reschedule?'
             keyboard = reschedule_keyboard(memory_id)
         else:
-            dt_str = extracted_datetime or "unspecified date"
+            dt_str = resolved_due_time or "unspecified date"
             text = f'Task: "{query}" due {dt_str}'
             keyboard = task_proposal_keyboard(memory_id)
 
@@ -262,7 +268,7 @@ async def _handle_intent_result(
     elif intent == "search":
         # Build (label, memory_id) tuples for the keyboard.
         results_tuples = [
-            (r.get("title", "Untitled"), r.get("memory_id", "")) for r in search_results
+            (r.get("title", "Untitled"), r.get("memory_id", "")) for r in results
         ]
 
         if results_tuples:

@@ -53,9 +53,7 @@ async def create_consumer_group(
         group_name: Name of the consumer group to create
     """
     try:
-        await redis_client.xgroup_create(
-            stream_name, group_name, id="0", mkstream=True
-        )
+        await redis_client.xgroup_create(stream_name, group_name, id="0", mkstream=True)
     except redis.exceptions.ResponseError as e:
         # Ignore if group already exists
         if "BUSYGROUP" not in str(e):
@@ -67,6 +65,7 @@ async def consume(
     stream_name: str,
     group_name: str,
     consumer_name: str,
+    id: str = ">",
     count: int = 1,
     block_ms: int = 5000,
 ) -> list[tuple[str, dict[str, Any]]]:
@@ -77,6 +76,7 @@ async def consume(
         stream_name: Name of the stream to consume from
         group_name: Name of the consumer group
         consumer_name: Name of this consumer instance
+        id: Message ID to start from (">" for new messages, "0" for pending)
         count: Maximum number of messages to retrieve (default: 1)
         block_ms: Time to block waiting for messages in milliseconds (default: 5000)
 
@@ -84,7 +84,7 @@ async def consume(
         List of (message_id, data_dict) tuples. Empty list if no messages available.
     """
     result = await redis_client.xreadgroup(
-        group_name, consumer_name, {stream_name: ">"}, count=count, block=block_ms
+        group_name, consumer_name, {stream_name: id}, count=count, block=block_ms
     )
 
     messages = []
@@ -92,12 +92,20 @@ async def consume(
         for stream, stream_messages in result:
             for message_id, fields in stream_messages:
                 # Decode message_id if it's bytes
-                msg_id = message_id.decode() if isinstance(message_id, bytes) else message_id
+                msg_id = (
+                    message_id.decode() if isinstance(message_id, bytes) else message_id
+                )
 
                 # Get the 'data' field and deserialize JSON
-                data_field = fields.get(b"data") if b"data" in fields else fields.get("data")
+                data_field = (
+                    fields.get(b"data") if b"data" in fields else fields.get("data")
+                )
                 if data_field:
-                    json_str = data_field.decode() if isinstance(data_field, bytes) else data_field
+                    json_str = (
+                        data_field.decode()
+                        if isinstance(data_field, bytes)
+                        else data_field
+                    )
                     try:
                         data = json.loads(json_str)
                         messages.append((msg_id, data))

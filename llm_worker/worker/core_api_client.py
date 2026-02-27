@@ -36,9 +36,7 @@ class CoreAPIClient:
         async with self._session.patch(url, json=body) as resp:
             if resp.status != 200:
                 text = await resp.text()
-                raise CoreAPIError(
-                    f"PATCH {url} returned {resp.status}: {text}"
-                )
+                raise CoreAPIError(f"PATCH {url} returned {resp.status}: {text}")
 
     async def add_tags(
         self,
@@ -53,33 +51,33 @@ class CoreAPIClient:
         ) as resp:
             if resp.status not in (200, 201):
                 text = await resp.text()
-                raise CoreAPIError(
-                    f"POST {url} returned {resp.status}: {text}"
-                )
+                raise CoreAPIError(f"POST {url} returned {resp.status}: {text}")
 
-    async def create_event(
-        self, event_data: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def create_event(self, event_data: dict[str, Any]) -> dict[str, Any]:
         """Create a pending event via POST /events."""
         url = f"{self._base_url}/events"
         async with self._session.post(url, json=event_data) as resp:
             if resp.status != 201:
                 text = await resp.text()
-                raise CoreAPIError(
-                    f"POST {url} returned {resp.status}: {text}"
-                )
+                raise CoreAPIError(f"POST {url} returned {resp.status}: {text}")
             return await resp.json()
 
-    async def get_open_tasks(
-        self, user_id: int
-    ) -> list[dict[str, Any]]:
+    async def get_open_tasks(self, user_id: int) -> list[dict[str, Any]]:
         """Get open tasks for a user via GET /tasks."""
         url = f"{self._base_url}/tasks"
         params = {"owner_user_id": user_id, "state": "NOT_DONE"}
         async with self._session.get(url, params=params) as resp:
             if resp.status != 200:
                 text = await resp.text()
-                raise CoreAPIError(
-                    f"GET {url} returned {resp.status}: {text}"
-                )
+                raise CoreAPIError(f"GET {url} returned {resp.status}: {text}")
+            return await resp.json()
+
+    async def search(self, query: str) -> list[dict[str, Any]]:
+        """Search memories via GET /search."""
+        url = f"{self._base_url}/search"
+        params = {"q": query}
+        async with self._session.get(url, params=params) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise CoreAPIError(f"GET {url} returned {resp.status}: {text}")
             return await resp.json()

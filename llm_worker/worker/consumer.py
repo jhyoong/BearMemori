@@ -228,18 +228,14 @@ async def _process_message(
 
         elif failure_type == FailureType.UNAVAILABLE:
             # Check if this is the first time we see this job as unavailable
-            is_first_occurrence = (
-                retry_tracker.get_failure_type(job_id) is None
-            )
+            is_first_occurrence = retry_tracker.get_failure_type(job_id) is None
 
             # Record unavailability (sets _queue_paused, tracks first time)
             retry_tracker.record_attempt(job_id, FailureType.UNAVAILABLE)
 
             if not retry_tracker.should_retry(job_id):
                 # 14-day expiry reached - mark as failed
-                logger.error(
-                    f"Job {job_id} expired after 14 days of unavailability"
-                )
+                logger.error(f"Job {job_id} expired after 14 days of unavailability")
                 await core_api.update_job(
                     job_id=job_id, status="failed", error_message=type(e).__name__
                 )
@@ -328,14 +324,28 @@ async def run_consumer(
         while True:
             # Round-robin through all streams
             for stream_name in streams:
+                # First, try to read pending messages with "0"
                 messages = await consume(
                     redis_client,
                     stream_name,
                     GROUP_LLM_WORKER,
                     CONSUMER_NAME,
+                    id="0",  # Read pending messages from PEL
                     count=1,
                     block_ms=1000,  # Short block for responsiveness
                 )
+
+                # If no pending messages, try reading new messages
+                if not messages:
+                    messages = await consume(
+                        redis_client,
+                        stream_name,
+                        GROUP_LLM_WORKER,
+                        CONSUMER_NAME,
+                        id=">",  # Read new messages
+                        count=1,
+                        block_ms=1000,  # Short block for responsiveness
+                    )
 
                 for message_id, data in messages:
                     logger.info(f"Processing message {message_id} from {stream_name}")

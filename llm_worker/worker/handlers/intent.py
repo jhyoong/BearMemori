@@ -52,7 +52,21 @@ class IntentHandler(BaseHandler):
         logger.info("Classified query '%s' as intent: %s", message, intent)
 
         # For legacy format (old 'query' only, no 'original_timestamp'), maintain old behavior
+        # But if search intent, still call the search API
         if is_legacy:
+            if intent == "search":
+                # Extract keywords from LLM response and call Core API search endpoint
+                keywords = result.get("keywords", [])
+                if isinstance(keywords, list):
+                    search_query = " ".join(keywords)
+                else:
+                    search_query = str(keywords)
+                search_results = await self.core_api.search(search_query)
+                return {
+                    "query": message,
+                    "intent": intent,
+                    "results": search_results,
+                }
             return {
                 "query": message,
                 "intent": intent,
@@ -81,6 +95,15 @@ class IntentHandler(BaseHandler):
             resolved_due_time = result.get("resolved_due_time")
             if resolved_due_time and self._is_stale(resolved_due_time):
                 structured_result["stale"] = True
+        elif intent == "search":
+            # Extract keywords from LLM response and call Core API search endpoint
+            keywords = result.get("keywords", [])
+            if isinstance(keywords, list):
+                search_query = " ".join(keywords)
+            else:
+                search_query = str(keywords)
+            search_results = await self.core_api.search(search_query)
+            structured_result["results"] = search_results
 
         return structured_result
 

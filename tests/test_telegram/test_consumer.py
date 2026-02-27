@@ -73,15 +73,19 @@ class TestIsStale:
 
     def test_naive_past_datetime_treated_as_utc_and_stale(self):
         # A naive ISO string from the past should be treated as UTC and return True.
-        naive_past = (datetime.now(tz=timezone.utc) - timedelta(hours=2)).replace(
-            tzinfo=None
-        ).isoformat()
+        naive_past = (
+            (datetime.now(tz=timezone.utc) - timedelta(hours=2))
+            .replace(tzinfo=None)
+            .isoformat()
+        )
         assert _is_stale(naive_past) is True
 
     def test_naive_future_datetime_treated_as_utc_and_not_stale(self):
-        naive_future = (datetime.now(tz=timezone.utc) + timedelta(hours=2)).replace(
-            tzinfo=None
-        ).isoformat()
+        naive_future = (
+            (datetime.now(tz=timezone.utc) + timedelta(hours=2))
+            .replace(tzinfo=None)
+            .isoformat()
+        )
         assert _is_stale(naive_future) is False
 
 
@@ -143,6 +147,64 @@ class TestHandleIntentResultReminder:
 
         call_kwargs = app.bot.send_message.call_args[1]
         assert "unspecified" in call_kwargs.get("text", "").lower()
+
+    @pytest.mark.asyncio
+    async def test_reminder_with_resolved_time_shows_datetime(self):
+        """Test that reminder uses resolved_time field (not extracted_datetime)."""
+        app = _make_application()
+        future_dt = _future_iso()
+        content = {
+            "intent": "reminder",
+            "query": "Call mom",
+            "memory_id": "mem-r4",
+            "resolved_time": future_dt,
+        }
+
+        await _handle_intent_result(app, "12345", content)
+
+        call_kwargs = app.bot.send_message.call_args[1]
+        text = call_kwargs.get("text", "")
+        assert "Call mom" in text
+        assert future_dt in text, f"Expected resolved_time {future_dt} in text: {text}"
+        # Should NOT show "unspecified time"
+        assert "unspecified" not in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_reminder_stale_with_resolved_time_shows_reschedule(self):
+        """Test that stale detection uses resolved_time field."""
+        app = _make_application()
+        past_dt = _past_iso()
+        content = {
+            "intent": "reminder",
+            "query": "Buy groceries",
+            "memory_id": "mem-r5",
+            "resolved_time": past_dt,
+        }
+
+        await _handle_intent_result(app, "12345", content)
+
+        call_kwargs = app.bot.send_message.call_args[1]
+        text = call_kwargs.get("text", "")
+        assert "passed" in text.lower() or "reschedule" in text.lower()
+        # Reschedule keyboard should be present
+        assert call_kwargs.get("reply_markup") is not None
+
+    @pytest.mark.asyncio
+    async def test_reminder_no_resolved_time_falls_back_to_unspecified(self):
+        """Test that missing resolved_time shows 'unspecified time'."""
+        app = _make_application()
+        content = {
+            "intent": "reminder",
+            "query": "Quick reminder",
+            "memory_id": "mem-r6",
+            "resolved_time": None,
+        }
+
+        await _handle_intent_result(app, "12345", content)
+
+        call_kwargs = app.bot.send_message.call_args[1]
+        text = call_kwargs.get("text", "")
+        assert "unspecified time" in text
 
     @pytest.mark.asyncio
     async def test_reminder_initialises_user_data_if_absent(self):
@@ -216,6 +278,67 @@ class TestHandleIntentResultTask:
 
         call_kwargs = app.bot.send_message.call_args[1]
         assert "unspecified" in call_kwargs.get("text", "").lower()
+
+    @pytest.mark.asyncio
+    async def test_task_with_resolved_due_time_shows_datetime(self):
+        """Test that task uses resolved_due_time field (not extracted_datetime)."""
+        app = _make_application()
+        future_dt = _future_iso()
+        content = {
+            "intent": "task",
+            "query": "Finish report",
+            "memory_id": "mem-t4",
+            "resolved_due_time": future_dt,
+        }
+
+        await _handle_intent_result(app, "12345", content)
+
+        call_kwargs = app.bot.send_message.call_args[1]
+        text = call_kwargs.get("text", "")
+        assert "Finish report" in text
+        assert "Task:" in text
+        assert future_dt in text, (
+            f"Expected resolved_due_time {future_dt} in text: {text}"
+        )
+        # Should NOT show "unspecified"
+        assert "unspecified" not in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_task_stale_with_resolved_due_time_shows_reschedule(self):
+        """Test that stale detection uses resolved_due_time field."""
+        app = _make_application()
+        past_dt = _past_iso()
+        content = {
+            "intent": "task",
+            "query": "Submit form",
+            "memory_id": "mem-t5",
+            "resolved_due_time": past_dt,
+        }
+
+        await _handle_intent_result(app, "12345", content)
+
+        call_kwargs = app.bot.send_message.call_args[1]
+        text = call_kwargs.get("text", "")
+        assert "passed" in text.lower() or "reschedule" in text.lower()
+        # Reschedule keyboard should be present
+        assert call_kwargs.get("reply_markup") is not None
+
+    @pytest.mark.asyncio
+    async def test_task_no_resolved_due_time_falls_back_to_unspecified(self):
+        """Test that missing resolved_due_time shows 'unspecified'."""
+        app = _make_application()
+        content = {
+            "intent": "task",
+            "query": "Clean desk",
+            "memory_id": "mem-t6",
+            "resolved_due_time": None,
+        }
+
+        await _handle_intent_result(app, "12345", content)
+
+        call_kwargs = app.bot.send_message.call_args[1]
+        text = call_kwargs.get("text", "")
+        assert "unspecified" in text
 
 
 # ---------------------------------------------------------------------------
@@ -537,7 +660,10 @@ class TestFloodControl:
         with (
             patch("tg_gateway.consumer.consume", side_effect=fake_consume),
             patch("tg_gateway.consumer.ack", side_effect=fake_ack),
-            patch("tg_gateway.consumer.create_consumer_group", side_effect=fake_create_group),
+            patch(
+                "tg_gateway.consumer.create_consumer_group",
+                side_effect=fake_create_group,
+            ),
             patch("tg_gateway.consumer.asyncio.sleep", side_effect=tracking_sleep),
         ):
             task = asyncio.create_task(run_notify_consumer(app))
@@ -614,7 +740,10 @@ class TestFloodControl:
         with (
             patch("tg_gateway.consumer.consume", side_effect=fake_consume),
             patch("tg_gateway.consumer.ack", side_effect=fake_ack),
-            patch("tg_gateway.consumer.create_consumer_group", side_effect=fake_create_group),
+            patch(
+                "tg_gateway.consumer.create_consumer_group",
+                side_effect=fake_create_group,
+            ),
             patch("tg_gateway.consumer.asyncio.sleep", side_effect=tracking_sleep),
         ):
             task = asyncio.create_task(run_notify_consumer(app))

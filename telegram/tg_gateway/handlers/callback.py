@@ -164,7 +164,7 @@ def _parse_callback_data(callback_data: str):
     elif "choice" in data and "memory_id" in data:
         # Could be DueDateChoice or ReminderTimeChoice
         choice = data["choice"]
-        if choice in ("today", "tomorrow", "next_week", "no_date", "custom"):
+        if choice in ("today", "tomorrow", "next_week", "no_date"):
             return DueDateChoice(memory_id=data["memory_id"], choice=choice)
         elif choice in ("1h", "tomorrow_9am", "custom"):
             return ReminderTimeChoice(memory_id=data["memory_id"], choice=choice)
@@ -227,7 +227,9 @@ async def handle_memory_action(
 
     if action == "set_task":
         # Confirm the memory and show due date options keyboard
-        await core_client.update_memory(memory_id, MemoryUpdate(status=MemoryStatus.confirmed))
+        await core_client.update_memory(
+            memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
+        )
         _clear_conversation_state(context)
         await callback_query.edit_message_text(
             "Select a due date for the task:",
@@ -236,7 +238,9 @@ async def handle_memory_action(
 
     elif action == "set_reminder":
         # Confirm the memory and show reminder time options keyboard
-        await core_client.update_memory(memory_id, MemoryUpdate(status=MemoryStatus.confirmed))
+        await core_client.update_memory(
+            memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
+        )
         _clear_conversation_state(context)
         await callback_query.edit_message_text(
             "Select when to be reminded:",
@@ -245,7 +249,9 @@ async def handle_memory_action(
 
     elif action == "add_tag":
         # Confirm the memory and set conversation state key for message handler
-        await core_client.update_memory(memory_id, MemoryUpdate(status=MemoryStatus.confirmed))
+        await core_client.update_memory(
+            memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
+        )
         _clear_conversation_state(context)
         context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
         # Prompt user for tags (send message asking for comma-separated tags)
@@ -688,7 +694,9 @@ async def handle_intent_confirm(
     action = callback_data.action
 
     # All actions confirm the memory first
-    await core_client.update_memory(memory_id, MemoryUpdate(status=MemoryStatus.confirmed))
+    await core_client.update_memory(
+        memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
+    )
     _clear_conversation_state(context)
 
     if action == "confirm_reminder":
@@ -751,7 +759,9 @@ async def handle_reschedule_action(
     action = callback_data.action
 
     # All actions confirm the memory first
-    await core_client.update_memory(memory_id, MemoryUpdate(status=MemoryStatus.confirmed))
+    await core_client.update_memory(
+        memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
+    )
     _clear_conversation_state(context)
 
     if action == "reschedule":
