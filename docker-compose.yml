@@ -55,6 +55,18 @@ services:
         condition: service_healthy
     env_file: .env
 
+  assistant:
+    build:
+      context: .
+      dockerfile: assistant/Dockerfile
+    depends_on:
+      core:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes
