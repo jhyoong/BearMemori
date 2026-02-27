@@ -121,3 +121,38 @@ async def test_get_open_tasks_empty(mock_session):
     tasks = await client.get_open_tasks(user_id=123)
 
     assert tasks == []
+
+
+async def test_search_sends_owner_and_query_params(mock_session):
+    """search() must send both q and owner query params to GET /search."""
+    mock_session.get = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.text = AsyncMock(return_value="OK")
+    mock_resp.json = AsyncMock(return_value=[])
+    mock_session.get.return_value.__aenter__.return_value = mock_resp
+
+    client = CoreAPIClient(base_url="http://localhost:8000", session=mock_session)
+    await client.search(query="anime images", owner_user_id=99)
+
+    mock_session.get.assert_called_once()
+    call_args = mock_session.get.call_args
+    assert call_args[0][0] == "http://localhost:8000/search"
+    assert call_args[1]["params"]["q"] == "anime images"
+    assert call_args[1]["params"]["owner"] == 99
+
+
+async def test_search_returns_results(mock_session):
+    """search() must return the list of results from the API."""
+    mock_session.get = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.text = AsyncMock(return_value="OK")
+    mock_resp.json = AsyncMock(return_value=[{"memory": {"id": "m1", "content": "c"}, "score": 0.9}])
+    mock_session.get.return_value.__aenter__.return_value = mock_resp
+
+    client = CoreAPIClient(base_url="http://localhost:8000", session=mock_session)
+    results = await client.search(query="test", owner_user_id=1)
+
+    assert len(results) == 1
+    assert results[0]["memory"]["id"] == "m1"

@@ -73,8 +73,8 @@ class TestIntentHandlerSearchIntegration:
             user_id=12345,
         )
 
-        # Verify search API was called with correct query (keywords joined)
-        mock_core_api.search.assert_awaited_once_with(search_query)
+        # Verify search API was called with correct query (keywords joined) and user_id
+        mock_core_api.search.assert_awaited_once_with(search_query, owner_user_id=12345)
 
         # Verify results are populated from API response
         assert result is not None
@@ -130,8 +130,73 @@ class TestIntentHandlerSearchIntegration:
         )
 
         # Legacy format should also call search API
-        mock_core_api.search.assert_awaited_once_with(search_query)
+        mock_core_api.search.assert_awaited_once_with(search_query, owner_user_id=12345)
         assert result.get("results") == mock_search_results
+
+
+class TestIntentHandlerSearchPassesUserId:
+    """Test that IntentHandler passes user_id as owner_user_id to core_api.search()."""
+
+    @pytest.fixture
+    def handler(self, mock_llm_client, mock_core_api, llm_worker_config):
+        return IntentHandler(
+            llm_client=mock_llm_client,
+            core_api=mock_core_api,
+            config=llm_worker_config,
+        )
+
+    @pytest.mark.asyncio
+    async def test_search_passes_user_id_as_owner(
+        self, handler, mock_llm_client, mock_core_api
+    ):
+        """IntentHandler must pass user_id as owner_user_id to core_api.search().
+
+        The Core API /search endpoint requires owner as a mandatory query param.
+        Without it every search returns 422 Unprocessable Entity.
+        """
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "search", "keywords": ["anime"]}'
+        )
+        mock_core_api.search = AsyncMock(return_value=[])
+
+        await handler.handle(
+            "job-uid",
+            {"message": "Search for anime", "original_timestamp": "2026-02-27T10:00:00Z"},
+            user_id=42,
+        )
+
+        mock_core_api.search.assert_awaited_once_with("anime", owner_user_id=42)
+
+    @pytest.mark.asyncio
+    async def test_search_normalizes_memory_search_result_format(
+        self, handler, mock_llm_client, mock_core_api
+    ):
+        """IntentHandler must normalize MemorySearchResult nested format to flat format.
+
+        Core API returns: [{"memory": {"id": "...", "content": "..."}, "score": 0.9}]
+        Results in structured_result must be: [{"memory_id": "...", "title": "..."}]
+        so the Telegram consumer can read r.get("title") and r.get("memory_id").
+        """
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "search", "keywords": ["anime"]}'
+        )
+        mock_core_api.search = AsyncMock(
+            return_value=[
+                {"memory": {"id": "mem-99", "content": "My anime list"}, "score": 0.9},
+            ]
+        )
+
+        result = await handler.handle(
+            "job-norm",
+            {"message": "Search for anime", "original_timestamp": "2026-02-27T10:00:00Z"},
+            user_id=1,
+        )
+
+        assert result is not None
+        results = result.get("results", [])
+        assert len(results) == 1
+        assert results[0]["memory_id"] == "mem-99"
+        assert results[0]["title"] == "My anime list"
 
 
 class TestIntentHandlerSearchWithSingleKeyword:
@@ -173,7 +238,7 @@ class TestIntentHandlerSearchWithSingleKeyword:
             user_id=12345,
         )
 
-        mock_core_api.search.assert_awaited_once_with(search_query)
+        mock_core_api.search.assert_awaited_once_with(search_query, owner_user_id=12345)
         assert result.get("results") == mock_search_results
 
 
@@ -217,5 +282,5 @@ class TestIntentHandlerSearchWithMultipleKeywords:
             user_id=12345,
         )
 
-        mock_core_api.search.assert_awaited_once_with(search_query)
+        mock_core_api.search.assert_awaited_once_with(search_query, owner_user_id=12345)
         assert result.get("results") == mock_search_results

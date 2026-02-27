@@ -72,10 +72,10 @@ class CoreAPIClient:
                 raise CoreAPIError(f"GET {url} returned {resp.status}: {text}")
             return await resp.json()
 
-    async def search(self, query: str) -> list[dict[str, Any]]:
+    async def search(self, query: str, owner_user_id: int) -> list[dict[str, Any]]:
         """Search memories via GET /search."""
         url = f"{self._base_url}/search"
-        params = {"q": query}
+        params = {"q": query, "owner": owner_user_id}
         async with self._session.get(url, params=params) as resp:
             if resp.status != 200:
                 text = await resp.text()

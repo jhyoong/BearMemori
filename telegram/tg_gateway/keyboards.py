@@ -140,7 +140,7 @@ def due_date_keyboard(memory_id: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(
                 text="Custom",
                 callback_data=serialize_callback(
-                    DueDateChoice(memory_id=memory_id, choice="custom")
+                    DueDateChoice(memory_id=memory_id, choice="custom_task")
                 ),
             ),
         ],

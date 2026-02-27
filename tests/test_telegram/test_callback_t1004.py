@@ -159,3 +159,67 @@ class TestCustomChoiceDispatch:
             "'custom' reminder choice should set PENDING_REMINDER_MEMORY_ID"
         )
         assert mock_context.user_data[PENDING_REMINDER_MEMORY_ID] == "1"
+
+
+class TestCustomTaskChoiceParsing:
+    """Tests for 'custom_task' choice routing to the task due date flow.
+
+    The fix for the custom/custom_task ambiguity uses 'custom_task' as the
+    choice value in due_date_keyboard so it is unambiguously a DueDateChoice.
+    """
+
+    def test_custom_task_choice_parses_as_due_date_choice(self):
+        """'custom_task' choice must parse as DueDateChoice, not ReminderTimeChoice."""
+        result = _parse_callback_data('{"memory_id": "1", "choice": "custom_task"}')
+
+        assert isinstance(result, DueDateChoice), (
+            f"'custom_task' should parse as DueDateChoice, got {type(result).__name__}"
+        )
+        assert result.choice == "custom_task"
+
+    def test_custom_task_does_not_parse_as_reminder_time_choice(self):
+        """'custom_task' choice must NOT parse as ReminderTimeChoice."""
+        result = _parse_callback_data('{"memory_id": "1", "choice": "custom_task"}')
+
+        assert not isinstance(result, ReminderTimeChoice), (
+            "'custom_task' should NOT parse as ReminderTimeChoice"
+        )
+
+    @pytest.mark.asyncio
+    async def test_custom_task_sets_pending_task_memory_id(self, mock_update, mock_context):
+        """'custom_task' choice must set PENDING_TASK_MEMORY_ID, not PENDING_REMINDER_MEMORY_ID.
+
+        This verifies the task due-date 'Custom' flow works correctly after the fix.
+        """
+        mock_update.callback_query.data = '{"memory_id": "task-mem-1", "choice": "custom_task"}'
+
+        await handle_callback(mock_update, mock_context)
+
+        assert PENDING_TASK_MEMORY_ID in mock_context.user_data, (
+            "'custom_task' choice should set PENDING_TASK_MEMORY_ID"
+        )
+        assert mock_context.user_data[PENDING_TASK_MEMORY_ID] == "task-mem-1"
+        assert PENDING_REMINDER_MEMORY_ID not in mock_context.user_data, (
+            "'custom_task' choice should NOT set PENDING_REMINDER_MEMORY_ID"
+        )
+
+    @pytest.fixture
+    def mock_update(self):
+        update = MagicMock(spec=Update)
+        update.callback_query = MagicMock()
+        update.callback_query.answer = AsyncMock()
+        update.callback_query.edit_message_text = AsyncMock()
+        update.callback_query.message = MagicMock()
+        update.effective_user = MagicMock()
+        update.effective_user.id = 12345
+        return update
+
+    @pytest.fixture
+    def mock_context(self):
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        core_client = MagicMock()
+        core_client.update_memory = AsyncMock()
+        core_client.get_memory = AsyncMock()
+        context.bot_data = {"core_client": core_client}
+        context.user_data = {}
+        return context

@@ -61,11 +61,11 @@ class IntentHandler(BaseHandler):
                     search_query = " ".join(keywords)
                 else:
                     search_query = str(keywords)
-                search_results = await self.core_api.search(search_query)
+                raw_results = await self.core_api.search(search_query, owner_user_id=user_id)
                 return {
                     "query": message,
                     "intent": intent,
-                    "results": search_results,
+                    "results": self._normalize_search_results(raw_results),
                 }
             return {
                 "query": message,
@@ -102,10 +102,29 @@ class IntentHandler(BaseHandler):
                 search_query = " ".join(keywords)
             else:
                 search_query = str(keywords)
-            search_results = await self.core_api.search(search_query)
-            structured_result["results"] = search_results
+            raw_results = await self.core_api.search(search_query, owner_user_id=user_id)
+            structured_result["results"] = self._normalize_search_results(raw_results)
 
         return structured_result
+
+    def _normalize_search_results(self, raw_results: list) -> list[dict]:
+        """Normalize MemorySearchResult format from Core API to flat display format.
+
+        Core API returns: [{"memory": {"id": "...", "content": "..."}, "score": 0.9}]
+        Telegram consumer expects: [{"memory_id": "...", "title": "..."}]
+        """
+        normalized = []
+        for r in raw_results:
+            mem = r.get("memory", {})
+            if mem:
+                normalized.append({
+                    "memory_id": mem.get("id", ""),
+                    "title": mem.get("content", "Untitled"),
+                })
+            else:
+                # Already flat format — pass through unchanged
+                normalized.append(r)
+        return normalized
 
     def _is_stale(self, time_str: str) -> bool:
         """Check if the given timestamp is in the past relative to current time.

@@ -164,7 +164,7 @@ def _parse_callback_data(callback_data: str):
     elif "choice" in data and "memory_id" in data:
         # Could be DueDateChoice or ReminderTimeChoice
         choice = data["choice"]
-        if choice in ("today", "tomorrow", "next_week", "no_date"):
+        if choice in ("today", "tomorrow", "next_week", "no_date", "custom_task"):
             return DueDateChoice(memory_id=data["memory_id"], choice=choice)
         elif choice in ("1h", "tomorrow_9am", "custom"):
             return ReminderTimeChoice(memory_id=data["memory_id"], choice=choice)
@@ -315,7 +315,7 @@ async def handle_due_date_choice(
     user_id = update.effective_user.id
 
     # Handle custom date - prompt user for date entry
-    if choice == "custom":
+    if choice in ("custom", "custom_task"):
         context.user_data[PENDING_TASK_MEMORY_ID] = memory_id
         await callback_query.edit_message_text(
             "Please enter a custom due date and time (e.g., 2024-12-31 09:00):"
