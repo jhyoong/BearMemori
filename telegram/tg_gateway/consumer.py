@@ -279,12 +279,20 @@ async def _handle_intent_result(
             (r.get("title", "Untitled"), r.get("memory_id", "")) for r in results
         ]
 
+        # Show the actual keywords used for the search
+        keywords = content.get("keywords", [])
+        keywords_text = (
+            f"Searching based on keywords: {', '.join(keywords)}\n\n"
+            if keywords
+            else ""
+        )
+
         if results_tuples:
-            text = f'Search results for "{query}":'
+            text = f'{keywords_text}Search results for "{query}":'
             keyboard = search_results_keyboard(results_tuples)
             await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
         else:
-            text = f'No results found for "{query}".'
+            text = f'{keywords_text}No results found for "{query}".'
             await bot.send_message(chat_id=user_id, text=text)
 
         # Decrement queue: search is self-contained; no button action needed.
