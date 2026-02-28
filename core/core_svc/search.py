@@ -1,6 +1,20 @@
 """FTS5 full-text search module for memories."""
 
+import logging
+
 import aiosqlite
+
+logger = logging.getLogger(__name__)
+
+STOP_WORDS = frozenset({
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "is", "it", "this", "that", "are", "was",
+    "be", "has", "had", "do", "does", "did", "will", "can", "could",
+    "should", "would", "may", "might", "about", "all", "my", "me", "i",
+    "you", "your", "we", "our", "they", "their", "what", "which", "who",
+    "how", "when", "where", "find", "search", "show", "get", "list",
+    "tell", "give",
+})
 
 
 async def _get_cached_fts_data(
@@ -177,7 +191,15 @@ async def search_memories(
 ) -> list[dict]:
     """Query FTS5 and return results with pin boost."""
     terms = query.split()
-    sanitized_query = " ".join(f'"{term}"' for term in terms if term)
+    filtered = [t for t in terms if t.lower() not in STOP_WORDS]
+    if not filtered:
+        filtered = terms  # fallback: use original if all words are stop words
+    sanitized_query = " OR ".join(f'"{term}"' for term in filtered if term)
+
+    logger.info(
+        "search_memories: raw_query=%r, terms=%s, filtered=%s, fts_query=%r, owner=%s",
+        query, terms, filtered, sanitized_query, owner_user_id,
+    )
 
     if not sanitized_query:
         return []

@@ -14,7 +14,13 @@ SEARCH_MEMORIES_SCHEMA = {
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The search query to find relevant memories",
+                    "description": (
+                        "Short keyword query for full-text search. "
+                        "Extract only the meaningful search terms from "
+                        "the user's request. For example, if the user "
+                        "says 'find my memories about cooking in Italy', "
+                        "use 'cooking Italy'. Do NOT pass full sentences."
+                    ),
                 }
             },
             "required": ["query"],

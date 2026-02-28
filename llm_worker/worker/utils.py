@@ -47,4 +47,5 @@ def extract_json(text: str) -> dict:
                     except json.JSONDecodeError:
                         break
 
+    logger.warning("No valid JSON found in LLM response: %s", text[:300])
     raise ValueError(f"No valid JSON object found in text: {text[:200]}")

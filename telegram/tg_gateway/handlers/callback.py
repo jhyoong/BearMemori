@@ -30,7 +30,12 @@ from tg_gateway.callback_data import (
     IntentConfirm,
     RescheduleAction,
 )
-from tg_gateway.core_client import CoreClient, CoreUnavailableError, CoreNotFoundError
+from tg_gateway.core_client import (
+    CoreClient,
+    CoreClientError,
+    CoreUnavailableError,
+    CoreNotFoundError,
+)
 from tg_gateway.handlers.conversation import (
     AWAITING_BUTTON_ACTION,
     PENDING_LLM_CONVERSATION,
@@ -62,6 +67,20 @@ def _clear_conversation_state(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.pop(PENDING_LLM_CONVERSATION, None)
     count = context.user_data.get(USER_QUEUE_COUNT, 0)
     context.user_data[USER_QUEUE_COUNT] = max(0, count - 1)
+
+
+def _is_photo_message(callback_query) -> bool:
+    """Check if the callback's original message is a photo message."""
+    photo = getattr(callback_query.message, "photo", None)
+    return isinstance(photo, (list, tuple)) and len(photo) > 0
+
+
+async def _edit_message(callback_query, text: str, **kwargs) -> None:
+    """Edit a callback message, using caption for photo messages and text otherwise."""
+    if _is_photo_message(callback_query):
+        await callback_query.edit_message_caption(text, **kwargs)
+    else:
+        await callback_query.edit_message_text(text, **kwargs)
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -112,11 +131,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         else:
             logger.warning(f"Unhandled callback type: {type(callback_obj)}")
     except CoreUnavailableError:
-        await callback_query.edit_message_text(
-            "I'm having trouble reaching my backend. Please try again in a moment."
+        await _edit_message(
+            callback_query,
+            "I'm having trouble reaching my backend. Please try again in a moment.",
         )
     except CoreNotFoundError:
-        await callback_query.edit_message_text("This item no longer exists.")
+        await _edit_message(callback_query, "This item no longer exists.")
+    except CoreClientError as e:
+        logger.exception(f"Core API error in callback: {e}")
+        await _edit_message(
+            callback_query,
+            "Something went wrong. Please try again.",
+        )
     except BadRequest as e:
         logger.exception(f"BadRequest in callback: {e}")
 
@@ -276,19 +302,11 @@ async def handle_memory_action(
 
     elif action == "confirm_delete":
         # Show delete confirmation keyboard
-        # Check if the original message has a photo
-        if callback_query.message.photo is not None:
-            # Use edit_message_caption for photo messages
-            await callback_query.edit_message_caption(
-                "Are you sure you want to delete this memory?",
-                reply_markup=delete_confirm_keyboard(memory_id),
-            )
-        else:
-            # Use edit_message_text for text messages
-            await callback_query.edit_message_text(
-                "Are you sure you want to delete this memory?",
-                reply_markup=delete_confirm_keyboard(memory_id),
-            )
+        await _edit_message(
+            callback_query,
+            "Are you sure you want to delete this memory?",
+            reply_markup=delete_confirm_keyboard(memory_id),
+        )
 
 
 async def handle_due_date_choice(
@@ -475,41 +493,22 @@ async def handle_confirm_delete(
         # Delete the memory and show confirmation message
         await core_client.delete_memory(memory_id)
         _clear_conversation_state(context)
-        # Check if the original message has a photo
-        if callback_query.message.photo is not None:
-            # Use edit_message_caption for photo messages
-            await callback_query.edit_message_caption("Memory deleted")
-        else:
-            # Use edit_message_text for text messages
-            await callback_query.edit_message_text("Memory deleted")
+        await _edit_message(callback_query, "Memory deleted")
     else:
         # Cancel and restore the original keyboard
-        # Get the memory to check if it has an image
         memory = await core_client.get_memory(memory_id)
         if memory is None:
-            await callback_query.edit_message_text("Memory not found.")
+            await _edit_message(callback_query, "Memory not found.")
             return
 
-        # Check if memory has an image
         is_image = memory.media_type == "image"
-
-        # Get the original message text (content)
         message_text = memory.content if memory.content else "Memory"
 
-        # Restore the original keyboard
-        # Check if the original message has a photo
-        if callback_query.message.photo is not None:
-            # Use edit_message_caption for photo messages
-            await callback_query.edit_message_caption(
-                message_text,
-                reply_markup=memory_actions_keyboard(memory_id, is_image=is_image),
-            )
-        else:
-            # Use edit_message_text for text messages
-            await callback_query.edit_message_text(
-                message_text,
-                reply_markup=memory_actions_keyboard(memory_id, is_image=is_image),
-            )
+        await _edit_message(
+            callback_query,
+            message_text,
+            reply_markup=memory_actions_keyboard(memory_id, is_image=is_image),
+        )
 
 
 async def handle_search_detail(

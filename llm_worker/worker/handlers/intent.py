@@ -44,12 +44,20 @@ class IntentHandler(BaseHandler):
                 original_timestamp=original_timestamp or "",
             )
 
+        logger.info(
+            "Intent classify request: message=%r, memory_id=%s, has_followup=%s",
+            message, memory_id, bool(followup_context),
+        )
+        logger.debug("Intent classify prompt:\n%s", prompt)
+
         raw_response = await self.llm.complete(self.config.llm_text_model, prompt)
+        logger.info("Intent classify raw LLM response:\n%s", raw_response)
 
         result = extract_json(raw_response)
-        intent = result.get("intent", "ambiguous")
+        logger.info("Intent classify parsed JSON: %s", result)
 
-        logger.info("Classified query '%s' as intent: %s", message, intent)
+        intent = result.get("intent", "ambiguous")
+        logger.info("Classified query %r as intent: %s", message, intent)
 
         # For non-search intents (reminder, task, general_note, ambiguous), create memory
         # For search intents, no memory should be created (search is self-contained)
@@ -70,8 +78,15 @@ class IntentHandler(BaseHandler):
                     search_query = " ".join(keywords)
                 else:
                     search_query = str(keywords)
+                logger.info(
+                    "Legacy search: keywords=%s, search_query=%r, user_id=%s",
+                    keywords, search_query, user_id,
+                )
                 raw_results = await self.core_api.search(
                     search_query, owner_user_id=user_id
+                )
+                logger.info(
+                    "Legacy search returned %d results", len(raw_results)
                 )
                 return {
                     "query": message,
@@ -113,9 +128,14 @@ class IntentHandler(BaseHandler):
                 search_query = " ".join(keywords)
             else:
                 search_query = str(keywords)
+            logger.info(
+                "Search: keywords=%s, search_query=%r, user_id=%s",
+                keywords, search_query, user_id,
+            )
             raw_results = await self.core_api.search(
                 search_query, owner_user_id=user_id
             )
+            logger.info("Search returned %d results: %s", len(raw_results), raw_results)
             structured_result["results"] = self._normalize_search_results(raw_results)
 
         return structured_result
@@ -130,10 +150,27 @@ class IntentHandler(BaseHandler):
         for r in raw_results:
             mem = r.get("memory", {})
             if mem:
+                title = mem.get("content") or ""
+                if not title:
+                    # Fall back to tags for image memories with no content
+                    tags = mem.get("tags", [])
+                    if tags:
+                        tag_names = [
+                            t["tag"] if isinstance(t, dict) else t
+                            for t in tags
+                        ]
+                        title = ", ".join(tag_names[:3])
+                        if len(tag_names) > 3:
+                            title += f" (+{len(tag_names) - 3} more)"
+                if not title:
+                    title = "Untitled"
+                # Prefix image memories so the user knows it's a photo
+                if mem.get("media_type") == "image":
+                    title = f"[Image] {title}"
                 normalized.append(
                     {
                         "memory_id": mem.get("id", ""),
-                        "title": mem.get("content", "Untitled"),
+                        "title": title,
                     }
                 )
             else:

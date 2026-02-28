@@ -158,7 +158,12 @@ async def _process_message(
 
     try:
         # Call the handler
+        logger.info(
+            "Calling handler %s for job %s with payload: %s",
+            job_type, job_id, payload,
+        )
         result = await handler.handle(job_id, payload, user_id)
+        logger.info("Handler %s returned result for job %s: %s", job_type, job_id, result)
 
         if result is not None:
             # Job completed successfully with a result
@@ -170,14 +175,19 @@ async def _process_message(
                 msg_type = STREAM_NOTIFICATION_TYPE.get(
                     stream_name, "event_confirmation"
                 )
+                notification = {
+                    "user_id": user_id,
+                    "message_type": msg_type,
+                    "content": result,
+                }
+                logger.info(
+                    "Publishing notification for job %s: type=%s, content=%s",
+                    job_id, msg_type, result,
+                )
                 await publish(
                     redis_client,
                     STREAM_NOTIFY_TELEGRAM,
-                    {
-                        "user_id": user_id,
-                        "message_type": msg_type,
-                        "content": result,
-                    },
+                    notification,
                 )
         else:
             # Job completed but no notification needed

@@ -44,7 +44,11 @@ class LLMClient:
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
             )
-            return response.choices[0].message.content or ""
+            content = response.choices[0].message.content or ""
+            logger.debug(
+                "LLM complete response (model=%s): %s", model, content[:500]
+            )
+            return content
         except openai.APITimeoutError as e:
             raise LLMTimeoutError(f"LLM API error: {e}") from e
         except (openai.APIError, openai.APIConnectionError) as e:
@@ -88,7 +92,11 @@ class LLMClient:
                 temperature=0.3,
                 timeout=120.0,
             )
-            return response.choices[0].message.content or ""
+            content = response.choices[0].message.content or ""
+            logger.debug(
+                "LLM vision response (model=%s): %s", model, content[:500]
+            )
+            return content
         except openai.APITimeoutError as e:
             raise LLMTimeoutError(f"LLM vision API error: {e}") from e
         except (openai.APIError, openai.APIConnectionError) as e:

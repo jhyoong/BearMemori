@@ -26,12 +26,15 @@ class ImageTagHandler(BaseHandler):
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
         # Call vision model
+        logger.info("Image tag request: memory_id=%s, image_path=%s", memory_id, image_path)
         raw_response = await self.llm.complete_with_image(
             self.config.llm_vision_model, IMAGE_TAG_PROMPT, image_b64
         )
+        logger.info("Image tag raw LLM response:\n%s", raw_response)
 
         # Parse structured response
         result = extract_json(raw_response)
+        logger.info("Image tag parsed JSON: %s", result)
         tags = result.get("tags", [])
         description = result.get("description", "")
 
