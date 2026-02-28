@@ -22,7 +22,7 @@ class LLMClient:
         self._client = openai.AsyncOpenAI(
             base_url=base_url,
             api_key=api_key,
-            timeout=60.0,
+            timeout=300.0,
         )
 
     async def complete(self, model: str, prompt: str) -> str:

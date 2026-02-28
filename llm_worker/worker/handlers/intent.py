@@ -66,7 +66,7 @@ class IntentHandler(BaseHandler):
             memory_response = await self.core_api.create_memory(
                 content=message, owner_user_id=user_id
             )
-            memory_id = memory_response.get("memory_id")
+            memory_id = memory_response.get("id")
 
         # For legacy format (old 'query' only, no 'original_timestamp'), maintain old behavior
         # But if search intent, still call the search API

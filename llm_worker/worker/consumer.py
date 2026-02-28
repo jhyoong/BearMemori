@@ -252,7 +252,7 @@ async def _process_message(
                             "content": {
                                 "job_type": job_type,
                                 "memory_id": payload.get("memory_id", ""),
-                                "message": "I couldn't process your request after several attempts. Please try again later.",
+                                "message": "LLM endpoint not reachable or responsive. Please try again later.",
                             },
                         },
                     )
@@ -318,7 +318,7 @@ async def _process_message(
                             "content": {
                                 "job_type": job_type,
                                 "memory_id": payload.get("memory_id", ""),
-                                "message": "I couldn't generate tags right now due to a temporary service issue. I'll retry automatically once the service becomes available.",
+                                "message": "LLM endpoint not reachable or responsive. Will retry automatically once available.",
                             },
                         },
                     )

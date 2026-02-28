@@ -888,7 +888,7 @@ class TestInvalidResponseExhaustion:
                         found_failure = True
                         # Verify the failure message content
                         content = notification_data.get("content", {})
-                        assert "I couldn't process your" in content.get("message", "")
+                        assert "LLM endpoint not reachable or responsive" in content.get("message", "")
 
         assert found_failure, (
             "llm_failure notification should be published on exhaustion"
@@ -973,15 +973,8 @@ class TestUnavailableNotification:
                         if isinstance(content, dict)
                         else str(content)
                     )
-                    if (
-                        "I couldn't generate tags" in msg_text
-                        or "service" in msg_text.lower()
-                    ):
-                        if (
-                            "retry" in msg_text.lower()
-                            or "available" in msg_text.lower()
-                        ):
-                            found_unavailable_msg = True
+                    if "LLM endpoint not reachable or responsive" in msg_text:
+                        found_unavailable_msg = True
 
         assert found_unavailable_msg, (
             "First UNAVAILABLE should publish 'service unavailable, will retry' notification"
@@ -1273,7 +1266,7 @@ class TestInvalidResponseExhaustionRetry:
                     if notification_data.get("message_type") == "llm_failure":
                         found_failure = True
                         content = notification_data.get("content", {})
-                        assert "I couldn't process your" in content.get("message", "")
+                        assert "LLM endpoint not reachable or responsive" in content.get("message", "")
 
         assert found_failure, (
             "llm_failure notification should be published on exhaustion"

@@ -354,9 +354,9 @@ class TestIntentHandler:
         - Call core_api.create_memory with the original message text
         - Add the returned memory_id to the result
         """
-        # Setup mock to return a memory_id
+        # Setup mock to return a memory id (Core API returns "id", not "memory_id")
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-reminder-123"}
+            return_value={"id": "mem-reminder-123"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"
@@ -400,7 +400,7 @@ class TestIntentHandler:
         """
         # Setup mock to return a memory_id
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-task-456"}
+            return_value={"id": "mem-task-456"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"
@@ -438,7 +438,7 @@ class TestIntentHandler:
         """
         # Setup mock to return a memory_id
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-note-789"}
+            return_value={"id": "mem-note-789"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"
@@ -476,7 +476,7 @@ class TestIntentHandler:
         """
         # Setup mock to return a memory_id
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-ambiguous-999"}
+            return_value={"id": "mem-ambiguous-999"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"
@@ -577,7 +577,7 @@ class TestIntentSpecificPhrases:
         """
         # Setup mock to return a memory_id
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-reminder-mom-123"}
+            return_value={"id": "mem-reminder-mom-123"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"
@@ -623,7 +623,7 @@ class TestIntentSpecificPhrases:
         """
         # Setup mock to return a memory_id
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-task-report-456"}
+            return_value={"id": "mem-task-report-456"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"

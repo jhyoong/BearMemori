@@ -191,7 +191,8 @@ async def _dispatch_notification(application: Application, data: dict) -> None:
         job_type = content.get("job_type", "unknown")
         memory_id = content.get("memory_id", "")
 
-        text = f"I couldn't process your request ({job_type}). You can add tags or details manually."
+        message = content.get("message", "")
+        text = message if message else f"LLM endpoint not reachable or responsive ({job_type})."
         await bot.send_message(chat_id=user_id, text=text)
         logger.info("Sent llm_failure to user %s: %s", user_id, text[:50])
 
