@@ -13,6 +13,7 @@ Classify the intent of this user message and extract structured entities.
 
 User message: {message}
 Original timestamp: {original_timestamp}
+User timezone: {user_timezone}
 
 Possible intents:
 - reminder: user wants to be reminded about something at a specific time
@@ -38,7 +39,7 @@ If intent is "general_note":
 If intent is "ambiguous":
 {{"intent": "ambiguous", "followup_question": "natural follow-up question to clarify intent", "possible_intents": ["list", "of", "possible", "intents"]}}
 
-Resolve relative time references (like "tomorrow", "next week", "in 2 hours") to absolute ISO8601 datetimes relative to the original_timestamp provided.
+Resolve relative time references (like "tomorrow", "next week", "in 2 hours") to absolute ISO8601 datetimes in UTC, accounting for the user's timezone. For example, if the user says "tomorrow at 9am" and their timezone is America/New_York, resolve to the UTC equivalent of 9am Eastern.
 Generate a natural, conversational follow-up question for ambiguous intents.
 
 Respond ONLY with valid JSON in the appropriate format above."""
@@ -48,6 +49,7 @@ The user originally sent: {original_message}
 A clarifying question was asked: {followup_question}
 The user answered: {user_answer}
 Original timestamp: {original_timestamp}
+User timezone: {user_timezone}
 
 Based on this conversation context, re-classify the intent and extract entities.
 

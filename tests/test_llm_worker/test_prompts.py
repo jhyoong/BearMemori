@@ -113,7 +113,9 @@ class TestIntentClassifyPrompt:
 
         # This should not raise an exception
         formatted = INTENT_CLASSIFY_PROMPT.format(
-            message=test_message, original_timestamp=test_timestamp
+            message=test_message,
+            original_timestamp=test_timestamp,
+            user_timezone="America/New_York",
         )
 
         # Verify the variables are substituted
@@ -182,6 +184,7 @@ class TestReclassifyPrompt:
             followup_question=followup_question,
             user_answer=user_answer,
             original_timestamp=original_timestamp,
+            user_timezone="UTC",
         )
 
         # Verify all variables are substituted

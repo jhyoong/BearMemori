@@ -14,8 +14,10 @@ from tg_gateway.handlers.conversation import (
     USER_QUEUE_COUNT,
 )
 from tg_gateway.keyboards import (
+    due_date_keyboard,
     general_note_keyboard,
     reminder_proposal_keyboard,
+    reminder_time_keyboard,
     reschedule_keyboard,
     search_results_keyboard,
     serialize_callback,
@@ -213,6 +215,8 @@ async def _handle_intent_result(
         user_id: Telegram user ID to send the message to.
         content: The notification content dict from the LLM worker.
     """
+    from tg_gateway.tz_utils import format_for_user
+
     bot = application.bot
     intent = content.get("intent", "")
     query = content.get("query", "")
@@ -222,6 +226,17 @@ async def _handle_intent_result(
     # Support both 'results' (from fixed intent handler) and 'search_results' (for backward compatibility)
     results = content.get("results") or content.get("search_results", [])
 
+    # Fetch user timezone for display
+    tz_name = "UTC"
+    core_client = application.bot_data.get("core_client")
+    if core_client:
+        try:
+            uid_int = int(user_id)
+            settings = await core_client.get_settings(uid_int)
+            tz_name = settings.timezone
+        except Exception:
+            pass
+
     # Access user_data for state management; default to empty dict if not present.
     uid = int(user_id)
     if uid not in application.user_data:
@@ -229,22 +244,43 @@ async def _handle_intent_result(
     user_data = application.user_data[uid]
 
     if intent == "reminder":
-        resolved_time = content.get("resolved_time") or content.get(
+        resolved_time_str = content.get("resolved_time") or content.get(
             "extracted_datetime"
         )
-        # Check whether the resolved time is stale (in the past).
-        if resolved_time and _is_stale(resolved_time):
-            text = f'Your reminder "{query}" had a time that has already passed. Would you like to reschedule?'
+        # Validate the resolved time string is a parseable datetime.
+        parsed_time = (
+            _try_parse_datetime(resolved_time_str) if resolved_time_str else None
+        )
+
+        if parsed_time is None and resolved_time_str:
+            # LLM returned an unparseable datetime (e.g. invalid date like Feb 29
+            # in a non-leap year). Show the time picker directly.
+            text = (
+                f'Reminder: "{query}" — the suggested time '
+                f"({resolved_time_str}) could not be processed. "
+                f"Please select a time:"
+            )
+            keyboard = reminder_time_keyboard(memory_id)
+            # Clear the invalid value so the callback handler won't retry.
+            resolved_time_str = None
+        elif parsed_time and parsed_time < datetime.now(tz=timezone.utc):
+            text = (
+                f'Your reminder "{query}" had a time that has already passed. '
+                f"Would you like to reschedule?"
+            )
             keyboard = reschedule_keyboard(memory_id)
         else:
-            dt_str = resolved_time or "unspecified time"
-            text = f'Reminder: "{query}" at {dt_str}'
+            if parsed_time:
+                dt_display = format_for_user(parsed_time, tz_name)
+            else:
+                dt_display = "unspecified time"
+            text = f'Reminder: "{query}" at {dt_display}'
             keyboard = reminder_proposal_keyboard(memory_id)
 
         await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
         user_data[AWAITING_BUTTON_ACTION] = {
             "memory_id": memory_id,
-            "resolved_time": resolved_time,
+            "resolved_time": resolved_time_str,
             "query": query,
         }
         logger.info(
@@ -252,22 +288,43 @@ async def _handle_intent_result(
         )
 
     elif intent == "task":
-        resolved_due_time = content.get("resolved_due_time") or content.get(
+        resolved_due_time_str = content.get("resolved_due_time") or content.get(
             "extracted_datetime"
         )
-        # Check whether the resolved due time is stale (in the past).
-        if resolved_due_time and _is_stale(resolved_due_time):
-            text = f'Your task "{query}" had a due date that has already passed. Would you like to reschedule?'
+        # Validate the resolved due time string is a parseable datetime.
+        parsed_due = (
+            _try_parse_datetime(resolved_due_time_str)
+            if resolved_due_time_str
+            else None
+        )
+
+        if parsed_due is None and resolved_due_time_str:
+            # LLM returned an unparseable datetime. Show due date picker directly.
+            text = (
+                f'Task: "{query}" — the suggested due date '
+                f"({resolved_due_time_str}) could not be processed. "
+                f"Please select a due date:"
+            )
+            keyboard = due_date_keyboard(memory_id)
+            resolved_due_time_str = None
+        elif parsed_due and parsed_due < datetime.now(tz=timezone.utc):
+            text = (
+                f'Your task "{query}" had a due date that has already passed. '
+                f"Would you like to reschedule?"
+            )
             keyboard = reschedule_keyboard(memory_id)
         else:
-            dt_str = resolved_due_time or "unspecified date"
-            text = f'Task: "{query}" due {dt_str}'
+            if parsed_due:
+                dt_display = format_for_user(parsed_due, tz_name)
+            else:
+                dt_display = "unspecified date"
+            text = f'Task: "{query}" due {dt_display}'
             keyboard = task_proposal_keyboard(memory_id)
 
         await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
         user_data[AWAITING_BUTTON_ACTION] = {
             "memory_id": memory_id,
-            "resolved_due_time": resolved_due_time,
+            "resolved_due_time": resolved_due_time_str,
             "query": query,
         }
         logger.info(
@@ -334,6 +391,25 @@ async def _handle_intent_result(
         await bot.send_message(chat_id=user_id, text=text)
 
 
+def _try_parse_datetime(dt_string: str) -> datetime | None:
+    """Try to parse an ISO 8601 datetime string.
+
+    Args:
+        dt_string: ISO 8601 datetime string (e.g. "2024-01-01T09:00:00").
+
+    Returns:
+        A timezone-aware datetime (UTC if no tzinfo), or None on parse error.
+    """
+    try:
+        dt = datetime.fromisoformat(dt_string)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        logger.warning("Could not parse datetime string: %s", dt_string)
+        return None
+
+
 def _is_stale(dt_string: str) -> bool:
     """Return True if the ISO datetime string represents a past moment.
 
@@ -344,12 +420,7 @@ def _is_stale(dt_string: str) -> bool:
         True if the parsed datetime is before now (UTC), False otherwise.
         Returns False on parse error so we do not wrongly flag valid datetimes.
     """
-    try:
-        dt = datetime.fromisoformat(dt_string)
-        # If no timezone info, assume UTC.
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt < datetime.now(tz=timezone.utc)
-    except (ValueError, TypeError):
-        logger.warning("Could not parse extracted_datetime: %s", dt_string)
+    dt = _try_parse_datetime(dt_string)
+    if dt is None:
         return False
+    return dt < datetime.now(tz=timezone.utc)

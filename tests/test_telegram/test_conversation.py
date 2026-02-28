@@ -90,10 +90,10 @@ class TestParseDatetime:
     def test_returns_none_on_empty_string(self):
         assert parse_datetime("") is None
 
-    def test_result_is_utc_aware(self):
-        from datetime import timezone
+    def test_result_is_naive(self):
+        """parse_datetime returns naive datetimes; caller converts to UTC."""
         dt = parse_datetime("2024-06-15 12:00")
-        assert dt.tzinfo == timezone.utc
+        assert dt.tzinfo is None
 
 
 # ---------------------------------------------------------------------------

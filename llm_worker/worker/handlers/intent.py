@@ -22,6 +22,7 @@ class IntentHandler(BaseHandler):
         memory_id = payload.get("memory_id", "")
         original_timestamp = payload.get("original_timestamp")
         followup_context = payload.get("followup_context")
+        user_timezone = payload.get("user_timezone", "UTC")
 
         # Determine if using legacy format (only 'query', no 'original_timestamp')
         is_legacy = "query" in payload and "original_timestamp" not in payload
@@ -36,12 +37,14 @@ class IntentHandler(BaseHandler):
                 followup_question=followup_question,
                 user_answer=user_answer,
                 original_timestamp=original_timestamp or "",
+                user_timezone=user_timezone,
             )
         else:
             # Use standard INTENT_CLASSIFY_PROMPT
             prompt = INTENT_CLASSIFY_PROMPT.format(
                 message=message,
                 original_timestamp=original_timestamp or "",
+                user_timezone=user_timezone,
             )
 
         logger.info(

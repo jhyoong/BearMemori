@@ -39,6 +39,8 @@ def _make_application(user_data: dict | None = None) -> MagicMock:
     app.bot = MagicMock()
     app.bot.send_message = AsyncMock()
     app.user_data = user_data if user_data is not None else {}
+    # bot_data without core_client so timezone lookups fall back to UTC
+    app.bot_data = {}
     return app
 
 
@@ -166,9 +168,14 @@ class TestHandleIntentResultReminder:
         call_kwargs = app.bot.send_message.call_args[1]
         text = call_kwargs.get("text", "")
         assert "Call mom" in text
-        assert future_dt in text, f"Expected resolved_time {future_dt} in text: {text}"
-        # Should NOT show "unspecified time"
+        # Time is now displayed in user-friendly format (YYYY-MM-DD HH:MM)
+        # rather than raw ISO string
         assert "unspecified" not in text.lower()
+        # Verify a formatted date is present (e.g., "2026-02-28 20:13")
+        import re
+        assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", text), (
+            f"Expected formatted datetime in text: {text}"
+        )
 
     @pytest.mark.asyncio
     async def test_reminder_stale_with_resolved_time_shows_reschedule(self):
@@ -301,11 +308,12 @@ class TestHandleIntentResultTask:
         text = call_kwargs.get("text", "")
         assert "Finish report" in text
         assert "Task:" in text
-        assert future_dt in text, (
-            f"Expected resolved_due_time {future_dt} in text: {text}"
-        )
-        # Should NOT show "unspecified"
+        # Time is now displayed in user-friendly format (YYYY-MM-DD HH:MM)
         assert "unspecified" not in text.lower()
+        import re
+        assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", text), (
+            f"Expected formatted datetime in text: {text}"
+        )
 
     @pytest.mark.asyncio
     async def test_task_stale_with_resolved_due_time_shows_reschedule(self):

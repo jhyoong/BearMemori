@@ -72,6 +72,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         await core_client.ensure_user(user.id, user.full_name)
 
+        # Fetch user timezone for LLM time resolution
+        try:
+            settings = await core_client.get_settings(user.id)
+            user_tz = settings.timezone
+        except Exception:
+            user_tz = "UTC"
+
         # Reply based on current queue depth
         queue_count = get_queue_count(context)
         if queue_count == 0:
@@ -90,6 +97,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     "original_timestamp": msg.date.isoformat() if msg.date else None,
                     "source_chat_id": msg.chat_id,
                     "source_message_id": msg.message_id,
+                    "user_timezone": user_tz,
                 },
                 user_id=user.id,
             )

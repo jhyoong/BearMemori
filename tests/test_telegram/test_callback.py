@@ -412,6 +412,9 @@ class TestStubHandlers:
         mock_memory.content = "Test memory content"
         core_client.get_memory = AsyncMock(return_value=mock_memory)
         core_client.create_task = AsyncMock()
+        mock_settings = MagicMock()
+        mock_settings.timezone = "UTC"
+        core_client.get_settings = AsyncMock(return_value=mock_settings)
 
         callback_data = DueDateChoice(memory_id="123", choice="today")
 
@@ -439,7 +442,9 @@ class TestStubHandlers:
         mock_memory.content = "Test memory content"
         core_client.get_memory = AsyncMock(return_value=mock_memory)
         core_client.create_reminder = AsyncMock()
-        core_client.get_settings = AsyncMock()
+        mock_settings = MagicMock()
+        mock_settings.timezone = "UTC"
+        core_client.get_settings = AsyncMock(return_value=mock_settings)
 
         callback_data = ReminderTimeChoice(memory_id="123", choice="1h")
 
@@ -758,6 +763,9 @@ class TestHandleIntentConfirm:
     def mock_core_client(self):
         client = MagicMock()
         client.update_memory = AsyncMock()
+        mock_settings = MagicMock()
+        mock_settings.timezone = "UTC"
+        client.get_settings = AsyncMock(return_value=mock_settings)
         return client
 
     @pytest.mark.asyncio
@@ -770,7 +778,7 @@ class TestHandleIntentConfirm:
 
         mock_core_client.update_memory.assert_awaited_once()
         call_args = mock_update.callback_query.edit_message_text.call_args
-        assert call_args[0][0] == "Select when to be reminded:"
+        assert call_args[0][0] == "No time was set. Please select when to be reminded:"
         assert call_args[1]["reply_markup"] is not None
 
     @pytest.mark.asyncio
@@ -796,7 +804,7 @@ class TestHandleIntentConfirm:
 
         mock_core_client.update_memory.assert_awaited_once()
         call_args = mock_update.callback_query.edit_message_text.call_args
-        assert call_args[0][0] == "Select a due date for the task:"
+        assert call_args[0][0] == "No due date was set. Please select a due date for the task:"
         assert call_args[1]["reply_markup"] is not None
 
     @pytest.mark.asyncio

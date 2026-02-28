@@ -83,11 +83,14 @@ def get_queue_count(context: ContextTypes.DEFAULT_TYPE) -> int:
 def parse_datetime(text: str) -> Optional[datetime]:
     """Parse date/time strings in multiple formats.
 
+    Returns a naive datetime (no tzinfo). The caller is responsible for
+    interpreting it in the correct timezone and converting to UTC.
+
     Args:
         text: Date/time string to parse
 
     Returns:
-        UTC-aware datetime or None if parsing fails
+        Naive datetime or None if parsing fails
     """
     formats = [
         "%Y-%m-%d %H:%M",
@@ -99,7 +102,7 @@ def parse_datetime(text: str) -> Optional[datetime]:
     for fmt in formats:
         try:
             dt = datetime.strptime(text, fmt)
-            return dt.replace(tzinfo=timezone.utc)
+            return dt
         except ValueError:
             continue
 
@@ -167,6 +170,8 @@ async def receive_custom_date(
         update: The Telegram update.
         context: The context with user_data containing the pending memory ID.
     """
+    from tg_gateway.tz_utils import to_utc, format_for_user
+
     user = update.message.from_user
     text = update.message.text.strip()
 
@@ -177,10 +182,10 @@ async def receive_custom_date(
         await update.message.reply_text("Something went wrong. Please try again.")
         return
 
-    # Try to parse the date using the utility function
-    due_at = parse_datetime(text)
+    # Try to parse the date using the utility function (returns naive datetime)
+    due_at_naive = parse_datetime(text)
 
-    if due_at is None:
+    if due_at_naive is None:
         await update.message.reply_text(
             "Could not parse the date. Please use format YYYY-MM-DD HH:MM"
             " (e.g., 2024-12-25 09:00)."
@@ -191,6 +196,15 @@ async def receive_custom_date(
 
     # Get core client from bot_data
     core_client = context.bot_data["core_client"]
+
+    # Fetch user timezone and convert to UTC
+    try:
+        settings = await core_client.get_settings(user.id)
+        tz_name = settings.timezone
+    except Exception:
+        tz_name = "UTC"
+
+    due_at = to_utc(due_at_naive, tz_name)
 
     # Fetch memory content to use as the task description
     description = "Task"
@@ -212,7 +226,7 @@ async def receive_custom_date(
     try:
         await core_client.create_task(task_data)
         await update.message.reply_text(
-            f"Task created with due date: {due_at.strftime('%Y-%m-%d %H:%M')}"
+            f"Task created with due date: {format_for_user(due_at, tz_name)}"
         )
     except Exception:
         logger.exception(f"Failed to create task for memory {memory_id}")
@@ -231,6 +245,8 @@ async def receive_custom_reminder(
         update: The Telegram update.
         context: The context with user_data containing the pending memory ID.
     """
+    from tg_gateway.tz_utils import to_utc, format_for_user
+
     user = update.message.from_user
     text = update.message.text.strip()
 
@@ -241,10 +257,10 @@ async def receive_custom_reminder(
         await update.message.reply_text("Something went wrong. Please try again.")
         return
 
-    # Try to parse the reminder time using the utility function
-    remind_at = parse_datetime(text)
+    # Try to parse the reminder time using the utility function (returns naive datetime)
+    remind_at_naive = parse_datetime(text)
 
-    if remind_at is None:
+    if remind_at_naive is None:
         await update.message.reply_text(
             "Could not parse the time. Please use a format like '2024-12-25 14:00'."
         )
@@ -254,6 +270,15 @@ async def receive_custom_reminder(
 
     # Get core client from bot_data
     core_client = context.bot_data["core_client"]
+
+    # Fetch user timezone and convert to UTC
+    try:
+        settings = await core_client.get_settings(user.id)
+        tz_name = settings.timezone
+    except Exception:
+        tz_name = "UTC"
+
+    remind_at = to_utc(remind_at_naive, tz_name)
 
     # Fetch memory content to use as the reminder text
     reminder_text = "Reminder"
@@ -275,7 +300,7 @@ async def receive_custom_reminder(
     try:
         await core_client.create_reminder(reminder_data)
         await update.message.reply_text(
-            f"Reminder set for: {remind_at.strftime('%Y-%m-%d %H:%M')}"
+            f"Reminder set for: {format_for_user(remind_at, tz_name)}"
         )
     except Exception:
         logger.exception(f"Failed to create reminder for memory {memory_id}")
