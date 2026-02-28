@@ -3,7 +3,6 @@
 import os
 import re
 from pathlib import Path
-from typing import AsyncIterator
 
 import aiosqlite
 from fastapi import Request

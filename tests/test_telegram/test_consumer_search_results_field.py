@@ -6,10 +6,8 @@ Tests that verify:
 3. "No results found" is displayed when results list is empty
 """
 
-import asyncio
-import json
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -92,7 +90,7 @@ class TestTelegramConsumerSearchResultsField:
         await _handle_intent_result(app, "12345", content)
 
         call_kwargs = app.bot.send_message.call_args[1]
-        text = call_kwargs.get("text", "")
+        _text = call_kwargs.get("text", "")
 
         # Should NOT have a keyboard when no results
         assert call_kwargs.get("reply_markup") is None

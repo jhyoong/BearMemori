@@ -2,14 +2,9 @@
 
 import json
 
-import pytest
 
 from tg_gateway.callback_data import (
-    ConfirmDelete,
     IntentConfirm,
-    MemoryAction,
-    RescheduleAction,
-    TagConfirm,
 )
 from tg_gateway.keyboards import (
     general_note_keyboard,

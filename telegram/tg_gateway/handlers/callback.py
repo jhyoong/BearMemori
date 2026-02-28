@@ -14,7 +14,6 @@ from shared_lib.schemas import (
     MemoryUpdate,
     TaskCreate,
     ReminderCreate,
-    TagAdd,
     TagsAddRequest,
 )
 from shared_lib.enums import TaskState, MemoryStatus

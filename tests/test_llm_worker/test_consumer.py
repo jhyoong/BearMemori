@@ -2,8 +2,7 @@
 
 import pytest
 import asyncio
-import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 import fakeredis.aioredis
 
 # Import from consumer module (doesn't exist yet - that's expected)
@@ -26,7 +25,6 @@ from shared_lib.redis_streams import (
     create_consumer_group,
     publish,
     consume,
-    ack,
 )
 
 
@@ -833,7 +831,6 @@ class TestInvalidResponseExhaustion:
         )
 
         # Create mock handler that raises invalid response error
-        import json
 
         error = json.JSONDecodeError("Expecting value", "", 0)
         mock_handler = create_mock_handler(None, raises=error)
@@ -968,7 +965,7 @@ class TestUnavailableNotification:
                 data_str = fields.get(b"data")
                 if data_str:
                     notification_data = json.loads(data_str.decode())
-                    msg_type = notification_data.get("message_type", "")
+                    _msg_type = notification_data.get("message_type", "")
                     content = notification_data.get("content", {})
                     # Check for the specific message text
                     msg_text = (
@@ -1183,8 +1180,8 @@ class TestIntentResultStructuredData:
 # =============================================================================
 
 
-class TestInvalidResponseExhaustion:
-    """Tests for INVALID_RESPONSE exhaustion behavior."""
+class TestInvalidResponseExhaustionRetry:
+    """Tests for INVALID_RESPONSE exhaustion with retry behavior."""
 
     @pytest.fixture
     def retry_manager(self):

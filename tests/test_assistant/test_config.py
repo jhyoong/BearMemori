@@ -1,7 +1,6 @@
 """Tests for assistant service configuration."""
 
-import pytest
-from assistant_svc.config import AssistantConfig, load_config
+from assistant_svc.config import AssistantConfig
 
 
 def test_config_defaults():

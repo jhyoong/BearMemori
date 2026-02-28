@@ -1,7 +1,7 @@
 """Tests for conversation handlers in tg_gateway/handlers/conversation.py."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from telegram import Update
 from telegram.ext import ContextTypes

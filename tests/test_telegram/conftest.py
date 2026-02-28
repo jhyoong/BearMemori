@@ -4,7 +4,6 @@ import os
 import sys
 from unittest.mock import AsyncMock, Mock
 
-import pytest
 from telegram.ext import Application
 
 # Add telegram directory to path so tg_gateway module is importable

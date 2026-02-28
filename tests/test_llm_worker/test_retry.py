@@ -1,9 +1,6 @@
 """Tests for the RetryManager class."""
 
-import time
-from unittest.mock import patch
 
-import pytest
 
 from worker.retry import FailureType, RetryManager
 

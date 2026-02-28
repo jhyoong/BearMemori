@@ -252,7 +252,7 @@ async def _process_message(
                             "content": {
                                 "job_type": job_type,
                                 "memory_id": payload.get("memory_id", ""),
-                                "message": f"I couldn't process your request after several attempts. Please try again later.",
+                                "message": "I couldn't process your request after several attempts. Please try again later.",
                             },
                         },
                     )

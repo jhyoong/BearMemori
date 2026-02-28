@@ -61,7 +61,7 @@ class TestFollowupHandler:
         )
 
         # Call handler with additional context
-        result = await followup_handler.handle(
+        _result = await followup_handler.handle(
             job_id="job-456",
             payload={
                 "message": "show me photos",

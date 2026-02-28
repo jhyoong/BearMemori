@@ -1,7 +1,7 @@
 import logging
 
 import redis.asyncio
-from telegram import BotCommand, Update
+from telegram import BotCommand
 from telegram.ext import (
     Application,
     ApplicationBuilder,

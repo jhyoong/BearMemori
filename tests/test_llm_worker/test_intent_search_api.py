@@ -48,7 +48,7 @@ class TestIntentHandlerSearchIntegration:
         - Return results from the API in the "results" field
         """
         original_ts = "2026-02-24T10:00:00Z"
-        search_keywords = ["python", "tips"]
+        _search_keywords = ["python", "tips"]
         search_query = "python tips"
 
         # Mock LLM returns search intent with keywords
@@ -111,7 +111,7 @@ class TestIntentHandlerSearchIntegration:
         self, handler, mock_llm_client, mock_core_api
     ):
         """Test that legacy format (query field) also calls search API."""
-        search_keywords = ["butter", "recipe"]
+        _search_keywords = ["butter", "recipe"]
         search_query = "butter recipe"
 
         mock_llm_client.complete = AsyncMock(
@@ -216,7 +216,7 @@ class TestIntentHandlerSearchWithSingleKeyword:
     ):
         """Test that search intent works with single keyword."""
         original_ts = "2026-02-24T10:00:00Z"
-        search_keywords = ["vacation"]
+        _search_keywords = ["vacation"]
         search_query = "vacation"
 
         mock_llm_client.complete = AsyncMock(
@@ -259,7 +259,7 @@ class TestIntentHandlerSearchWithMultipleKeywords:
     ):
         """Test that search intent works with many keywords."""
         original_ts = "2026-02-24T10:00:00Z"
-        search_keywords = ["python", "tips", "tricks", "advanced"]
+        _search_keywords = ["python", "tips", "tricks", "advanced"]
         search_query = "python tips tricks advanced"
 
         mock_llm_client.complete = AsyncMock(

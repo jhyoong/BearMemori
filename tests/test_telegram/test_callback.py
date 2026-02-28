@@ -4,7 +4,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from telegram import Update
 from telegram.ext import ContextTypes
-from telegram.error import BadRequest
 
 from tg_gateway.handlers.callback import (
     handle_callback,
@@ -399,7 +398,6 @@ class TestStubHandlers:
     @pytest.mark.asyncio
     async def test_due_date_choice_stub(self):
         """Test that handle_due_date_choice stub can be called."""
-        from datetime import datetime
 
         update = MagicMock(spec=Update)
         update.callback_query = MagicMock()
@@ -427,7 +425,6 @@ class TestStubHandlers:
     @pytest.mark.asyncio
     async def test_reminder_time_choice_stub(self):
         """Test that handle_reminder_time_choice stub can be called."""
-        from datetime import datetime
 
         update = MagicMock(spec=Update)
         update.callback_query = MagicMock()

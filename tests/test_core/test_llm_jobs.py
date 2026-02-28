@@ -1,7 +1,6 @@
 """Tests for the LLM jobs endpoints."""
 
 import json
-import pytest
 
 
 async def test_create_llm_job_with_user(test_app, test_user):

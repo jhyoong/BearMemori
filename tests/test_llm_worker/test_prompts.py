@@ -2,9 +2,7 @@
 
 import os
 import sys
-import re
 
-import pytest
 
 # Ensure correct llm_worker path is used - prioritize local version over worktree
 PROJECT_ROOT = os.path.dirname(

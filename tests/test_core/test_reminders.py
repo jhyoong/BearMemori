@@ -75,7 +75,7 @@ async def test_list_upcoming_only(test_app, test_user):
     now = datetime.now(timezone.utc)
 
     future_data = await _create_reminder(test_app, memory_id, test_user, now + timedelta(hours=1))
-    past_data = await _create_reminder(test_app, memory_id, test_user, now + timedelta(hours=2))
+    _past_data = await _create_reminder(test_app, memory_id, test_user, now + timedelta(hours=2))
 
     # Manually mark one reminder as fired via direct DB manipulation through test_db
     # We use the test_db fixture indirectly: instead, let's create a past-fire reminder

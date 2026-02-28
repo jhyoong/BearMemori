@@ -1,9 +1,8 @@
 """Tests for Telegram bot menu commands setup in post_init."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
-from telegram import BotCommand
 
 
 @pytest.mark.asyncio

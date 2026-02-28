@@ -1,6 +1,5 @@
 """Tests for the assistant agent core."""
 
-import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 

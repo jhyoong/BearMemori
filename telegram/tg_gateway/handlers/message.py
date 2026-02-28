@@ -16,7 +16,6 @@ from tg_gateway.core_client import CoreUnavailableError
 from tg_gateway.keyboards import memory_actions_keyboard
 from tg_gateway.handlers import conversation
 from tg_gateway.handlers.conversation import (
-    AWAITING_BUTTON_ACTION,
     PENDING_LLM_CONVERSATION,
     PENDING_REMINDER_MEMORY_ID,
     PENDING_TAG_MEMORY_ID,

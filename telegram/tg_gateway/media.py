@@ -32,6 +32,6 @@ async def download_and_upload_image(
         local_path = await core_client.upload_image(memory_id, bytes(file_bytes))
         logger.info(f"Successfully uploaded image for memory {memory_id}")
         return local_path
-    except Exception as e:
+    except Exception:
         logger.exception(f"Failed to download/upload image for memory {memory_id}")
         return None

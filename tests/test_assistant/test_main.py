@@ -1,7 +1,7 @@
 """Tests for assistant service main entry point wiring."""
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from assistant_svc.main import build_components
 

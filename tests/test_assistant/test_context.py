@@ -1,6 +1,5 @@
 """Tests for chat history context management."""
 
-import json
 import pytest
 import pytest_asyncio
 import fakeredis.aioredis
