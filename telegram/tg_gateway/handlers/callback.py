@@ -49,6 +49,7 @@ from tg_gateway.keyboards import (
     reminder_time_keyboard,
     delete_confirm_keyboard,
     memory_actions_keyboard,
+    search_result_detail_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -543,8 +544,8 @@ async def handle_search_detail(
     # Prepare the message text
     message_text = memory.content if memory.content else "Memory"
 
-    # Create keyboard for actions
-    reply_markup = memory_actions_keyboard(memory_id, is_image=is_image)
+    # Create keyboard for search result actions (no tag confirmation buttons)
+    reply_markup = search_result_detail_keyboard(memory_id)
 
     # If it's an image, send the photo with the keyboard
     if is_image and memory.media_file_id:

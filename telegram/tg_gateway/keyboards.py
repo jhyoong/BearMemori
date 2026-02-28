@@ -215,6 +215,63 @@ def delete_confirm_keyboard(memory_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
+def search_result_detail_keyboard(memory_id: str) -> InlineKeyboardMarkup:
+    """Create keyboard for a search result detail view.
+
+    Shows action buttons appropriate for an existing memory:
+    Edit Tags, Create Task, Set Reminder, Pin, Delete.
+
+    Args:
+        memory_id: The ID of the memory.
+
+    Returns:
+        InlineKeyboardMarkup with search result action buttons.
+    """
+    keyboard = [
+        # First row - Edit Tags, Create Task
+        [
+            InlineKeyboardButton(
+                text="Edit Tags",
+                callback_data=serialize_callback(
+                    TagConfirm(memory_id=memory_id, action="edit")
+                ),
+            ),
+            InlineKeyboardButton(
+                text="Create Task",
+                callback_data=serialize_callback(
+                    MemoryAction(action="set_task", memory_id=memory_id)
+                ),
+            ),
+        ],
+        # Second row - Set Reminder, Pin
+        [
+            InlineKeyboardButton(
+                text="Set Reminder",
+                callback_data=serialize_callback(
+                    MemoryAction(action="set_reminder", memory_id=memory_id)
+                ),
+            ),
+            InlineKeyboardButton(
+                text="Pin",
+                callback_data=serialize_callback(
+                    MemoryAction(action="toggle_pin", memory_id=memory_id)
+                ),
+            ),
+        ],
+        # Third row - Delete (triggers confirmation prompt)
+        [
+            InlineKeyboardButton(
+                text="Delete",
+                callback_data=serialize_callback(
+                    MemoryAction(action="confirm_delete", memory_id=memory_id)
+                ),
+            ),
+        ],
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+
 def search_results_keyboard(results: list[tuple[str, str]]) -> InlineKeyboardMarkup:
     """Create keyboard for search results.
 
