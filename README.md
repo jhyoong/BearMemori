@@ -1,5 +1,8 @@
 # BearMemori
 
+[![GitHub release](https://img.shields.io/github/v/release/jhyoong/BearMemori)](https://github.com/jhyoong/BearMemori/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 > [!NOTE]                                                                                                                                                                                      
 > An ambitious personal project for my personal use. I'm building this with the aim of storing and managing memories with the help of AI. 
 
@@ -119,3 +122,18 @@ The assistant requires its own Telegram bot token (separate from the main gatewa
 | `OPENAI_API_KEY` | OpenAI API key | `not-needed` |
 | `OPENAI_BASE_URL` | OpenAI-compatible API base URL | `https://api.openai.com/v1` |
 | `OPENAI_MODEL` | Model to use for conversations | `gpt-4o` |
+
+## Contributing
+
+This is a personal project, but contributions are welcome. To get started:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Install dependencies: `cd shared && pip install -e .`, then the same for the service you are working on
+4. Run the tests: `pytest`
+5. Run the linter: `ruff check .`
+6. Open a pull request
+
+## License
+
+MIT -- see [LICENSE](LICENSE) for details.
