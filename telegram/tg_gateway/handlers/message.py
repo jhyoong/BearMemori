@@ -4,6 +4,7 @@ This module contains handlers for text messages, image messages,
 and unauthorized users.
 """
 
+import json
 import logging
 
 from telegram import Update
@@ -20,12 +21,54 @@ from tg_gateway.handlers.conversation import (
     PENDING_REMINDER_MEMORY_ID,
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
-    get_queue_count,
     increment_queue,
 )
 from tg_gateway.media import download_and_upload_image
 
 logger = logging.getLogger(__name__)
+
+
+async def _get_submission_feedback(context: ContextTypes.DEFAULT_TYPE) -> str:
+    """Get appropriate submission feedback message based on LLM health and queue depth.
+
+    Args:
+        context: The Telegram context with bot_data containing redis client
+                and user_data containing user_queue_count.
+
+    Returns:
+        Feedback message string:
+        - "Processing your message..." when healthy and queue_count == 0
+        - "Added to queue (X messages ahead)" when healthy and queue_count > 0
+        - "I'm catching up with processing..." when unhealthy
+    """
+    user_queue_count = context.user_data.get("user_queue_count", 0)
+    redis_client = context.bot_data.get("redis")
+
+    # If Redis is not available, fall back to default message
+    if redis_client is None:
+        return "Processing your message..."
+
+    try:
+        health_status_raw = await redis_client.get("llm:health_status")
+        if health_status_raw is None:
+            return "Processing your message..."
+
+        health_status = json.loads(health_status_raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return "Processing your message..."
+
+    # Check if LLM is healthy
+    # Only "unhealthy" is explicitly unhealthy; missing/other status is healthy
+    is_healthy = health_status.get("status") != "unhealthy"
+
+    if is_healthy:
+        if user_queue_count == 0:
+            return "Processing your message..."
+        else:
+            message = "message" if user_queue_count == 1 else "messages"
+            return f"Added to queue ({user_queue_count} {message} ahead)"
+    else:
+        return "I'm catching up with processing... please wait."
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -79,12 +122,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         except Exception:
             user_tz = "UTC"
 
-        # Reply based on current queue depth
-        queue_count = get_queue_count(context)
-        if queue_count == 0:
-            await msg.reply_text("Processing...")
-        else:
-            await msg.reply_text("Added to queue")
+        # Reply based on LLM health status and queue depth
+        feedback_message = await _get_submission_feedback(context)
+        await msg.reply_text(feedback_message)
 
         increment_queue(context)
 

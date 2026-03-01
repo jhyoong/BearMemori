@@ -18,6 +18,7 @@ from core_svc.routers.settings import router as settings_router
 from core_svc.routers.audit import router as audit_router
 from core_svc.routers.llm_jobs import router as llm_jobs_router
 from core_svc.routers.backup import router as backup_router
+from core_svc.routers.admin import router as admin_router
 
 # Group 6 imports (scheduler):
 from core_svc.scheduler import run_scheduler
@@ -77,6 +78,7 @@ app.include_router(settings_router, prefix="/settings")
 app.include_router(audit_router, prefix="/audit")
 app.include_router(llm_jobs_router, prefix="/llm_jobs")
 app.include_router(backup_router, prefix="/backup")
+app.include_router(admin_router, prefix="")
 
 
 @app.get("/health")

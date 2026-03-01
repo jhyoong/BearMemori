@@ -25,8 +25,8 @@ async def test_post_init_calls_set_my_commands(mock_application):
 
 
 @pytest.mark.asyncio
-async def test_post_init_commands_list_contains_all_5_commands(mock_application):
-    """Verify that all 5 commands are registered in set_my_commands."""
+async def test_post_init_commands_list_contains_all_7_commands(mock_application):
+    """Verify that all 7 commands are registered in set_my_commands."""
     from tg_gateway.main import post_init
 
     with patch("tg_gateway.main.TelegramConfig") as mock_config:
@@ -41,14 +41,14 @@ async def test_post_init_commands_list_contains_all_5_commands(mock_application)
     call_args = mock_application.bot.set_my_commands.await_args
     commands = call_args[0][0] if call_args else []
 
-    # Verify we have exactly 5 commands
-    assert len(commands) == 5, f"Expected 5 commands, got {len(commands)}"
+    # Verify we have exactly 7 commands (5 original + queue + status)
+    assert len(commands) == 7, f"Expected 7 commands, got {len(commands)}"
 
     # Extract command codes
     command_codes = [cmd.command for cmd in commands]
 
     # Verify all required commands are present
-    expected_commands = ["help", "find", "tasks", "pinned", "cancel"]
+    expected_commands = ["help", "find", "tasks", "pinned", "cancel", "queue", "status"]
     for cmd in expected_commands:
         assert cmd in command_codes, f"Missing command: {cmd}"
 
@@ -80,6 +80,8 @@ async def test_post_init_command_descriptions_correct(mock_application):
         "tasks": "List your tasks",
         "pinned": "Show pinned memories",
         "cancel": "Cancel current action",
+        "queue": "Queue statistics (admin)",
+        "status": "Your status and LLM health",
     }
 
     for cmd, expected_desc in expected_descriptions.items():

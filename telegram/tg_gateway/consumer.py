@@ -198,6 +198,42 @@ async def _dispatch_notification(application: Application, data: dict) -> None:
         await bot.send_message(chat_id=user_id, text=text)
         logger.info("Sent llm_failure to user %s: %s", user_id, text[:50])
 
+    elif message_type == "llm_health_change":
+        new_status = content.get("new_status", "")
+        previous_status = content.get("previous_status", "")
+
+        config = application.bot_data.get("config")
+        allowed_ids = config.allowed_ids_set if config else set()
+
+        if new_status == "unhealthy":
+            text = (
+                "System is catching up -- your messages will be "
+                "processed once the LLM is back."
+            )
+        elif new_status == "healthy":
+            text = (
+                "System is back online -- processing your queued messages."
+            )
+        else:
+            logger.debug(
+                "Unknown health status '%s' (previous: '%s'), no notification sent",
+                new_status,
+                previous_status,
+            )
+            return
+
+        # Broadcast to all allowed users
+        for uid in allowed_ids:
+            try:
+                await bot.send_message(chat_id=uid, text=text)
+                logger.info(
+                    "Sent health change notification to user %s: %s",
+                    uid,
+                    text[:50],
+                )
+            except Exception:
+                logger.warning("Failed to send health change to user %s", uid)
+
     else:
         logger.warning("Unknown message type: %s", message_type)
 

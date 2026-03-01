@@ -69,7 +69,7 @@ class TestHandleTextQueueFlow:
 
     @pytest.mark.asyncio
     async def test_empty_queue_replies_processing(self):
-        """When queue is empty (count == 0), reply is 'Processing...'."""
+        """When queue is empty (count == 0), reply is 'Processing your message...'."""
         core_client = _make_core_client()
         update = _make_update(text="Remember to buy milk")
         context = _make_context(bot_data={"core_client": core_client})
@@ -77,21 +77,26 @@ class TestHandleTextQueueFlow:
 
         await handle_text(update, context)
 
-        update.message.reply_text.assert_called_once_with("Processing...")
+        update.message.reply_text.assert_called_once_with("Processing your message...")
 
     @pytest.mark.asyncio
     async def test_nonempty_queue_replies_added_to_queue(self):
-        """When queue already has items (count > 0), reply is 'Added to queue'."""
+        """When queue already has items (count > 0), reply includes queue count."""
         core_client = _make_core_client()
         update = _make_update(text="Second message")
+        redis_client = AsyncMock()
+        redis_client.get = AsyncMock(return_value=b'{"status": "healthy"}')
         context = _make_context(
             user_data={USER_QUEUE_COUNT: 1},
-            bot_data={"core_client": core_client},
+            bot_data={
+                "core_client": core_client,
+                "redis": redis_client,
+            },
         )
 
         await handle_text(update, context)
 
-        update.message.reply_text.assert_called_once_with("Added to queue")
+        update.message.reply_text.assert_called_once_with("Added to queue (1 message ahead)")
 
     @pytest.mark.asyncio
     async def test_creates_llm_job_on_text(self):

@@ -328,7 +328,7 @@ async def handle_due_date_choice(
         callback_data: The parsed callback data.
         core_client: The Core API client.
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
     from tg_gateway.tz_utils import user_now, to_utc, format_for_user
 

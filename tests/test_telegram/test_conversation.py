@@ -658,7 +658,7 @@ class TestReceiveFollowupAnswer:
 
     @pytest.mark.asyncio
     async def test_replies_processing_on_success(self):
-        """Handler replies 'Processing...' after queuing the job."""
+        """Handler replies feedback message after queuing the job."""
         core_client = MagicMock()
         core_client.create_llm_job = AsyncMock()
 
@@ -676,7 +676,8 @@ class TestReceiveFollowupAnswer:
 
         await receive_followup_answer(update, context)
 
-        update.message.reply_text.assert_called_once_with("Processing...")
+        # Helper function _get_submission_feedback returns "Processing your message..." when healthy
+        update.message.reply_text.assert_called_once_with("Processing your message...")
 
     @pytest.mark.asyncio
     async def test_no_pending_state_replies_error(self):

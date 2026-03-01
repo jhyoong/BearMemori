@@ -6,7 +6,7 @@ The next text message from the user is routed to the appropriate handler here.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 from telegram import Update
@@ -369,7 +369,10 @@ async def receive_followup_answer(
                 user_id=user.id,
             )
         )
-        await update.message.reply_text("Processing...")
+        from tg_gateway.handlers.message import _get_submission_feedback
+
+        feedback_message = await _get_submission_feedback(context)
+        await update.message.reply_text(feedback_message)
     except Exception:
         logger.exception(
             f"Failed to create followup LLM job for memory {memory_id}, user {user.id}"
