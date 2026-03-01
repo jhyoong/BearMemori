@@ -1,5 +1,6 @@
 """Admin router for system administration endpoints."""
 
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -19,6 +20,8 @@ from shared_lib.redis_streams import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["admin"])
+
+LLM_HEALTH_KEY = "llm:health_status"
 
 
 @router.get("/admin/queue-stats")
@@ -228,3 +231,40 @@ async def get_stream_health(request: Request) -> dict:
         "consumer_group": GROUP_LLM_WORKER,
         "consumers_active": consumers_active,
     }
+
+
+_UNKNOWN_HEALTH = {
+    "status": "unknown",
+    "last_check": None,
+    "last_success": None,
+    "last_failure": None,
+    "consecutive_failures": 0,
+}
+
+
+@router.get("/admin/llm-health")
+async def get_llm_health(request: Request) -> dict:
+    """
+    Get LLM health status from Redis.
+
+    Reads the cached health-check result written by the LLM worker.
+    Returns an "unknown" response when the key is missing or Redis is
+    unavailable.
+    """
+    try:
+        redis = request.app.state.redis
+        raw = await redis.get(LLM_HEALTH_KEY)
+    except Exception:
+        logger.warning("Failed to read LLM health status from Redis", exc_info=True)
+        return dict(_UNKNOWN_HEALTH)
+
+    if raw is None:
+        return dict(_UNKNOWN_HEALTH)
+
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Invalid JSON in LLM health key")
+        return dict(_UNKNOWN_HEALTH)
+
+    return data

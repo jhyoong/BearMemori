@@ -1,7 +1,9 @@
 """Tests for the admin endpoints."""
 
+import json
 from datetime import datetime, timezone
 
+from core_svc.routers.admin import LLM_HEALTH_KEY
 from shared_lib.redis_streams import (
     GROUP_LLM_WORKER,
     STREAM_LLM_EMAIL_EXTRACT,
@@ -404,3 +406,64 @@ async def test_stream_health_graceful_degradation(test_app, test_user, mock_redi
             assert data["streams"][stream_name]["pending"] == 0
     finally:
         mock_redis.xlen = original_xlen
+
+
+# ── llm-health tests ────────────────────────────────────────────────
+
+
+async def test_llm_health_no_data(test_app, test_user, mock_redis):
+    """GET /admin/llm-health returns 'unknown' when no health key exists."""
+    resp = await test_app.get("/admin/llm-health")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["status"] == "unknown"
+    assert data["last_check"] is None
+    assert data["last_success"] is None
+    assert data["last_failure"] is None
+    assert data["consecutive_failures"] == 0
+
+
+async def test_llm_health_with_data(test_app, test_user, mock_redis):
+    """GET /admin/llm-health returns stored health data when key exists."""
+    health_data = {
+        "status": "healthy",
+        "last_check": "2026-03-01T10:30:00Z",
+        "last_success": "2026-03-01T10:30:00Z",
+        "last_failure": "2026-03-01T09:15:00Z",
+        "consecutive_failures": 0,
+    }
+    await mock_redis.set(LLM_HEALTH_KEY, json.dumps(health_data))
+
+    resp = await test_app.get("/admin/llm-health")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["status"] == "healthy"
+    assert data["last_check"] == "2026-03-01T10:30:00Z"
+    assert data["last_success"] == "2026-03-01T10:30:00Z"
+    assert data["last_failure"] == "2026-03-01T09:15:00Z"
+    assert data["consecutive_failures"] == 0
+
+
+async def test_llm_health_redis_error(test_app, test_user, mock_redis):
+    """GET /admin/llm-health returns 'unknown' gracefully when Redis fails."""
+    original_get = mock_redis.get
+
+    async def failing_get(*args, **kwargs):
+        raise Exception("redis connection lost")
+
+    mock_redis.get = failing_get
+
+    try:
+        resp = await test_app.get("/admin/llm-health")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["status"] == "unknown"
+        assert data["last_check"] is None
+        assert data["last_success"] is None
+        assert data["last_failure"] is None
+        assert data["consecutive_failures"] == 0
+    finally:
+        mock_redis.get = original_get
