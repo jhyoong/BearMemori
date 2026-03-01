@@ -32,6 +32,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /find <query> - Search memories
 /tasks - List your tasks
 /pinned - Show pinned memories
+/timezone - View or set your timezone
 /cancel - Cancel current action"""
     await update.message.reply_text(help_text)
 
