@@ -372,3 +372,96 @@ class CoreClient:
             )
 
         return LLMJobResponse.model_validate(response.json())
+
+    async def get_queue_stats(self) -> dict:
+        """Get LLM job queue statistics.
+
+        Returns:
+            Dict with queue stats including total_pending, by_status, by_type,
+            and oldest_queued_age_seconds.
+        """
+        try:
+            response = await self._client.get("/admin/queue-stats")
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to get queue stats: {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to get queue stats: {response.status_code} {response.text}"
+            )
+
+        return response.json()
+
+    async def get_health(self) -> dict:
+        """Get system health status.
+
+        Returns:
+            Dict with status ("healthy" or "unhealthy") and optional error message.
+        """
+        try:
+            response = await self._client.get("/admin/health")
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to get health: {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to get health: {response.status_code} {response.text}"
+            )
+
+        return response.json()
+
+    async def get_stream_health(self) -> dict:
+        """Get Redis stream health status.
+
+        Returns:
+            Dict with stream health data including stream lengths
+            and consumer group info.
+        """
+        try:
+            response = await self._client.get("/admin/stream-health")
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to get stream health: {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to get stream health: {response.status_code}"
+                f" {response.text}"
+            )
+
+        return response.json()
+
+    async def get_llm_health(self) -> dict:
+        """Get LLM worker health status from Redis.
+
+        Returns:
+            Dict with LLM health data including status, last_check,
+            last_success, last_failure, and consecutive_failures.
+        """
+        try:
+            response = await self._client.get("/admin/llm-health")
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to get LLM health: {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to get LLM health: {response.status_code}"
+                f" {response.text}"
+            )
+
+        return response.json()
