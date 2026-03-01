@@ -4,6 +4,8 @@ This module contains the command handlers for the Telegram bot.
 """
 
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -379,3 +381,83 @@ Consecutive failures: `{consecutive}`""".format(
     )
 
     await update.message.reply_text(response, parse_mode="Markdown")
+
+
+async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """View or set the user's timezone.
+
+    Usage:
+        /timezone          - show current timezone
+        /timezone +8       - set to UTC+8
+        /timezone -5       - set to UTC-5
+        /timezone Asia/Kolkata - set using IANA name
+
+    Args:
+        update: The Telegram update.
+        context: The context with bot_data and args.
+    """
+    from shared_lib.schemas import UserSettingsUpdate
+    from tg_gateway.tz_utils import offset_to_iana
+
+    user = update.effective_user
+    if not user:
+        await update.message.reply_text("Error: Could not identify user.")
+        return
+
+    core_client = context.bot_data.get("core_client")
+    if not core_client:
+        await update.message.reply_text("Error: Core client not available.")
+        return
+
+    args = context.args if context.args else []
+
+    # No argument: show current timezone
+    if not args:
+        try:
+            settings = await core_client.get_settings(user.id)
+            tz_name = settings.timezone
+            now_local = datetime.now(ZoneInfo(tz_name))
+            local_time_str = now_local.strftime("%Y-%m-%d %H:%M")
+            await update.message.reply_text(
+                f"Your timezone is {tz_name}.\n"
+                f"Local time: {local_time_str}"
+            )
+        except Exception:
+            await update.message.reply_text("Failed to get timezone settings.")
+        return
+
+    arg = args[0]
+
+    # Try as UTC offset first (starts with + or -)
+    if arg[0] in ("+", "-"):
+        try:
+            tz_name = offset_to_iana(arg)
+        except ValueError as e:
+            await update.message.reply_text(str(e))
+            return
+    else:
+        # Try as raw IANA timezone name
+        tz_name = arg
+        try:
+            ZoneInfo(tz_name)
+        except (ZoneInfoNotFoundError, KeyError):
+            await update.message.reply_text(
+                f"Unknown timezone: {tz_name}. "
+                f"Use a UTC offset like +8 or a valid IANA timezone name."
+            )
+            return
+
+    # Save the timezone
+    try:
+        await core_client.update_settings(
+            user.id, UserSettingsUpdate(timezone=tz_name)
+        )
+        now_local = datetime.now(ZoneInfo(tz_name))
+        local_time_str = now_local.strftime("%Y-%m-%d %H:%M")
+        await update.message.reply_text(
+            f"Timezone updated to {tz_name}.\n"
+            f"Local time: {local_time_str}"
+        )
+    except Exception:
+        logger.exception("Failed to update timezone")
+        await update.message.reply_text("Failed to update timezone settings.")

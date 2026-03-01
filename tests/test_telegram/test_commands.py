@@ -399,3 +399,133 @@ class TestCoreClientUpdateSettings:
             json={"timezone": "Etc/GMT-8"},
         )
         assert result.timezone == "Etc/GMT-8"
+
+
+from shared_lib.schemas import UserSettingsResponse
+from datetime import datetime, timezone
+
+
+def _make_settings_response(tz: str = "UTC") -> UserSettingsResponse:
+    return UserSettingsResponse(
+        user_id=12345,
+        timezone=tz,
+        language="en",
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+    )
+
+
+class TestTimezoneCommand:
+    @pytest.mark.asyncio
+    async def test_no_args_shows_current_timezone(self):
+        from tg_gateway.handlers.command import timezone_command
+
+        update = _make_update(text="/timezone")
+        core_client = AsyncMock()
+        core_client.get_settings = AsyncMock(
+            return_value=_make_settings_response("Etc/GMT-8")
+        )
+        context = _make_context(bot_data={"core_client": core_client})
+        context.args = []
+
+        await timezone_command(update, context)
+
+        reply = update.message.reply_text.call_args[0][0]
+        assert "Etc/GMT-8" in reply
+        assert "Local time:" in reply
+
+    @pytest.mark.asyncio
+    async def test_set_positive_offset(self):
+        from tg_gateway.handlers.command import timezone_command
+
+        update = _make_update(text="/timezone +8")
+        core_client = AsyncMock()
+        core_client.update_settings = AsyncMock(
+            return_value=_make_settings_response("Etc/GMT-8")
+        )
+        context = _make_context(bot_data={"core_client": core_client})
+        context.args = ["+8"]
+
+        await timezone_command(update, context)
+
+        core_client.update_settings.assert_awaited_once()
+        reply = update.message.reply_text.call_args[0][0]
+        assert "updated" in reply.lower()
+        assert "Etc/GMT-8" in reply
+
+    @pytest.mark.asyncio
+    async def test_set_negative_offset(self):
+        from tg_gateway.handlers.command import timezone_command
+
+        update = _make_update(text="/timezone -5")
+        core_client = AsyncMock()
+        core_client.update_settings = AsyncMock(
+            return_value=_make_settings_response("Etc/GMT+5")
+        )
+        context = _make_context(bot_data={"core_client": core_client})
+        context.args = ["-5"]
+
+        await timezone_command(update, context)
+
+        core_client.update_settings.assert_awaited_once()
+        reply = update.message.reply_text.call_args[0][0]
+        assert "Etc/GMT+5" in reply
+
+    @pytest.mark.asyncio
+    async def test_set_iana_name_directly(self):
+        from tg_gateway.handlers.command import timezone_command
+
+        update = _make_update(text="/timezone Asia/Kolkata")
+        core_client = AsyncMock()
+        core_client.update_settings = AsyncMock(
+            return_value=_make_settings_response("Asia/Kolkata")
+        )
+        context = _make_context(bot_data={"core_client": core_client})
+        context.args = ["Asia/Kolkata"]
+
+        await timezone_command(update, context)
+
+        core_client.update_settings.assert_awaited_once()
+        reply = update.message.reply_text.call_args[0][0]
+        assert "Asia/Kolkata" in reply
+
+    @pytest.mark.asyncio
+    async def test_invalid_offset_shows_error(self):
+        from tg_gateway.handlers.command import timezone_command
+
+        update = _make_update(text="/timezone +99")
+        core_client = AsyncMock()
+        context = _make_context(bot_data={"core_client": core_client})
+        context.args = ["+99"]
+
+        await timezone_command(update, context)
+
+        reply = update.message.reply_text.call_args[0][0]
+        assert "range" in reply.lower()
+
+    @pytest.mark.asyncio
+    async def test_invalid_iana_name_shows_error(self):
+        from tg_gateway.handlers.command import timezone_command
+
+        update = _make_update(text="/timezone Fake/Zone")
+        core_client = AsyncMock()
+        context = _make_context(bot_data={"core_client": core_client})
+        context.args = ["Fake/Zone"]
+
+        await timezone_command(update, context)
+
+        reply = update.message.reply_text.call_args[0][0]
+        assert "unknown" in reply.lower() or "invalid" in reply.lower()
+
+    @pytest.mark.asyncio
+    async def test_no_core_client(self):
+        from tg_gateway.handlers.command import timezone_command
+
+        update = _make_update(text="/timezone")
+        context = _make_context(bot_data={})
+        context.args = []
+
+        await timezone_command(update, context)
+
+        reply = update.message.reply_text.call_args[0][0]
+        assert "Error" in reply
