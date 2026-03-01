@@ -370,3 +370,32 @@ class TestStatusCommand:
 
         reply = update.message.reply_text.call_args[0][0]
         assert "Pending messages: `0`" in reply
+
+
+class TestCoreClientUpdateSettings:
+    @pytest.mark.asyncio
+    async def test_update_settings_calls_put(self):
+        from unittest.mock import patch, AsyncMock, MagicMock
+        from tg_gateway.core_client import CoreClient
+        from shared_lib.schemas import UserSettingsUpdate
+
+        client = CoreClient(base_url="http://localhost:8083")
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.is_success = True
+        mock_response.json.return_value = {
+            "user_id": 12345,
+            "timezone": "Etc/GMT-8",
+            "language": "en",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-03-01T00:00:00Z",
+        }
+
+        with patch.object(client._client, "put", new_callable=AsyncMock, return_value=mock_response) as mock_put:
+            result = await client.update_settings(12345, UserSettingsUpdate(timezone="Etc/GMT-8"))
+
+        mock_put.assert_awaited_once_with(
+            "/settings/12345",
+            json={"timezone": "Etc/GMT-8"},
+        )
+        assert result.timezone == "Etc/GMT-8"

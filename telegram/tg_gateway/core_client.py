@@ -17,6 +17,7 @@ from shared_lib.schemas import (
     TaskResponse,
     TaskUpdateResponse,
     UserSettingsResponse,
+    UserSettingsUpdate,
     UserUpsert,
 )
 
@@ -345,6 +346,29 @@ class CoreClient:
             )
             raise CoreClientError(
                 f"Failed to get settings: {response.status_code} {response.text}"
+            )
+
+        return UserSettingsResponse.model_validate(response.json())
+
+    async def update_settings(
+        self, user_id: int, data: UserSettingsUpdate
+    ) -> UserSettingsResponse:
+        """Update user settings."""
+        try:
+            response = await self._client.put(
+                f"/settings/{user_id}",
+                json=data.model_dump(mode="json", exclude_none=True),
+            )
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to update settings: {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to update settings: {response.status_code} {response.text}"
             )
 
         return UserSettingsResponse.model_validate(response.json())
