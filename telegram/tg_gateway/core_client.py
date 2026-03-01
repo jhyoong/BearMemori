@@ -373,15 +373,21 @@ class CoreClient:
 
         return LLMJobResponse.model_validate(response.json())
 
-    async def get_queue_stats(self) -> dict:
+    async def get_queue_stats(self, user_id: int | None = None) -> dict:
         """Get LLM job queue statistics.
+
+        Args:
+            user_id: Optional user ID to filter stats for a specific user.
 
         Returns:
             Dict with queue stats including total_pending, by_status, by_type,
             and oldest_queued_age_seconds.
         """
+        params = {}
+        if user_id is not None:
+            params["user_id"] = user_id
         try:
-            response = await self._client.get("/admin/queue-stats")
+            response = await self._client.get("/admin/queue-stats", params=params)
         except (ConnectError, TimeoutException) as e:
             logger.exception("Failed to connect to Core API")
             raise CoreUnavailableError(f"Core API unavailable: {e}") from e

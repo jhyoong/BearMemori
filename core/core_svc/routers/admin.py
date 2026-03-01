@@ -27,9 +27,13 @@ LLM_HEALTH_KEY = "llm:health_status"
 @router.get("/admin/queue-stats")
 async def get_queue_stats(
     db: aiosqlite.Connection = Depends(get_db),
+    user_id: int | None = None,
 ) -> dict:
     """
     Get LLM job queue statistics.
+
+    Args:
+        user_id: Optional user ID to filter results for a specific user.
 
     Returns:
         - total_pending: count of jobs with status='queued' (waiting for processing)
@@ -38,11 +42,11 @@ async def get_queue_stats(
         - oldest_queued_age_seconds: age of oldest queued job in seconds, or None if no queued jobs
     """
     # Get total counts by status
-    status_counts = await _get_status_counts(db)
+    status_counts = await _get_status_counts(db, user_id=user_id)
     # Get counts by job type
-    type_counts = await _get_type_counts(db)
+    type_counts = await _get_type_counts(db, user_id=user_id)
     # Get oldest queued job age
-    oldest_age = await _get_oldest_queued_age(db)
+    oldest_age = await _get_oldest_queued_age(db, user_id=user_id)
 
     return {
         "total_pending": status_counts.get("queued", 0),
@@ -52,15 +56,28 @@ async def get_queue_stats(
     }
 
 
-async def _get_status_counts(db: aiosqlite.Connection) -> dict[str, int]:
+async def _get_status_counts(
+    db: aiosqlite.Connection, *, user_id: int | None = None
+) -> dict[str, int]:
     """Get count of jobs grouped by status."""
-    cursor = await db.execute(
-        """
-        SELECT status, COUNT(*) as count
-        FROM llm_jobs
-        GROUP BY status
-        """
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            """
+            SELECT status, COUNT(*) as count
+            FROM llm_jobs
+            WHERE user_id = ?
+            GROUP BY status
+            """,
+            (user_id,),
+        )
+    else:
+        cursor = await db.execute(
+            """
+            SELECT status, COUNT(*) as count
+            FROM llm_jobs
+            GROUP BY status
+            """
+        )
     rows = await cursor.fetchall()
 
     counts = {
@@ -78,15 +95,28 @@ async def _get_status_counts(db: aiosqlite.Connection) -> dict[str, int]:
     return counts
 
 
-async def _get_type_counts(db: aiosqlite.Connection) -> dict[str, int]:
+async def _get_type_counts(
+    db: aiosqlite.Connection, *, user_id: int | None = None
+) -> dict[str, int]:
     """Get count of jobs grouped by job_type."""
-    cursor = await db.execute(
-        """
-        SELECT job_type, COUNT(*) as count
-        FROM llm_jobs
-        GROUP BY job_type
-        """
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            """
+            SELECT job_type, COUNT(*) as count
+            FROM llm_jobs
+            WHERE user_id = ?
+            GROUP BY job_type
+            """,
+            (user_id,),
+        )
+    else:
+        cursor = await db.execute(
+            """
+            SELECT job_type, COUNT(*) as count
+            FROM llm_jobs
+            GROUP BY job_type
+            """
+        )
     rows = await cursor.fetchall()
 
     counts = {}
@@ -96,15 +126,27 @@ async def _get_type_counts(db: aiosqlite.Connection) -> dict[str, int]:
     return counts
 
 
-async def _get_oldest_queued_age(db: aiosqlite.Connection) -> float | None:
+async def _get_oldest_queued_age(
+    db: aiosqlite.Connection, *, user_id: int | None = None
+) -> float | None:
     """Get age of oldest queued job in seconds, or None if no queued jobs."""
-    cursor = await db.execute(
-        """
-        SELECT MIN(created_at) as oldest
-        FROM llm_jobs
-        WHERE status = 'queued'
-        """
-    )
+    if user_id is not None:
+        cursor = await db.execute(
+            """
+            SELECT MIN(created_at) as oldest
+            FROM llm_jobs
+            WHERE status = 'queued' AND user_id = ?
+            """,
+            (user_id,),
+        )
+    else:
+        cursor = await db.execute(
+            """
+            SELECT MIN(created_at) as oldest
+            FROM llm_jobs
+            WHERE status = 'queued'
+            """
+        )
     row = await cursor.fetchone()
 
     if row is None or row["oldest"] is None:

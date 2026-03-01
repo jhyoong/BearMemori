@@ -30,6 +30,7 @@ def _make_update(user_id: int = 12345, text: str = "/queue") -> MagicMock:
     user.id = user_id
     user.full_name = "Test User"
     update.message.from_user = user
+    update.effective_user = user
     return update
 
 

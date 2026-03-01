@@ -80,112 +80,51 @@ class LLMHealthChecker:
         last_success = existing.get("last_success")
         last_failure = existing.get("last_failure")
 
+        error_msg: str | None = None
         try:
             session = await self._get_session()
             async with session.get(url, headers=headers) as response:
                 if response.status == 200:
-                    # Parse response to verify it's a valid models response
                     data = await response.json()
                     models = data.get("data", [])
-
-                    if isinstance(models, list):
-                        result = {
-                            "status": "healthy",
-                            "last_check": now,
-                            "last_success": now,
-                            "last_failure": last_failure,
-                            "consecutive_failures": 0,
-                        }
-                        logger.info(
-                            "LLM health check passed: %s models available",
-                            len(models),
-                        )
-                    else:
-                        consecutive_failures += 1
-                        result = {
-                            "status": "unhealthy",
-                            "error": "Invalid models response format",
-                            "last_check": now,
-                            "last_success": last_success,
-                            "last_failure": now,
-                            "consecutive_failures": consecutive_failures,
-                        }
-                        logger.warning(
-                            "LLM health check failed: invalid response format"
-                        )
-
+                    if not isinstance(models, list):
+                        error_msg = "Invalid models response format"
                 else:
-                    consecutive_failures += 1
-                    error_msg = (
-                        f"HTTP {response.status}: {await response.text()}"
-                    )
-                    result = {
-                        "status": "unhealthy",
-                        "error": error_msg,
-                        "last_check": now,
-                        "last_success": last_success,
-                        "last_failure": now,
-                        "consecutive_failures": consecutive_failures,
-                    }
-                    logger.warning("LLM health check failed: %s", error_msg)
-
+                    error_msg = f"HTTP {response.status}: {await response.text()}"
         except asyncio.TimeoutError:
-            consecutive_failures += 1
-            result = {
-                "status": "unhealthy",
-                "error": "TimeoutError",
-                "last_check": now,
-                "last_success": last_success,
-                "last_failure": now,
-                "consecutive_failures": consecutive_failures,
-            }
-            logger.warning("LLM health check failed: timeout")
+            error_msg = "TimeoutError"
         except ConnectionRefusedError:
-            consecutive_failures += 1
-            result = {
-                "status": "unhealthy",
-                "error": "ConnectionRefusedError",
-                "last_check": now,
-                "last_success": last_success,
-                "last_failure": now,
-                "consecutive_failures": consecutive_failures,
-            }
-            logger.warning("LLM health check failed: connection refused")
+            error_msg = "ConnectionRefusedError"
         except aiohttp.ClientConnectorError as e:
-            consecutive_failures += 1
-            result = {
-                "status": "unhealthy",
-                "error": f"ClientConnectorError: {e}",
-                "last_check": now,
-                "last_success": last_success,
-                "last_failure": now,
-                "consecutive_failures": consecutive_failures,
-            }
-            logger.warning("LLM health check failed: connection error")
+            error_msg = f"ClientConnectorError: {e}"
         except aiohttp.ClientError as e:
-            consecutive_failures += 1
-            result = {
-                "status": "unhealthy",
-                "error": f"ClientError: {e}",
-                "last_check": now,
-                "last_success": last_success,
-                "last_failure": now,
-                "consecutive_failures": consecutive_failures,
-            }
-            logger.warning("LLM health check failed: client error")
+            error_msg = f"ClientError: {e}"
         except Exception as e:
+            error_msg = str(e)
+
+        if error_msg is None:
+            result = {
+                "status": "healthy",
+                "last_check": now,
+                "last_success": now,
+                "last_failure": last_failure,
+                "consecutive_failures": 0,
+            }
+            logger.info(
+                "LLM health check passed: %s models available",
+                len(models),
+            )
+        else:
             consecutive_failures += 1
             result = {
                 "status": "unhealthy",
-                "error": str(e),
+                "error": error_msg,
                 "last_check": now,
                 "last_success": last_success,
                 "last_failure": now,
                 "consecutive_failures": consecutive_failures,
             }
-            logger.error(
-                "LLM health check failed with unexpected error: %s", e
-            )
+            logger.warning("LLM health check failed: %s", error_msg)
 
         # Write health status to Redis with TTL
         await redis_client.set(

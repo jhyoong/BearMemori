@@ -347,8 +347,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     try:
-        # Call Core API to get queue stats
-        stats = await core_client.get_queue_stats()
+        # Call Core API to get queue stats filtered by this user
+        stats = await core_client.get_queue_stats(user_id=user.id)
         # Call LLM-specific health endpoint
         health = await core_client.get_llm_health()
     except Exception:
