@@ -1,5 +1,7 @@
 # Assistant Service
 
+**Version:** v0.1.1
+
 A conversational AI assistant that uses OpenAI tool-calling to help users interact with their BearMemori data. Runs as a separate Telegram bot with its own token. Manages multi-turn conversations with token-aware history, builds contextual briefings, and sends daily digest messages.
 
 ## Running

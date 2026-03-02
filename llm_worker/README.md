@@ -1,4 +1,4 @@
-# LLM Worker
+# LLM Worker (v0.1.1)
 
 An async job processing service that consumes LLM tasks from Redis streams, processes them through specialized handlers calling the OpenAI API, and persists results back to the Core API. Publishes notifications to the Telegram stream when jobs complete or fail.
 
@@ -40,6 +40,7 @@ llm_worker/
     ├── retry.py                # RetryManager with two failure strategies
     ├── prompts.py              # All LLM prompt templates
     ├── utils.py                # JSON extraction from LLM responses
+    ├── health_check.py         # LLM endpoint health monitoring
     └── handlers/
         ├── base.py             # Abstract BaseHandler
         ├── image_tag.py        # Image tagging via vision model
@@ -60,6 +61,36 @@ Each handler inherits `BaseHandler` and implements `async handle(job_id, payload
 | `FollowupHandler` | `llm:followup` | `followup` | Generates clarifying follow-up question for ambiguous queries |
 | `TaskMatchHandler` | `llm:task_match` | `task_match` | Matches new memory content against user's open tasks (confidence > 0.7) |
 | `EmailExtractHandler` | `llm:email_extract` | `email_extract` | Extracts calendar events from email subject/body (confidence > 0.7) |
+
+## Health Check
+
+The health check module monitors the LLM endpoint availability and stores status in Redis.
+
+### LLMHealthChecker
+
+- Checks the `/models` endpoint to verify LLM service availability
+- Tracks consecutive failures, last success, and last failure timestamps
+- Writes health status to Redis key `llm:health_status` with 5-minute TTL
+- Uses 10-second timeout for health requests
+
+### Background Task
+
+`run_health_check()` runs periodically (default 30s interval) in the background:
+- Polls LLM endpoint and updates Redis with status
+- Supports optional `on_status_change` callback for status transitions
+- Gracefully stops on service shutdown
+
+Health status stored in Redis:
+```json
+{
+  "status": "healthy|unhealthy",
+  "last_check": "ISO timestamp",
+  "last_success": "ISO timestamp or null",
+  "last_failure": "ISO timestamp or null",
+  "consecutive_failures": 0,
+  "error": "error message (if unhealthy)"
+}
+```
 
 ## Consumer Loop
 

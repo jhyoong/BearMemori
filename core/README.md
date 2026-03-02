@@ -112,6 +112,14 @@ core/
 ### Backup (`/backup`)
 - `GET /status/{user_id}` -- Most recent backup status
 
+### Admin (`/admin`)
+- `GET /admin/health` -- Get system health status
+  - Checks database connectivity via SELECT 1
+  - Checks Redis connectivity via ping
+  - Returns `{"status": "healthy"}` when both are OK
+  - Returns `{"status": "unhealthy", "error": "..."}` on failure
+- `GET /admin/queue-stats` -- Get queue statistics from Redis
+
 ## Database
 
 SQLite with WAL mode, foreign keys enabled, and FTS5 for full-text search. Migrations are numbered SQL files in `core/migrations/` and applied automatically on startup.

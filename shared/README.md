@@ -2,6 +2,8 @@
 
 The foundational dependency for all BearMemori services. Provides Pydantic models, domain enums, configuration management, and Redis stream utilities. Must be installed before any other service.
 
+**Version:** v0.1.1
+
 ## Installation
 
 ```bash

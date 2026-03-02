@@ -11,7 +11,7 @@ BearMemori is a personal memory management system with microservices:
 - **shared**: Shared libraries and configuration
 
 ## Technology Stack
-- Runtime: Python 3.12+
+- Runtime: Python 3.11+
 - Framework: FastAPI with Uvicorn
 - Database: SQLite with aiosqlite
 - Cache/Queue: Redis 7 Alpine
@@ -163,8 +163,8 @@ async def test_create_memory(test_db, test_user):
 3. Test idempotency by running migration twice
 
 ### Add New Endpoint
-1. Create router in `core/core/routers/`
-2. Add to imports in `core/core/main.py`
+1. Create router in `core/core_svc/routers/`
+2. Add to imports in `core/core_svc/main.py`
 3. Include router with prefix
 4. Add tests in `tests/test_core/test_<name>.py`
 
@@ -187,7 +187,7 @@ pytest tests/test_core/test_database.py::TestInitDb::test_init_db_creates_tables
 ### Development
 ```bash
 # Core API
-cd core && hatch run uvicorn core.main:app --host 0.0.0.0 --port 8000
+cd core && hatch run uvicorn core_svc.main:app --host 0.0.0.0 --port 8000
 
 # Background services
 cd telegram && hatch run python -m telegram.bot

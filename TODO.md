@@ -3,9 +3,9 @@
 ## Critical
 1. assistant chatbot - unable to actually make tasks or reminders. Telegram interface in this assistance will need a yes / no option for allowing creation of tasks/reminders/memories.
 
-~~2. When interacting with searched memory (image with no description), the telegram buttons all don't respond except for delete.~~
+~~2. When interacting with searched memory (image with no description), the telegram buttons all don't respond except for delete.~~ (Fixed in v0.1.1)
 
-~~3. When using natural language to set a reminder, the LLM does properly send a proposed time to which the user accepts. But the system then overrides it and follows up with a prompt asking for the time to set.~~
+~~3. When using natural language to set a reminder, the LLM does properly send a proposed time to which the user accepts. But the system then overrides it and follows up with a prompt asking for the time to set.~~ (Fixed in v0.1.1)
 
 ## Minor
 1. Editing tags on pictures seem to add them. This needs to be better managed ( edit vs add vs delete tags )
@@ -14,13 +14,24 @@
 ## Important
 1. Need better visualisation of current queue. Since this system relies on local models which are not stable, there needs to be a more robust handling mechanism in the system to deal with periods of unavailability or failures. 
 
-~~2. Timezone setting, all timestamps to include timezone, even when sending back responses to user.~~
+~~2. Timezone setting, all timestamps to include timezone, even when sending back responses to user.~~ (Implemented in v0.1.1)
 
-~~3. When setting reminders or tasks, if regex check fails for proper timestamp format, fallback to LLM processing to generate a timestamp from the user's response.~~
+~~3. When setting reminders or tasks, if regex check fails for proper timestamp format, fallback to LLM processing to generate a timestamp from the user's response.~~ (Implemented in v0.1.1)
 
 ## Minor
 1. Better visualisation of assistant worldview of user.
 2. Code cleanup
-  - Magic numbers, define constants centrally
-  - simplifying complex areas
+   - Magic numbers, define constants centrally
+   - simplifying complex areas
 3. Web search functionality in assistant module.
+
+---
+
+## v0.1.1 Release Notes
+
+The following TODO items have been resolved in v0.1.1:
+
+- **Timezone support**: All timestamps now include timezone information in responses to users
+- **LLM fallback for reminders**: When regex fails to parse timestamps in natural language, the system now falls back to LLM processing to generate proper timestamps
+- **Memory interaction bug**: Fixed issue where telegram buttons didn't respond for images without descriptions (only delete worked)
+- **Reminder time override bug**: Fixed issue where the system would override the LLM-proposed time and ask for manual input

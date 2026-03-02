@@ -2,6 +2,8 @@
 
 The primary user interface for BearMemori. A Telegram bot that receives text and photo messages, manages multi-step conversation flows, and displays interactive inline keyboards for user actions. Consumes notification streams from Redis to deliver LLM results and reminders back to users.
 
+**Version:** v0.1.1
+
 ## Running
 
 ```bash
@@ -53,6 +55,9 @@ telegram/
 | `/find <query>` | Search memories via FTS5 |
 | `/tasks` | List open tasks |
 | `/pinned` | Show pinned memories |
+| `/timezone [zone]` | Set timezone (UTC offset or IANA zone, e.g. `America/New_York`) |
+| `/status` | View your processing status |
+| `/queue` | View LLM job queue statistics (admin only) |
 | `/cancel` | Clear all pending conversation states |
 
 ## Message Handling

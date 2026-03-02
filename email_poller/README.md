@@ -1,4 +1,4 @@
-# Email Poller
+# Email Poller (v0.1.1)
 
 A service that will periodically check configured IMAP email accounts, fetch unseen emails, filter noise, deduplicate, and submit them to the Core API as LLM jobs for calendar event extraction.
 
