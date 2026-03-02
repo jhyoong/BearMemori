@@ -23,3 +23,4 @@
 2. Code cleanup
   - Magic numbers, define constants centrally
   - simplifying complex areas
+3. Web search functionality in assistant module.
