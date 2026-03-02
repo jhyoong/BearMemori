@@ -113,7 +113,11 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if content:
             label = content[:50] + "..." if len(content) > 50 else content
         else:
-            tags = ", ".join(t.tag for t in result.memory.tags) if result.memory.tags else ""
+            tags = (
+                ", ".join(t.tag for t in result.memory.tags)
+                if result.memory.tags
+                else ""
+            )
             label = f"[Image: {tags}]" if tags else "[Image]"
         keyboard_results.append((label, result.memory.id))
 
@@ -225,7 +229,11 @@ async def pinned_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if content:
             label = content[:50] + "..." if len(content) > 50 else content
         else:
-            tags = ", ".join(t.tag for t in result.memory.tags) if result.memory.tags else ""
+            tags = (
+                ", ".join(t.tag for t in result.memory.tags)
+                if result.memory.tags
+                else ""
+            )
             label = f"[Image: {tags}]" if tags else "[Image]"
         keyboard_results.append((label, result.memory.id))
 
@@ -298,9 +306,7 @@ Oldest queued: {oldest_age} seconds
         confirmed=by_status.get("confirmed", 0),
         failed=by_status.get("failed", 0),
         cancelled=by_status.get("cancelled", 0),
-        type_stats="\n".join(
-            f"{k}: {v}" for k, v in sorted(by_type.items())
-        ) or "None",
+        type_stats="\n".join(f"{k}: {v}" for k, v in sorted(by_type.items())) or "None",
         oldest_age=stats.get("oldest_queued_age_seconds", "N/A"),
     )
 
@@ -311,7 +317,7 @@ Oldest queued: {oldest_age} seconds
             response += "\n*Stream Health*\n"
             for name, info in streams.items():
                 length = info.get("length", 0)
-                response += f"{name}: `{length}` msgs\n"
+                response += f"`{name}`: `{length}` msgs\n"
 
     # Append LLM health info if available
     if llm_health:
@@ -420,8 +426,7 @@ async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             now_local = datetime.now(ZoneInfo(tz_name))
             local_time_str = now_local.strftime("%Y-%m-%d %H:%M")
             await update.message.reply_text(
-                f"Your timezone is {tz_name}.\n"
-                f"Local time: {local_time_str}"
+                f"Your timezone is {tz_name}.\nLocal time: {local_time_str}"
             )
         except Exception:
             await update.message.reply_text("Failed to get timezone settings.")
@@ -450,14 +455,11 @@ async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     # Save the timezone
     try:
-        await core_client.update_settings(
-            user.id, UserSettingsUpdate(timezone=tz_name)
-        )
+        await core_client.update_settings(user.id, UserSettingsUpdate(timezone=tz_name))
         now_local = datetime.now(ZoneInfo(tz_name))
         local_time_str = now_local.strftime("%Y-%m-%d %H:%M")
         await update.message.reply_text(
-            f"Timezone updated to {tz_name}.\n"
-            f"Local time: {local_time_str}"
+            f"Timezone updated to {tz_name}.\nLocal time: {local_time_str}"
         )
     except Exception:
         logger.exception("Failed to update timezone")
