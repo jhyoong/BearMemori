@@ -63,7 +63,9 @@ def _make_queue_stats(
             "failed": failed,
             "cancelled": cancelled,
         },
-        "by_type": by_type if by_type is not None else {"image_tag": 3, "intent_classify": 4},
+        "by_type": by_type
+        if by_type is not None
+        else {"image_tag": 3, "intent_classify": 4},
         "oldest_queued_age_seconds": oldest_age,
     }
 
@@ -79,14 +81,16 @@ class TestQueueCommand:
         update = _make_update(user_id=12345, text="/queue")
         core_client = AsyncMock()
         core_client.get_queue_stats = AsyncMock(return_value=_make_queue_stats())
-        core_client.get_stream_health = AsyncMock(return_value={
-            "streams": {"llm:image_tag": {"length": 3}}
-        })
-        core_client.get_llm_health = AsyncMock(return_value={
-            "status": "healthy",
-            "consecutive_failures": 0,
-            "last_check": "2026-03-01T00:00:00+00:00",
-        })
+        core_client.get_stream_health = AsyncMock(
+            return_value={"streams": {"llm:image_tag": {"length": 3}}}
+        )
+        core_client.get_llm_health = AsyncMock(
+            return_value={
+                "status": "healthy",
+                "consecutive_failures": 0,
+                "last_check": "2026-03-01T00:00:00+00:00",
+            }
+        )
         context = _make_context(bot_data={"core_client": core_client})
 
         await queue_command(update, context)
@@ -107,17 +111,21 @@ class TestQueueCommand:
         update = _make_update(user_id=12345, text="/queue")
         core_client = AsyncMock()
         core_client.get_queue_stats = AsyncMock(return_value=_make_queue_stats())
-        core_client.get_stream_health = AsyncMock(return_value={
-            "streams": {
-                "llm:image_tag": {"length": 3},
-                "llm:intent": {"length": 0},
+        core_client.get_stream_health = AsyncMock(
+            return_value={
+                "streams": {
+                    "llm:image_tag": {"length": 3},
+                    "llm:intent": {"length": 0},
+                }
             }
-        })
-        core_client.get_llm_health = AsyncMock(return_value={
-            "status": "healthy",
-            "consecutive_failures": 0,
-            "last_check": "2026-03-01T00:00:00+00:00",
-        })
+        )
+        core_client.get_llm_health = AsyncMock(
+            return_value={
+                "status": "healthy",
+                "consecutive_failures": 0,
+                "last_check": "2026-03-01T00:00:00+00:00",
+            }
+        )
         context = _make_context(bot_data={"core_client": core_client})
 
         await queue_command(update, context)
@@ -135,11 +143,13 @@ class TestQueueCommand:
         core_client = AsyncMock()
         core_client.get_queue_stats = AsyncMock(return_value=_make_queue_stats())
         core_client.get_stream_health = AsyncMock(return_value={"streams": {}})
-        core_client.get_llm_health = AsyncMock(return_value={
-            "status": "unhealthy",
-            "consecutive_failures": 3,
-            "last_check": "2026-03-01T12:00:00+00:00",
-        })
+        core_client.get_llm_health = AsyncMock(
+            return_value={
+                "status": "unhealthy",
+                "consecutive_failures": 3,
+                "last_check": "2026-03-01T12:00:00+00:00",
+            }
+        )
         context = _make_context(bot_data={"core_client": core_client})
 
         await queue_command(update, context)
@@ -212,15 +222,23 @@ class TestQueueCommand:
         core_client = AsyncMock()
         core_client.get_queue_stats = AsyncMock(
             return_value=_make_queue_stats(
-                queued=0, processing=0, confirmed=0,
-                failed=0, cancelled=0, by_type={}, oldest_age=None,
+                queued=0,
+                processing=0,
+                confirmed=0,
+                failed=0,
+                cancelled=0,
+                by_type={},
+                oldest_age=None,
             )
         )
         core_client.get_stream_health = AsyncMock(return_value={"streams": {}})
-        core_client.get_llm_health = AsyncMock(return_value={
-            "status": "healthy", "consecutive_failures": 0,
-            "last_check": "2026-03-01T00:00:00+00:00",
-        })
+        core_client.get_llm_health = AsyncMock(
+            return_value={
+                "status": "healthy",
+                "consecutive_failures": 0,
+                "last_check": "2026-03-01T00:00:00+00:00",
+            }
+        )
         context = _make_context(bot_data={"core_client": core_client})
 
         await queue_command(update, context)
@@ -241,9 +259,7 @@ class TestStatusCommand:
         context = _make_context(
             bot_data={
                 "core_client": AsyncMock(
-                    get_queue_stats=AsyncMock(
-                        return_value=_make_queue_stats(queued=3)
-                    ),
+                    get_queue_stats=AsyncMock(return_value=_make_queue_stats(queued=3)),
                     get_llm_health=AsyncMock(
                         return_value={
                             "status": "healthy",
@@ -273,9 +289,7 @@ class TestStatusCommand:
         context = _make_context(
             bot_data={
                 "core_client": AsyncMock(
-                    get_queue_stats=AsyncMock(
-                        return_value=_make_queue_stats(queued=3)
-                    ),
+                    get_queue_stats=AsyncMock(return_value=_make_queue_stats(queued=3)),
                     get_llm_health=AsyncMock(
                         return_value={
                             "status": "unhealthy",
@@ -353,9 +367,7 @@ class TestStatusCommand:
         context = _make_context(
             bot_data={
                 "core_client": AsyncMock(
-                    get_queue_stats=AsyncMock(
-                        return_value=_make_queue_stats(queued=0)
-                    ),
+                    get_queue_stats=AsyncMock(return_value=_make_queue_stats(queued=0)),
                     get_llm_health=AsyncMock(
                         return_value={
                             "status": "healthy",
@@ -370,6 +382,153 @@ class TestStatusCommand:
 
         reply = update.message.reply_text.call_args[0][0]
         assert "Pending messages: `0`" in reply
+
+    @pytest.mark.asyncio
+    async def test_status_command_no_pending_conversation(self):
+        """Test /status with no pending conversation shows only queue/healthy status."""
+        from tg_gateway.handlers.command import status_command
+
+        update = _make_update(user_id=12345, text="/status")
+        context = _make_context(
+            user_data={},  # No pending conversation states
+            bot_data={
+                "core_client": AsyncMock(
+                    get_queue_stats=AsyncMock(return_value=_make_queue_stats(queued=2)),
+                    get_llm_health=AsyncMock(
+                        return_value={
+                            "status": "healthy",
+                            "consecutive_failures": 0,
+                        }
+                    ),
+                )
+            },
+        )
+
+        await status_command(update, context)
+
+        reply = update.message.reply_text.call_args[0][0]
+        # Should show queue status
+        assert "Your Status" in reply
+        assert "Pending messages:" in reply
+        # Should not mention any pending conversation states
+        assert "waiting" not in reply.lower()
+        assert "/cancel" not in reply
+
+    @pytest.mark.asyncio
+    async def test_status_command_with_pending_tag_memory_id(self):
+        """Test /status with PENDING_TAG_MEMORY_ID shows tags message and /cancel."""
+        from tg_gateway.handlers.command import status_command
+
+        update = _make_update(user_id=12345, text="/status")
+        context = _make_context(
+            user_data={PENDING_TAG_MEMORY_ID: "memory_123"},
+            bot_data={
+                "core_client": AsyncMock(
+                    get_queue_stats=AsyncMock(return_value=_make_queue_stats(queued=1)),
+                    get_llm_health=AsyncMock(
+                        return_value={
+                            "status": "healthy",
+                            "consecutive_failures": 0,
+                        }
+                    ),
+                )
+            },
+        )
+
+        await status_command(update, context)
+
+        reply = update.message.reply_text.call_args[0][0]
+        assert "waiting" in reply.lower()
+        assert "/cancel" in reply
+
+    @pytest.mark.asyncio
+    async def test_status_command_with_pending_task_memory_id(self):
+        """Test /status with PENDING_TASK_MEMORY_ID shows task due date message and /cancel."""
+        from tg_gateway.handlers.command import status_command
+
+        update = _make_update(user_id=12345, text="/status")
+        context = _make_context(
+            user_data={PENDING_TASK_MEMORY_ID: "memory_456"},
+            bot_data={
+                "core_client": AsyncMock(
+                    get_queue_stats=AsyncMock(return_value=_make_queue_stats(queued=1)),
+                    get_llm_health=AsyncMock(
+                        return_value={
+                            "status": "healthy",
+                            "consecutive_failures": 0,
+                        }
+                    ),
+                )
+            },
+        )
+
+        await status_command(update, context)
+
+        reply = update.message.reply_text.call_args[0][0]
+        assert "waiting" in reply.lower()
+        assert "task" in reply.lower()
+        assert "/cancel" in reply
+
+    @pytest.mark.asyncio
+    async def test_status_command_with_pending_reminder_memory_id(self):
+        """Test /status with PENDING_REMINDER_MEMORY_ID shows reminder time message and /cancel."""
+        from tg_gateway.handlers.command import status_command
+
+        update = _make_update(user_id=12345, text="/status")
+        context = _make_context(
+            user_data={PENDING_REMINDER_MEMORY_ID: "memory_789"},
+            bot_data={
+                "core_client": AsyncMock(
+                    get_queue_stats=AsyncMock(return_value=_make_queue_stats(queued=1)),
+                    get_llm_health=AsyncMock(
+                        return_value={
+                            "status": "healthy",
+                            "consecutive_failures": 0,
+                        }
+                    ),
+                )
+            },
+        )
+
+        await status_command(update, context)
+
+        reply = update.message.reply_text.call_args[0][0]
+        assert "waiting" in reply.lower()
+        assert "reminder" in reply.lower()
+        assert "/cancel" in reply
+
+    @pytest.mark.asyncio
+    async def test_status_command_with_pending_llm_conversation(self):
+        """Test /status with PENDING_LLM_CONVERSATION shows LLM followup message and /cancel."""
+        from tg_gateway.handlers.command import status_command
+
+        update = _make_update(user_id=12345, text="/status")
+        conversation_state = {
+            "memory_id": "memory_llm_123",
+            "original_text": "Test message",
+            "followup_question": "What is this about?",
+        }
+        context = _make_context(
+            user_data={PENDING_LLM_CONVERSATION: conversation_state},
+            bot_data={
+                "core_client": AsyncMock(
+                    get_queue_stats=AsyncMock(return_value=_make_queue_stats(queued=1)),
+                    get_llm_health=AsyncMock(
+                        return_value={
+                            "status": "healthy",
+                            "consecutive_failures": 0,
+                        }
+                    ),
+                )
+            },
+        )
+
+        await status_command(update, context)
+
+        reply = update.message.reply_text.call_args[0][0]
+        assert "waiting" in reply.lower()
+        assert "llm" in reply.lower() or "followup" in reply.lower()
+        assert "/cancel" in reply
 
 
 class TestCoreClientUpdateSettings:
@@ -391,8 +550,12 @@ class TestCoreClientUpdateSettings:
             "updated_at": "2026-03-01T00:00:00Z",
         }
 
-        with patch.object(client._client, "put", new_callable=AsyncMock, return_value=mock_response) as mock_put:
-            result = await client.update_settings(12345, UserSettingsUpdate(timezone="Etc/GMT-8"))
+        with patch.object(
+            client._client, "put", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_put:
+            result = await client.update_settings(
+                12345, UserSettingsUpdate(timezone="Etc/GMT-8")
+            )
 
         mock_put.assert_awaited_once_with(
             "/settings/12345",
@@ -400,6 +563,13 @@ class TestCoreClientUpdateSettings:
         )
         assert result.timezone == "Etc/GMT-8"
 
+
+from tg_gateway.handlers.conversation import (
+    PENDING_TAG_MEMORY_ID,
+    PENDING_TASK_MEMORY_ID,
+    PENDING_REMINDER_MEMORY_ID,
+    PENDING_LLM_CONVERSATION,
+)
 
 from shared_lib.schemas import UserSettingsResponse
 from datetime import datetime, timezone
@@ -529,3 +699,109 @@ class TestTimezoneCommand:
 
         reply = update.message.reply_text.call_args[0][0]
         assert "Error" in reply
+
+
+class TestCancelCommand:
+    """Tests for the /cancel command to clear pending conversation states."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_clears_pending_tag_memory_id(self):
+        """Test /cancel clears PENDING_TAG_MEMORY_ID when set."""
+        from tg_gateway.handlers.command import cancel_command
+
+        update = _make_update(text="/cancel")
+        context = _make_context(user_data={PENDING_TAG_MEMORY_ID: "memory_123"})
+
+        await cancel_command(update, context)
+
+        # Verify the pending state was removed
+        assert PENDING_TAG_MEMORY_ID not in context.user_data
+
+    @pytest.mark.asyncio
+    async def test_cancel_clears_pending_task_memory_id(self):
+        """Test /cancel clears PENDING_TASK_MEMORY_ID when set."""
+        from tg_gateway.handlers.command import cancel_command
+
+        update = _make_update(text="/cancel")
+        context = _make_context(user_data={PENDING_TASK_MEMORY_ID: "memory_456"})
+
+        await cancel_command(update, context)
+
+        # Verify the pending state was removed
+        assert PENDING_TASK_MEMORY_ID not in context.user_data
+
+    @pytest.mark.asyncio
+    async def test_cancel_clears_pending_reminder_memory_id(self):
+        """Test /cancel clears PENDING_REMINDER_MEMORY_ID when set."""
+        from tg_gateway.handlers.command import cancel_command
+
+        update = _make_update(text="/cancel")
+        context = _make_context(user_data={PENDING_REMINDER_MEMORY_ID: "memory_789"})
+
+        await cancel_command(update, context)
+
+        # Verify the pending state was removed
+        assert PENDING_REMINDER_MEMORY_ID not in context.user_data
+
+    @pytest.mark.asyncio
+    async def test_cancel_clears_pending_llm_conversation(self):
+        """Test /cancel clears PENDING_LLM_CONVERSATION when set."""
+        from tg_gateway.handlers.command import cancel_command
+
+        update = _make_update(text="/cancel")
+        conversation_state = {
+            "memory_id": "memory_123",
+            "original_text": "Test message",
+            "followup_question": "What is this about?",
+        }
+        context = _make_context(
+            user_data={PENDING_LLM_CONVERSATION: conversation_state}
+        )
+
+        await cancel_command(update, context)
+
+        # Verify the pending state was removed
+        assert PENDING_LLM_CONVERSATION not in context.user_data
+
+    @pytest.mark.asyncio
+    async def test_cancel_clears_all_four_pending_states(self):
+        """Test /cancel clears all four pending conversation states together."""
+        from tg_gateway.handlers.command import cancel_command
+
+        update = _make_update(text="/cancel")
+        context = _make_context(
+            user_data={
+                PENDING_TAG_MEMORY_ID: "memory_tag_123",
+                PENDING_TASK_MEMORY_ID: "memory_task_456",
+                PENDING_REMINDER_MEMORY_ID: "memory_reminder_789",
+                PENDING_LLM_CONVERSATION: {
+                    "memory_id": "memory_llm_999",
+                    "original_text": "Test",
+                    "followup_question": "Question?",
+                },
+            }
+        )
+
+        await cancel_command(update, context)
+
+        # Verify all pending states were removed
+        assert PENDING_TAG_MEMORY_ID not in context.user_data
+        assert PENDING_TASK_MEMORY_ID not in context.user_data
+        assert PENDING_REMINDER_MEMORY_ID not in context.user_data
+        assert PENDING_LLM_CONVERSATION not in context.user_data
+
+    @pytest.mark.asyncio
+    async def test_cancel_no_pending_states_no_error(self):
+        """Test /cancel handles context with no pending states without error."""
+        from tg_gateway.handlers.command import cancel_command
+
+        update = _make_update(text="/cancel")
+        context = _make_context(user_data={})
+
+        # Should not raise any exception
+        await cancel_command(update, context)
+
+        # Should still respond to user
+        update.message.reply_text.assert_awaited_once()
+        reply = update.message.reply_text.call_args[0][0]
+        assert "cancelled" in reply.lower()

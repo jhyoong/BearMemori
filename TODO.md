@@ -7,6 +7,13 @@
 
 ~~3. When using natural language to set a reminder, the LLM does properly send a proposed time to which the user accepts. But the system then overrides it and follows up with a prompt asking for the time to set.~~ (Fixed in v0.1.1)
 
+4.  Bug: /cancel doesn't clear PENDING_LLM_CONVERSATION
+      # In cancel_command (lines 50-53):
+   context.user_data.pop(PENDING_TAG_MEMORY_ID, None)
+   context.user_data.pop(PENDING_TASK_MEMORY_ID, None)
+   context.user_data.pop(PENDING_REMINDER_MEMORY_ID, None)
+   # PENDING_LLM_CONVERSATION is NOT cleared!
+
 ## Minor
 1. Editing tags on pictures seem to add them. This needs to be better managed ( edit vs add vs delete tags )
 

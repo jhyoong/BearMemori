@@ -14,6 +14,7 @@ from tg_gateway.handlers.conversation import (
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
     PENDING_REMINDER_MEMORY_ID,
+    PENDING_LLM_CONVERSATION,
 )
 from tg_gateway.keyboards import search_results_keyboard, task_list_keyboard
 
@@ -51,6 +52,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data.pop(PENDING_TAG_MEMORY_ID, None)
     context.user_data.pop(PENDING_TASK_MEMORY_ID, None)
     context.user_data.pop(PENDING_REMINDER_MEMORY_ID, None)
+    context.user_data.pop(PENDING_LLM_CONVERSATION, None)
 
     await update.message.reply_text("Current action cancelled.")
 
@@ -325,7 +327,7 @@ Oldest queued: {oldest_age} seconds
         status_label = "Healthy" if llm_status == "healthy" else "Unhealthy"
         consecutive = llm_health.get("consecutive_failures", 0)
         last_check = llm_health.get("last_check", "N/A")
-        response += f"\n*LLM Health*\n"
+        response += "\n*LLM Health*\n"
         response += f"Status: {status_label}\n"
         response += f"Consecutive failures: `{consecutive}`\n"
         response += f"Last check: {last_check}\n"
@@ -376,15 +378,34 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     health_msg = "Healthy" if health_status == "healthy" else "Unhealthy"
     consecutive = health.get("consecutive_failures", 0)
 
+    # Check for pending conversation states
+    pending_conversation_msg = ""
+    pending_state = None
+
+    if PENDING_TAG_MEMORY_ID in context.user_data:
+        pending_state = "waiting for tags"
+    elif PENDING_TASK_MEMORY_ID in context.user_data:
+        pending_state = "waiting for task due date"
+    elif PENDING_REMINDER_MEMORY_ID in context.user_data:
+        pending_state = "waiting for reminder time"
+    elif PENDING_LLM_CONVERSATION in context.user_data:
+        pending_state = "waiting for LLM followup answer"
+
+    if pending_state:
+        pending_conversation_msg = (
+            f"\n\nPending conversation: {pending_state}\nRun /cancel if you're stuck"
+        )
+
     response = """*Your Status*
 Pending messages: `{pending}`
 
 *LLM System Health*
 {health_status}
-Consecutive failures: `{consecutive}`""".format(
+Consecutive failures: `{consecutive}`{pending_conv}""".format(
         pending=pending_count,
         health_status=health_msg,
         consecutive=consecutive,
+        pending_conv=pending_conversation_msg,
     )
 
     await update.message.reply_text(response, parse_mode="Markdown")
