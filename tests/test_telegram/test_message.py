@@ -96,7 +96,9 @@ class TestHandleTextQueueFlow:
 
         await handle_text(update, context)
 
-        update.message.reply_text.assert_called_once_with("Added to queue (1 message ahead)")
+        update.message.reply_text.assert_called_once_with(
+            "Added to queue (1 message ahead)"
+        )
 
     @pytest.mark.asyncio
     async def test_creates_llm_job_on_text(self):
@@ -512,3 +514,190 @@ class TestHandleTextSpecificPhrases:
         assert context.user_data.get(USER_QUEUE_COUNT, 0) == 0
         await handle_text(update, context)
         assert context.user_data.get(USER_QUEUE_COUNT, 0) == 1
+
+
+# ---------------------------------------------------------------------------
+# Telegram API failure resilience tests (T001)
+# ---------------------------------------------------------------------------
+
+
+class TestHandleTextTelegramApiFailures:
+    """Tests for resilience when Telegram API fails during handle_text."""
+
+    @pytest.mark.asyncio
+    async def test_reply_text_connect_timeout_still_creates_llm_job(self):
+        """If reply_text raises httpx.ConnectTimeout, LLM job should still be created."""
+        import httpx
+
+        core_client = _make_core_client()
+        update = _make_update(text="Hello world")
+        context = _make_context(bot_data={"core_client": core_client})
+
+        # Mock reply_text to raise ConnectTimeout
+        update.message.reply_text = AsyncMock(
+            side_effect=httpx.ConnectTimeout("connection timed out")
+        )
+
+        # Should NOT raise - should handle gracefully and continue
+        await handle_text(update, context)
+
+        # LLM job MUST be created even if reply_text failed
+        core_client.create_llm_job.assert_called_once()
+
+        # Queue count should still be incremented
+        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 1
+
+    @pytest.mark.asyncio
+    async def test_reply_text_timeout_exception_still_creates_llm_job(self):
+        """If reply_text raises httpx.TimeoutException, LLM job should still be created."""
+        import httpx
+
+        core_client = _make_core_client()
+        update = _make_update(text="Another message")
+        context = _make_context(bot_data={"core_client": core_client})
+
+        # Mock reply_text to raise generic TimeoutException
+        update.message.reply_text = AsyncMock(
+            side_effect=httpx.TimeoutException("request timed out")
+        )
+
+        # Should NOT raise - should handle gracefully and continue
+        await handle_text(update, context)
+
+        # LLM job MUST be created even if reply_text failed
+        core_client.create_llm_job.assert_called_once()
+
+        # Queue count should still be incremented
+        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 1
+
+    @pytest.mark.asyncio
+    async def test_reply_text_any_exception_still_creates_llm_job(self):
+        """If reply_text raises any Telegram bot exception, LLM job should still be created."""
+        core_client = _make_core_client()
+        update = _make_update(text="Test message")
+        context = _make_context(bot_data={"core_client": core_client})
+
+        # Mock reply_text to raise a generic Telegram error
+        async def raise_telegram_error(*args, **kwargs):
+            raise Exception("Telegram API error: network failure")
+
+        update.message.reply_text = AsyncMock(
+            side_effect=Exception("Telegram API error: network failure")
+        )
+
+        # Should NOT raise - should handle gracefully and continue
+        await handle_text(update, context)
+
+        # LLM job MUST be created even if reply_text failed
+        core_client.create_llm_job.assert_called_once()
+
+        # Queue count should still be incremented
+        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 1
+
+    @pytest.mark.asyncio
+    async def test_core_unavailable_error_preserves_error_reply(self):
+        """CoreUnavailableError should still reply with error message (existing behavior)."""
+        core_client = _make_core_client()
+        core_client.create_llm_job = AsyncMock(
+            side_effect=CoreUnavailableError("Core is down")
+        )
+        update = _make_update(text="Hello")
+        context = _make_context(bot_data={"core_client": core_client})
+
+        await handle_text(update, context)
+
+        # Should have called reply_text with error message
+        update.message.reply_text.assert_called()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "trouble" in reply_text.lower() or "try again" in reply_text.lower()
+
+
+# ---------------------------------------------------------------------------
+# _get_submission_feedback tests
+# ---------------------------------------------------------------------------
+
+
+class TestGetSubmissionFeedback:
+    """Tests for the _get_submission_feedback helper function."""
+
+    @pytest.mark.asyncio
+    async def test_empty_queue_returns_processing_message(self):
+        """When queue count is 0, should return 'Processing your message...'."""
+        from tg_gateway.handlers.message import _get_submission_feedback
+
+        context = _make_context(
+            user_data={},
+            bot_data={},
+        )
+
+        result = await _get_submission_feedback(context)
+
+        assert result == "Processing your message..."
+
+    @pytest.mark.asyncio
+    async def test_queue_with_one_message_returns_singular(self):
+        """When queue count is 1, should return singular 'message'."""
+        from tg_gateway.handlers.message import _get_submission_feedback
+
+        redis_client = AsyncMock()
+        redis_client.get = AsyncMock(return_value=b'{"status": "healthy"}')
+
+        context = _make_context(
+            user_data={USER_QUEUE_COUNT: 1},
+            bot_data={"redis": redis_client},
+        )
+
+        result = await _get_submission_feedback(context)
+
+        assert result == "Added to queue (1 message ahead)"
+
+    @pytest.mark.asyncio
+    async def test_queue_with_multiple_messages_returns_plural(self):
+        """When queue count > 1, should return plural 'messages'."""
+        from tg_gateway.handlers.message import _get_submission_feedback
+
+        redis_client = AsyncMock()
+        redis_client.get = AsyncMock(return_value=b'{"status": "healthy"}')
+
+        context = _make_context(
+            user_data={USER_QUEUE_COUNT: 3},
+            bot_data={"redis": redis_client},
+        )
+
+        result = await _get_submission_feedback(context)
+
+        assert result == "Added to queue (3 messages ahead)"
+
+    @pytest.mark.asyncio
+    async def test_healthy_redis_returns_processing_when_queue_empty(self):
+        """When Redis is healthy and queue is empty, return processing message."""
+        from tg_gateway.handlers.message import _get_submission_feedback
+
+        redis_client = AsyncMock()
+        redis_client.get = AsyncMock(return_value=b'{"status": "healthy"}')
+
+        context = _make_context(
+            user_data={},
+            bot_data={"redis": redis_client},
+        )
+
+        result = await _get_submission_feedback(context)
+
+        assert result == "Processing your message..."
+
+    @pytest.mark.asyncio
+    async def test_unhealthy_redis_returns_catching_up_message(self):
+        """When Redis shows unhealthy LLM, return catching up message."""
+        from tg_gateway.handlers.message import _get_submission_feedback
+
+        redis_client = AsyncMock()
+        redis_client.get = AsyncMock(return_value=b'{"status": "unhealthy"}')
+
+        context = _make_context(
+            user_data={},
+            bot_data={"redis": redis_client},
+        )
+
+        result = await _get_submission_feedback(context)
+
+        assert result == "I'm catching up with processing... please wait."

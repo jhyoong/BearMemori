@@ -124,8 +124,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         # Reply based on LLM health status and queue depth
         feedback_message = await _get_submission_feedback(context)
-        await msg.reply_text(feedback_message)
 
+        # Try to send feedback message to user - don't fail if Telegram API is down
+        try:
+            await msg.reply_text(feedback_message)
+        except Exception:
+            logger.exception("Failed to send feedback message to user")
+
+        # Increment queue count and create LLM job regardless of reply success
         increment_queue(context)
 
         await core_client.create_llm_job(
