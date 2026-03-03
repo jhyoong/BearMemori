@@ -173,6 +173,7 @@ class TestHandleIntentResultReminder:
         assert "unspecified" not in text.lower()
         # Verify a formatted date is present (e.g., "2026-02-28 20:13")
         import re
+
         assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", text), (
             f"Expected formatted datetime in text: {text}"
         )
@@ -311,6 +312,7 @@ class TestHandleIntentResultTask:
         # Time is now displayed in user-friendly format (YYYY-MM-DD HH:MM)
         assert "unspecified" not in text.lower()
         import re
+
         assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", text), (
             f"Expected formatted datetime in text: {text}"
         )
@@ -359,6 +361,96 @@ class TestHandleIntentResultTask:
 
 
 class TestHandleIntentResultSearch:
+    @pytest.mark.asyncio
+    async def test_search_releases_user_lock_with_redis_client(self):
+        """Test that release_user_lock is called with redis client from bot_data."""
+        # Create mock redis client
+        mock_redis = AsyncMock()
+
+        app = _make_application()
+        app.bot_data = {"redis": mock_redis}
+
+        content = {
+            "intent": "search",
+            "query": "test query",
+            "memory_id": "",
+            "search_results": [
+                {"title": "Result 1", "memory_id": "mem-s1"},
+            ],
+        }
+
+        with patch("tg_gateway.consumer.release_user_lock") as mock_release:
+            await _handle_intent_result(app, "12345", content)
+
+            # Verify release_user_lock was called with the redis client
+            mock_release.assert_called_once()
+            call_args = mock_release.call_args[0]
+            assert call_args[0] is mock_redis, (
+                "release_user_lock should be called with redis client from bot_data"
+            )
+            assert call_args[1] == "12345", (
+                "release_user_lock should be called with user_id"
+            )
+
+    @pytest.mark.asyncio
+    async def test_search_no_nameerror_when_processing_intent(self, caplog):
+        """Test that no NameError is raised when processing search intent.
+
+        This tests the bug where _handle_intent_result() uses an undefined 'redis' variable
+        instead of getting the redis client from application.bot_data.
+        """
+        import logging
+
+        # Create mock redis client
+        mock_redis = AsyncMock()
+
+        app = _make_application()
+        app.bot_data = {"redis": mock_redis}
+
+        content = {
+            "intent": "search",
+            "query": "test query",
+            "memory_id": "",
+            "search_results": [],
+        }
+
+        # This should NOT raise NameError: name 'redis' is not defined
+        # If the bug exists, this will fail with NameError
+        await _handle_intent_result(app, "12345", content)
+
+        # Also verify that no error was logged about failing to release lock
+        # (which would happen if NameError occurred)
+        error_logs = [
+            record
+            for record in caplog.records
+            if record.levelno >= logging.ERROR
+            and "Failed to release user lock" in record.message
+        ]
+        assert len(error_logs) == 0, (
+            f"Error log found indicating NameError occurred: {[r.message for r in error_logs]}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_search_lock_release_closes_redis_connection(self):
+        """Test that redis client connection is closed after releasing lock."""
+        mock_redis = AsyncMock()
+
+        app = _make_application()
+        app.bot_data = {"redis": mock_redis}
+
+        content = {
+            "intent": "search",
+            "query": "test query",
+            "memory_id": "",
+            "search_results": [{"title": "Result 1", "memory_id": "mem-s1"}],
+        }
+
+        with patch("tg_gateway.consumer.release_user_lock"):
+            await _handle_intent_result(app, "12345", content)
+
+            # Verify redis client aclose is called
+            mock_redis.aclose.assert_called_once()
+
     @pytest.mark.asyncio
     async def test_search_with_results_sends_keyboard(self):
         app = _make_application()

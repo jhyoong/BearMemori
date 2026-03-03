@@ -888,7 +888,10 @@ class TestInvalidResponseExhaustion:
                         found_failure = True
                         # Verify the failure message content
                         content = notification_data.get("content", {})
-                        assert "LLM endpoint not reachable or responsive" in content.get("message", "")
+                        assert (
+                            "LLM endpoint not reachable or responsive"
+                            in content.get("message", "")
+                        )
 
         assert found_failure, (
             "llm_failure notification should be published on exhaustion"
@@ -1266,7 +1269,10 @@ class TestInvalidResponseExhaustionRetry:
                     if notification_data.get("message_type") == "llm_failure":
                         found_failure = True
                         content = notification_data.get("content", {})
-                        assert "LLM endpoint not reachable or responsive" in content.get("message", "")
+                        assert (
+                            "LLM endpoint not reachable or responsive"
+                            in content.get("message", "")
+                        )
 
         assert found_failure, (
             "llm_failure notification should be published on exhaustion"
@@ -1581,3 +1587,264 @@ class TestPerUserLocking:
 
         # Should process normally without locking
         mock_handler.handle.assert_called_once()
+
+
+# =============================================================================
+# Task T002: PEL stale message check tests
+# =============================================================================
+# These tests verify the fix for stale message check that incorrectly kills
+# queued messages when they have been waiting in the Pending Entries List (PEL)
+# due to user lock contention.
+#
+# The bug: stale check uses original Redis stream timestamp instead of tracking
+# when the message was last attempted.
+#
+# Expected behavior:
+# - Messages read from PEL (id="0") should NOT be checked for staleness
+# - Messages read from new stream (id=">") SHOULD be checked for staleness
+# - A deferred message that has been waiting in PEL for 6+ minutes should NOT be
+#   acked as stale
+# - A new message older than 5 minutes should still be acked as stale
+# =============================================================================
+
+
+class TestPELStaleMessageCheck:
+    """Tests for PEL stale message check behavior."""
+
+    @pytest.fixture
+    def retry_manager(self):
+        return RetryManager()
+
+    @pytest.mark.asyncio
+    async def test_pel_message_with_old_timestamp_should_not_be_stale(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """A message read from PEL (id='0') with old timestamp should NOT be marked stale.
+
+        This is the key bug fix - when a message has been waiting in the PEL
+        due to user lock contention, it should not be considered stale just because
+        the original stream timestamp is old.
+        """
+        import time
+
+        # Create a message ID with a timestamp from 10 minutes ago (600 seconds)
+        # This would normally be considered stale (MAX_MESSAGE_AGE_SECONDS = 300)
+        old_ts_ms = int((time.time() - 600) * 1000)
+        message_id = f"{old_ts_ms}-0"
+
+        job_id = "pel-deferred-job"
+        data = {
+            "job_id": job_id,
+            "payload": {"text": "test"},
+            "user_id": 12345,
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        # Call _process_message - this message is from PEL so it should NOT be marked stale
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+            from_pel=True,
+        )
+
+        # The handler SHOULD have been called - message from PEL should not be stale
+        # This test will FAIL with current bug because message is incorrectly marked stale
+        mock_handler.handle.assert_called_once()
+
+        # Job should be marked as completed, not failed
+        mock_core_api.update_job.assert_called_once_with(
+            job_id=job_id, status="completed", result={"intent": "test"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_new_stream_message_with_old_timestamp_should_be_stale(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """A NEW message (read with id='>') with old timestamp SHOULD be marked stale.
+
+        This ensures the stale check still works for new messages coming from the stream.
+        """
+        import time
+
+        # Create a message ID with a timestamp from 10 minutes ago
+        old_ts_ms = int((time.time() - 600) * 1000)
+        message_id = f"{old_ts_ms}-0"
+
+        job_id = "new-stale-job"
+        data = {
+            "job_id": job_id,
+            "payload": {"text": "test"},
+            "user_id": 12345,
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        # When reading from new stream (id=">"), old messages should be marked stale
+        # The implementation needs to differentiate between PEL and new stream reads
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # For a NEW stream message with old timestamp, it SHOULD be skipped as stale
+        # The handler should NOT have been called
+        mock_handler.handle.assert_not_called()
+
+        # Job should be marked as failed with stale message
+        mock_core_api.update_job.assert_called_once()
+        call_kwargs = mock_core_api.update_job.call_args[1]
+        assert call_kwargs["job_id"] == job_id
+        assert call_kwargs["status"] == "failed"
+        assert "exceeded" in call_kwargs["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_deferred_message_waits_in_pel_not_acked(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """A message deferred due to user lock should remain in PEL, not be acked as stale.
+
+        This test simulates the scenario where:
+        1. Message arrives and is processed
+        2. User lock is held, so message is deferred (not acked)
+        3. Message goes back to PEL
+        4. Consumer reads from PEL (id="0") after some time
+        5. Message should NOT be marked stale
+        """
+        import time
+
+        # First, simulate a message that gets deferred due to user lock
+        # Pre-acquire the lock for user 42
+        from shared_lib.redis_streams import acquire_user_lock
+
+        await acquire_user_lock(mock_redis, "42")
+
+        # Create a message ID with a timestamp from 10 minutes ago
+        old_ts_ms = int((time.time() - 600) * 1000)
+        message_id = f"{old_ts_ms}-0"
+
+        job_id = "deferred-job-pel"
+        data = {
+            "job_id": job_id,
+            "payload": {"text": "test"},
+            "user_id": 42,  # Same user with held lock
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        # Process message - since lock is held, it will be deferred (not acked)
+        # This message should NOT be marked stale since it's from PEL
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+            from_pel=True,
+        )
+
+        # Handler should NOT have been called because lock was held
+        mock_handler.handle.assert_not_called()
+
+        # Job should NOT be updated (deferred, not failed)
+        mock_core_api.update_job.assert_not_called()
+
+        # Now simulate consumer reading from PEL (id="0") with the deferred message
+        # When this happens, the message should NOT be marked as stale
+        # Release the lock first to simulate the next consumer iteration
+        from shared_lib.redis_streams import release_user_lock
+
+        await release_user_lock(mock_redis, "42")
+
+        # Reset mocks
+        mock_handler.reset_mock()
+        mock_core_api.reset_mock()
+
+        # Now process the same message (which would have been read from PEL)
+        # This time it should succeed and NOT be marked stale
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+            from_pel=True,
+        )
+
+        # This assertion will FAIL with current bug because the stale check
+        # incorrectly marks the deferred PEL message as stale
+        mock_handler.handle.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_fresh_new_message_should_process_normally(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """A fresh message (recent timestamp) from new stream should process normally.
+
+        This ensures the stale check doesn't break normal message processing.
+        """
+        import time
+
+        # Create a message ID with a recent timestamp (within 5 minutes)
+        recent_ts_ms = int(time.time() * 1000)
+        message_id = f"{recent_ts_ms}-0"
+
+        job_id = "fresh-job"
+        data = {
+            "job_id": job_id,
+            "payload": {"text": "test"},
+            "user_id": 12345,
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        # Process as new stream message (id=">")
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Handler should have been called normally
+        mock_handler.handle.assert_called_once()
+
+        # Job should be marked as completed
+        mock_core_api.update_job.assert_called_once_with(
+            job_id=job_id, status="completed", result={"intent": "test"}
+        )
+
+
+# =============================================================================
+# End of Task T002 tests
+# =============================================================================

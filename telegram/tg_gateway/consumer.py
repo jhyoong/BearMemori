@@ -195,7 +195,11 @@ async def _dispatch_notification(application: Application, data: dict) -> None:
         memory_id = content.get("memory_id", "")
 
         message = content.get("message", "")
-        text = message if message else f"LLM endpoint not reachable or responsive ({job_type})."
+        text = (
+            message
+            if message
+            else f"LLM endpoint not reachable or responsive ({job_type})."
+        )
         await bot.send_message(chat_id=user_id, text=text)
         logger.info("Sent llm_failure to user %s: %s", user_id, text[:50])
 
@@ -212,9 +216,7 @@ async def _dispatch_notification(application: Application, data: dict) -> None:
                 "processed once the LLM is back."
             )
         elif new_status == "healthy":
-            text = (
-                "System is back online -- processing your queued messages."
-            )
+            text = "System is back online -- processing your queued messages."
         else:
             logger.debug(
                 "Unknown health status '%s' (previous: '%s'), no notification sent",
@@ -393,10 +395,13 @@ async def _handle_intent_result(
         # Decrement queue: search is self-contained; no button action needed.
         user_data[USER_QUEUE_COUNT] = max(0, user_data.get(USER_QUEUE_COUNT, 0) - 1)
         # Release the per-user lock since search needs no confirmation
-        try:
-            await release_user_lock(redis, str(user_id))
-        except Exception:
-            logger.exception("Failed to release user lock for user %s", user_id)
+        redis_client = application.bot_data.get("redis")
+        if redis_client:
+            try:
+                await release_user_lock(redis_client, str(user_id))
+                await redis_client.aclose()
+            except Exception:
+                logger.exception("Failed to release user lock for user %s", user_id)
         logger.info("Sent search results to user %s for query %s", user_id, query)
 
     elif intent == "general_note":

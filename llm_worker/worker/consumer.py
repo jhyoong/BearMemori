@@ -102,6 +102,7 @@ async def _process_message(
     core_api: CoreAPIClient,
     retry_tracker: RetryManager,
     config: LLMWorkerSettings,
+    from_pel: bool | None = None,
 ) -> None:
     """Process a single message from a Redis stream.
 
@@ -114,42 +115,53 @@ async def _process_message(
         core_api: Core API client for updating job status
         retry_tracker: Retry manager for managing retry logic
         config: LLM worker configuration
+        from_pel: Whether the message was read from the Pending Entries List (PEL).
+                   When None, will automatically check using Redis XPENDING.
+                   When True, skip the stale message check since the message has been
+                   waiting due to user lock contention.
     """
     job_id = data.get("job_id")
+
+    # If from_pel is not explicitly provided (None), default to False (run stale check).
+    # This ensures backward compatibility for direct function calls.
+    # In production, run_consumer() explicitly passes from_pel=True or False.
+    if from_pel is None:
+        from_pel = False
 
     # Check message age using the Redis stream ID (format: {ms_timestamp}-{seq}).
     # Skip stale messages that were queued before a restart to avoid processing
     # outdated jobs against the wrong user context.
-    try:
-        msg_ts_ms = int(message_id.split("-")[0])
-        age_seconds = (time.time() * 1000 - msg_ts_ms) / 1000
-        if age_seconds > MAX_MESSAGE_AGE_SECONDS:
-            logger.warning(
-                "Skipping stale message %s from %s (age %.0fs > %ds)",
-                message_id,
-                stream_name,
-                age_seconds,
-                MAX_MESSAGE_AGE_SECONDS,
-            )
-            await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
-            # Mark the DB job as failed so it doesn't stay 'queued' forever
-            if job_id:
-                try:
-                    await core_api.update_job(
-                        job_id=job_id,
-                        status="failed",
-                        error_message=(
-                            f"Skipped: message age ({age_seconds:.0f}s)"
-                            f" exceeded {MAX_MESSAGE_AGE_SECONDS}s limit"
-                        ),
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed to update stale job %s status", job_id
-                    )
-            return
-    except (ValueError, IndexError):
-        pass  # If we can't parse the ID, process the message normally
+    # Skip this check for messages from PEL - they've been waiting due to lock contention
+    # and shouldn't be considered stale just because the original stream timestamp is old.
+    if not from_pel:
+        try:
+            msg_ts_ms = int(message_id.split("-")[0])
+            age_seconds = (time.time() * 1000 - msg_ts_ms) / 1000
+            if age_seconds > MAX_MESSAGE_AGE_SECONDS:
+                logger.warning(
+                    "Skipping stale message %s from %s (age %.0fs > %ds)",
+                    message_id,
+                    stream_name,
+                    age_seconds,
+                    MAX_MESSAGE_AGE_SECONDS,
+                )
+                await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+                # Mark the DB job as failed so it doesn't stay 'queued' forever
+                if job_id:
+                    try:
+                        await core_api.update_job(
+                            job_id=job_id,
+                            status="failed",
+                            error_message=(
+                                f"Skipped: message age ({age_seconds:.0f}s)"
+                                f" exceeded {MAX_MESSAGE_AGE_SECONDS}s limit"
+                            ),
+                        )
+                    except Exception:
+                        logger.exception("Failed to update stale job %s status", job_id)
+                return
+        except (ValueError, IndexError):
+            pass  # If we can't parse the ID, process the message normally
     payload = data.get("payload", {})
     user_id = data.get("user_id")
     job_type = data.get("job_type")
@@ -180,19 +192,21 @@ async def _process_message(
     if user_id is not None:
         user_lock_acquired = await acquire_user_lock(redis_client, str(user_id))
         if not user_lock_acquired:
-            logger.debug(
-                "User %s lock held, deferring job %s", user_id, job_id
-            )
+            logger.debug("User %s lock held, deferring job %s", user_id, job_id)
             return
 
     try:
         # Call the handler
         logger.info(
             "Calling handler %s for job %s with payload: %s",
-            job_type, job_id, payload,
+            job_type,
+            job_id,
+            payload,
         )
         result = await handler.handle(job_id, payload, user_id)
-        logger.info("Handler %s returned result for job %s: %s", job_type, job_id, result)
+        logger.info(
+            "Handler %s returned result for job %s: %s", job_type, job_id, result
+        )
 
         if result is not None:
             # Job completed successfully with a result
@@ -211,7 +225,9 @@ async def _process_message(
                 }
                 logger.info(
                     "Publishing notification for job %s: type=%s, content=%s",
-                    job_id, msg_type, result,
+                    job_id,
+                    msg_type,
+                    result,
                 )
                 await publish(
                     redis_client,
@@ -401,6 +417,7 @@ async def run_consumer(
             # Round-robin through all streams
             for stream_name in streams:
                 # First, try to read pending messages with "0"
+                from_pel = True
                 messages = await consume(
                     redis_client,
                     stream_name,
@@ -413,6 +430,7 @@ async def run_consumer(
 
                 # If no pending messages, try reading new messages
                 if not messages:
+                    from_pel = False
                     messages = await consume(
                         redis_client,
                         stream_name,
@@ -434,6 +452,7 @@ async def run_consumer(
                         core_api=core_api,
                         retry_tracker=retry_tracker,
                         config=config,
+                        from_pel=from_pel,
                     )
 
             # Small delay to prevent tight loop

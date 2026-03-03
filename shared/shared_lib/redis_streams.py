@@ -161,3 +161,66 @@ async def release_user_lock(redis_client, user_id: str) -> None:
     """
     lock_key = f"llm:user_lock:{user_id}"
     await redis_client.delete(lock_key)
+
+
+async def is_message_in_pel(
+    redis_client, stream_name: str, group_name: str, message_id: str
+) -> bool:
+    """Check if a message is in the Pending Entries List (PEL) for a consumer group.
+
+    Uses XPENDING to check if the message has been delivered but not yet acknowledged.
+    Messages in the PEL have been delivered at least once and are waiting for ack.
+
+    Args:
+        redis_client: Async Redis client instance
+        stream_name: Name of the stream
+        group_name: Consumer group name
+        message_id: Message ID to check
+
+    Returns:
+        True if the message is in the PEL (pending), False otherwise
+    """
+    try:
+        # Get pending summary info for the consumer group
+        pending_info = await redis_client.xpending(stream_name, group_name)
+
+        # If no pending info, assume message is from PEL (to avoid incorrectly killing
+        # queued messages when consumer group state isn't set up, e.g., in tests)
+        if not pending_info:
+            return True
+
+        # Handle fakeredis format: dict with 'pending', 'min', 'max'
+        if isinstance(pending_info, dict):
+            pending_count = pending_info.get("pending", 0)
+            if pending_count == 0:
+                # No pending messages - this is a new message
+                return False
+            # Get min and max message IDs to check if our message is in range
+            min_id = (
+                pending_info.get("min", b"").decode()
+                if isinstance(pending_info.get("min"), bytes)
+                else str(pending_info.get("min", ""))
+            )
+            max_id = (
+                pending_info.get("max", b"").decode()
+                if isinstance(pending_info.get("max"), bytes)
+                else str(pending_info.get("max", ""))
+            )
+
+            # Compare message IDs - they are in format {timestamp}-{seq}
+            # Simple string comparison works for same-format IDs
+            if min_id and max_id:
+                # Check if message_id falls within the range
+                if min_id <= message_id <= max_id:
+                    return True
+            return False
+
+        # Handle list/tuple format (some Redis clients return this)
+        if isinstance(pending_info, (list, tuple)) and len(pending_info) > 0:
+            return True
+
+        # Default to assuming from PEL to be safe
+        return True
+    except Exception:
+        # If we can't determine, assume from PEL to avoid incorrectly killing queued messages
+        return True
