@@ -126,3 +126,38 @@ async def ack(redis_client, stream_name: str, group_name: str, message_id: str) 
         message_id: ID of the message to acknowledge
     """
     await redis_client.xack(stream_name, group_name, message_id)
+
+
+async def acquire_user_lock(
+    redis_client, user_id: str, ttl_seconds: int = 604800
+) -> bool:
+    """Acquire a per-user lock to prevent concurrent job processing.
+
+    Uses Redis SET with NX (only set if not exists) and EX (expiry) to
+    implement a distributed lock. The lock is explicitly released by the
+    Telegram gateway when the user completes a conversation (confirm/reject/
+    cancel). The TTL exists only as a safety net for edge cases where release
+    fails (e.g. crash); it defaults to 7 days.
+
+    Args:
+        redis_client: Async Redis client instance
+        user_id: The user ID to lock
+        ttl_seconds: Lock expiry in seconds (default: 604800 = 7 days)
+
+    Returns:
+        True if lock was acquired, False if already held.
+    """
+    lock_key = f"llm:user_lock:{user_id}"
+    result = await redis_client.set(lock_key, "1", nx=True, ex=ttl_seconds)
+    return result is not None
+
+
+async def release_user_lock(redis_client, user_id: str) -> None:
+    """Release a per-user processing lock.
+
+    Args:
+        redis_client: Async Redis client instance
+        user_id: The user ID to unlock
+    """
+    lock_key = f"llm:user_lock:{user_id}"
+    await redis_client.delete(lock_key)

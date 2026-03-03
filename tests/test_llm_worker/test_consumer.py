@@ -1291,3 +1291,293 @@ class TestInvalidResponseExhaustionRetry:
 # =============================================================================
 # End of Task T1001 tests
 # =============================================================================
+
+
+# =============================================================================
+# Tests for stale message DB cleanup and per-user locking
+# =============================================================================
+
+
+class TestStaleMessageDbCleanup:
+    """Tests for marking stale message jobs as failed in the database."""
+
+    @pytest.fixture
+    def retry_manager(self):
+        return RetryManager()
+
+    @pytest.mark.asyncio
+    async def test_stale_message_marks_job_as_failed(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """When a message is stale, the DB job should be marked as failed."""
+        job_id = "stale-job-1"
+        # Create a message ID with a timestamp from 10 minutes ago
+        old_ts_ms = int((asyncio.get_event_loop().time() * 1000)) - 600_000
+        # Use a raw Redis stream message with an old timestamp
+        import time
+
+        old_ts_ms = int((time.time() - 600) * 1000)
+        message_id = f"{old_ts_ms}-0"
+
+        data = {
+            "job_id": job_id,
+            "payload": {"text": "test"},
+            "user_id": 12345,
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Handler should NOT have been called (message was stale)
+        mock_handler.handle.assert_not_called()
+
+        # DB job should be marked as failed
+        mock_core_api.update_job.assert_called_once()
+        call_kwargs = mock_core_api.update_job.call_args[1]
+        assert call_kwargs["job_id"] == job_id
+        assert call_kwargs["status"] == "failed"
+        assert "exceeded" in call_kwargs["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_stale_message_without_job_id_does_not_crash(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """Stale message with no job_id should ack without crashing."""
+        import time
+
+        old_ts_ms = int((time.time() - 600) * 1000)
+        message_id = f"{old_ts_ms}-0"
+
+        data = {
+            "payload": {"text": "test"},
+            "user_id": 12345,
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        # Should not raise
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        mock_handler.handle.assert_not_called()
+        mock_core_api.update_job.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stale_message_db_update_failure_does_not_crash(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """If updating the DB fails for a stale job, it should log but not crash."""
+        import time
+
+        old_ts_ms = int((time.time() - 600) * 1000)
+        message_id = f"{old_ts_ms}-0"
+
+        data = {
+            "job_id": "stale-job-2",
+            "payload": {"text": "test"},
+            "user_id": 12345,
+            "job_type": "intent_classify",
+        }
+
+        mock_core_api.update_job.side_effect = Exception("API down")
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        # Should not raise even though update_job fails
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        mock_handler.handle.assert_not_called()
+
+
+class TestPerUserLocking:
+    """Tests for per-user Redis locking to prevent concurrent processing."""
+
+    @pytest.fixture
+    def retry_manager(self):
+        return RetryManager()
+
+    @pytest.mark.asyncio
+    async def test_lock_acquired_before_processing_and_held_after(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """Lock should be acquired before handler runs and held after (for Telegram to release)."""
+        import time
+
+        ts_ms = int(time.time() * 1000)
+        message_id = f"{ts_ms}-0"
+
+        data = {
+            "job_id": "lock-job-1",
+            "payload": {"text": "test"},
+            "user_id": 42,
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Handler should have been called
+        mock_handler.handle.assert_called_once()
+
+        # Lock should still be held after processing (released by Telegram gateway)
+        from shared_lib.redis_streams import acquire_user_lock
+
+        lock_acquired = await acquire_user_lock(mock_redis, "42")
+        assert lock_acquired is False, (
+            "Lock should remain held after handler success - "
+            "Telegram gateway releases it when user confirms"
+        )
+
+    @pytest.mark.asyncio
+    async def test_second_job_deferred_when_lock_held(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """Second job for same user should be deferred (not acked) when lock held."""
+        import time
+        from shared_lib.redis_streams import acquire_user_lock
+
+        # Pre-acquire the lock for user 42
+        await acquire_user_lock(mock_redis, "42")
+
+        ts_ms = int(time.time() * 1000)
+        message_id = f"{ts_ms}-0"
+
+        data = {
+            "job_id": "lock-job-2",
+            "payload": {"text": "test"},
+            "user_id": 42,
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Handler should NOT have been called (lock was held)
+        mock_handler.handle.assert_not_called()
+
+        # Job should NOT be updated in DB (deferred, not failed)
+        mock_core_api.update_job.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_lock_released_on_handler_failure(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """Lock should be released even when handler raises an exception."""
+        import time
+
+        ts_ms = int(time.time() * 1000)
+        message_id = f"{ts_ms}-0"
+
+        data = {
+            "job_id": "lock-fail-job",
+            "payload": {"text": "test"},
+            "user_id": 99,
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler(None, raises=ValueError("bad response"))
+        handlers = {"intent_classify": mock_handler}
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Lock should be released even after failure
+        from shared_lib.redis_streams import acquire_user_lock
+
+        lock_acquired = await acquire_user_lock(mock_redis, "99")
+        assert lock_acquired is True, "Lock should be released after handler failure"
+
+    @pytest.mark.asyncio
+    async def test_no_lock_for_none_user_id(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """Jobs with user_id=None should process without locking."""
+        import time
+
+        ts_ms = int(time.time() * 1000)
+        message_id = f"{ts_ms}-0"
+
+        data = {
+            "job_id": "no-user-job",
+            "payload": {"text": "test"},
+            "user_id": None,
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+        )
+
+        # Should process normally without locking
+        mock_handler.handle.assert_called_once()

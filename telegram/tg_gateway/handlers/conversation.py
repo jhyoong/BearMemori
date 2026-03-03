@@ -13,6 +13,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from shared_lib.enums import JobType
+from shared_lib.redis_streams import release_user_lock
 from shared_lib.schemas import LLMJobCreate, TagsAddRequest, TaskCreate, ReminderCreate
 
 logger = logging.getLogger(__name__)
@@ -351,6 +352,15 @@ async def receive_followup_answer(
 
     # Get core client from bot_data
     core_client = context.bot_data["core_client"]
+
+    # Release the per-user lock before creating the new job so the worker
+    # can acquire it when processing the reclassification.
+    redis_client = context.bot_data.get("redis")
+    if redis_client:
+        try:
+            await release_user_lock(redis_client, str(user.id))
+        except Exception:
+            logger.exception("Failed to release user lock for user %s", user.id)
 
     # Re-submit as an intent_classify job with followup_context so the
     # IntentHandler uses RECLASSIFY_PROMPT with the full conversation history.

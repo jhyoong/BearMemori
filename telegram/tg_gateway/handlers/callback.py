@@ -17,6 +17,7 @@ from shared_lib.schemas import (
     TagsAddRequest,
 )
 from shared_lib.enums import TaskState, MemoryStatus
+from shared_lib.redis_streams import release_user_lock
 
 from tg_gateway.callback_data import (
     MemoryAction,
@@ -54,19 +55,34 @@ from tg_gateway.keyboards import (
 logger = logging.getLogger(__name__)
 
 
-def _clear_conversation_state(context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _clear_conversation_state(
+    context: ContextTypes.DEFAULT_TYPE, user_id: int | None = None
+) -> None:
     """Clear pending LLM conversation state and decrement the queue counter.
 
     Called by button handlers that conclude a conversation flow so that
-    subsequent messages from the user are not misrouted.
+    subsequent messages from the user are not misrouted. Also releases
+    the per-user LLM processing lock so the next queued job can proceed.
 
     Args:
         context: The Telegram context with user_data.
+        user_id: Telegram user ID, used to release the per-user lock.
     """
     context.user_data.pop(AWAITING_BUTTON_ACTION, None)
     context.user_data.pop(PENDING_LLM_CONVERSATION, None)
     count = context.user_data.get(USER_QUEUE_COUNT, 0)
     context.user_data[USER_QUEUE_COUNT] = max(0, count - 1)
+
+    # Release the per-user LLM processing lock so the next job can proceed
+    if user_id is not None:
+        redis_client = context.bot_data.get("redis")
+        if redis_client:
+            try:
+                await release_user_lock(redis_client, str(user_id))
+            except Exception:
+                logger.exception(
+                    "Failed to release user lock for user %s", user_id
+                )
 
 
 def _is_photo_message(callback_query) -> bool:
@@ -256,7 +272,7 @@ async def handle_memory_action(
         await core_client.update_memory(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
-        _clear_conversation_state(context)
+        await _clear_conversation_state(context, update.effective_user.id)
         await _edit_message(
             callback_query,
             "Select a due date for the task:",
@@ -268,7 +284,7 @@ async def handle_memory_action(
         await core_client.update_memory(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
-        _clear_conversation_state(context)
+        await _clear_conversation_state(context, update.effective_user.id)
         await _edit_message(
             callback_query,
             "Select when to be reminded:",
@@ -280,7 +296,7 @@ async def handle_memory_action(
         await core_client.update_memory(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
-        _clear_conversation_state(context)
+        await _clear_conversation_state(context, update.effective_user.id)
         context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
         # Prompt user for tags (send message asking for comma-separated tags)
         await _edit_message(
@@ -300,7 +316,7 @@ async def handle_memory_action(
         await core_client.update_memory(
             memory_id, MemoryUpdate(is_pinned=True, status=MemoryStatus.confirmed)
         )
-        _clear_conversation_state(context)
+        await _clear_conversation_state(context, update.effective_user.id)
         await _edit_message(callback_query, "Memory pinned and confirmed.")
 
     elif action == "confirm_delete":
@@ -504,7 +520,7 @@ async def handle_confirm_delete(
     if confirmed:
         # Delete the memory and show confirmation message
         await core_client.delete_memory(memory_id)
-        _clear_conversation_state(context)
+        await _clear_conversation_state(context, update.effective_user.id)
         await _edit_message(callback_query, "Memory deleted")
     else:
         # Cancel and restore the original keyboard
@@ -660,7 +676,7 @@ async def handle_tag_confirm(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
 
-        _clear_conversation_state(context)
+        await _clear_conversation_state(context, update.effective_user.id)
         tags_str = ", ".join(suggested_tags) if suggested_tags else "all tags"
         await _edit_message(callback_query, f"Tags confirmed: {tags_str}")
 
@@ -669,7 +685,7 @@ async def handle_tag_confirm(
         await core_client.update_memory(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
-        _clear_conversation_state(context)
+        await _clear_conversation_state(context, update.effective_user.id)
         context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
         # Prompt user for comma-separated tag input
         await _edit_message(
@@ -726,7 +742,7 @@ async def handle_intent_confirm(
     await core_client.update_memory(
         memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
     )
-    _clear_conversation_state(context)
+    await _clear_conversation_state(context, update.effective_user.id)
 
     if action == "confirm_reminder":
         resolved_time = awaiting.get("resolved_time")
@@ -901,7 +917,7 @@ async def handle_reschedule_action(
     await core_client.update_memory(
         memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
     )
-    _clear_conversation_state(context)
+    await _clear_conversation_state(context, update.effective_user.id)
 
     if action == "reschedule":
         # Reuse the existing receive_custom_reminder flow

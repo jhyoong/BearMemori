@@ -31,6 +31,7 @@ from shared_lib.redis_streams import (
     ack,
     consume,
     create_consumer_group,
+    release_user_lock,
 )
 
 logger = logging.getLogger(__name__)
@@ -391,6 +392,11 @@ async def _handle_intent_result(
 
         # Decrement queue: search is self-contained; no button action needed.
         user_data[USER_QUEUE_COUNT] = max(0, user_data.get(USER_QUEUE_COUNT, 0) - 1)
+        # Release the per-user lock since search needs no confirmation
+        try:
+            await release_user_lock(redis, str(user_id))
+        except Exception:
+            logger.exception("Failed to release user lock for user %s", user_id)
         logger.info("Sent search results to user %s for query %s", user_id, query)
 
     elif intent == "general_note":
