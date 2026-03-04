@@ -37,7 +37,7 @@ CONSUMER_NAME = "llm-worker-1"
 # Maximum age (in seconds) for a Redis stream message before it is considered stale.
 # Messages older than this are acked and skipped to avoid processing outdated jobs
 # after a restart.
-MAX_MESSAGE_AGE_SECONDS = 300  # 5 minutes
+MAX_MESSAGE_AGE_SECONDS = 604800  # 7 days
 
 # Batch size for reading from the Pending Entries List (PEL).
 # Setting this higher allows processing multiple pending messages per iteration.

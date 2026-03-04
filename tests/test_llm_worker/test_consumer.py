@@ -1317,12 +1317,10 @@ class TestStaleMessageDbCleanup:
     ):
         """When a message is stale, the DB job should be marked as failed."""
         job_id = "stale-job-1"
-        # Create a message ID with a timestamp from 10 minutes ago
-        old_ts_ms = int((asyncio.get_event_loop().time() * 1000)) - 600_000
-        # Use a raw Redis stream message with an old timestamp
+        # Create a message ID with a timestamp from 8 days ago (exceeds 7-day cutoff)
         import time
 
-        old_ts_ms = int((time.time() - 600) * 1000)
+        old_ts_ms = int((time.time() - 8 * 86400) * 1000)
         message_id = f"{old_ts_ms}-0"
 
         data = {
@@ -1363,7 +1361,8 @@ class TestStaleMessageDbCleanup:
         """Stale message with no job_id should ack without crashing."""
         import time
 
-        old_ts_ms = int((time.time() - 600) * 1000)
+        # Create a message ID with a timestamp from 8 days ago (exceeds 7-day cutoff)
+        old_ts_ms = int((time.time() - 8 * 86400) * 1000)
         message_id = f"{old_ts_ms}-0"
 
         data = {
@@ -1397,7 +1396,8 @@ class TestStaleMessageDbCleanup:
         """If updating the DB fails for a stale job, it should log but not crash."""
         import time
 
-        old_ts_ms = int((time.time() - 600) * 1000)
+        # Create a message ID with a timestamp from 8 days ago (exceeds 7-day cutoff)
+        old_ts_ms = int((time.time() - 8 * 86400) * 1000)
         message_id = f"{old_ts_ms}-0"
 
         data = {
@@ -1599,12 +1599,12 @@ class TestPerUserLocking:
 # The bug: stale check uses original Redis stream timestamp instead of tracking
 # when the message was last attempted.
 #
-# Expected behavior:
+# Expected behavior (with 7-day cutoff):
 # - Messages read from PEL (id="0") should NOT be checked for staleness
 # - Messages read from new stream (id=">") SHOULD be checked for staleness
-# - A deferred message that has been waiting in PEL for 6+ minutes should NOT be
+# - A deferred message that has been waiting in PEL for 6+ days should NOT be
 #   acked as stale
-# - A new message older than 5 minutes should still be acked as stale
+# - A new message older than 7 days should still be acked as stale
 # =============================================================================
 
 
@@ -1628,7 +1628,9 @@ class TestPELStaleMessageCheck:
         import time
 
         # Create a message ID with a timestamp from 10 minutes ago (600 seconds)
-        # This would normally be considered stale (MAX_MESSAGE_AGE_SECONDS = 300)
+        # This would normally be considered stale with the old 5-minute cutoff,
+        # but with the new 7-day cutoff, it would NOT be stale. However, since
+        # this message is read from PEL (from_pel=True), it's correctly NOT stale.
         old_ts_ms = int((time.time() - 600) * 1000)
         message_id = f"{old_ts_ms}-0"
 
@@ -1675,8 +1677,8 @@ class TestPELStaleMessageCheck:
         """
         import time
 
-        # Create a message ID with a timestamp from 10 minutes ago
-        old_ts_ms = int((time.time() - 600) * 1000)
+        # Create a message ID with a timestamp from 8 days ago (exceeds 7-day cutoff)
+        old_ts_ms = int((time.time() - 8 * 86400) * 1000)
         message_id = f"{old_ts_ms}-0"
 
         job_id = "new-stale-job"
@@ -1735,8 +1737,10 @@ class TestPELStaleMessageCheck:
 
         await acquire_user_lock(mock_redis, "42")
 
-        # Create a message ID with a timestamp from 10 minutes ago
-        old_ts_ms = int((time.time() - 600) * 1000)
+        # Create a message ID with a timestamp from 8 days ago
+        # This is still within the 7-day cutoff but the message should NOT be
+        # marked stale since it's read from PEL (from_pel=True)
+        old_ts_ms = int((time.time() - 8 * 86400) * 1000)
         message_id = f"{old_ts_ms}-0"
 
         job_id = "deferred-job-pel"
@@ -1809,7 +1813,7 @@ class TestPELStaleMessageCheck:
         """
         import time
 
-        # Create a message ID with a recent timestamp (within 5 minutes)
+        # Create a message ID with a recent timestamp (within 7 days)
         recent_ts_ms = int(time.time() * 1000)
         message_id = f"{recent_ts_ms}-0"
 
@@ -1843,6 +1847,112 @@ class TestPELStaleMessageCheck:
         mock_core_api.update_job.assert_called_once_with(
             job_id=job_id, status="completed", result={"intent": "test"}
         )
+
+
+# =============================================================================
+# Task T003: 7-day stale message cutoff test
+# =============================================================================
+# These tests verify the 7-day (604800 seconds) stale message cutoff.
+#
+# The fix: Changed MAX_MESSAGE_AGE_SECONDS from 300 (5 minutes) to 604800 (7 days)
+# to match the queue persistence requirement for queue processing.
+# =============================================================================
+
+
+class TestSevenDayStaleCutoff:
+    """Tests for the 7-day stale message cutoff."""
+
+    @pytest.fixture
+    def retry_manager(self):
+        return RetryManager()
+
+    @pytest.mark.asyncio
+    async def test_message_aged_6_days_is_not_stale(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """Messages younger than 7 days should be processed, not skipped."""
+        import time
+
+        six_days_ago_ms = int((time.time() - 6 * 86400) * 1000)
+        message_id = f"{six_days_ago_ms}-0"
+
+        job_id = "six-day-old-job"
+        data = {
+            "job_id": job_id,
+            "payload": {"text": "test"},
+            "user_id": 12345,
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        # Process as new stream message (from_pel=False for fresh stream reads)
+        # A 6-day-old message should NOT be marked stale with the 7-day cutoff
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+            from_pel=False,
+        )
+
+        # Handler SHOULD have been called (message not stale with 7-day cutoff)
+        mock_handler.handle.assert_called_once()
+
+        # Job should be marked as completed
+        mock_core_api.update_job.assert_called_once_with(
+            job_id=job_id, status="completed", result={"intent": "test"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_message_aged_8_days_is_stale(
+        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
+    ):
+        """Messages older than 7 days should be skipped as stale."""
+        import time
+
+        eight_days_ago_ms = int((time.time() - 8 * 86400) * 1000)
+        message_id = f"{eight_days_ago_ms}-0"
+
+        job_id = "eight-day-old-job"
+        data = {
+            "job_id": job_id,
+            "payload": {"text": "test"},
+            "user_id": 12345,
+            "job_type": "intent_classify",
+        }
+
+        mock_handler = create_mock_handler({"intent": "test"})
+        handlers = {"intent_classify": mock_handler}
+
+        # Process as new stream message (from_pel=False for fresh stream reads)
+        # An 8-day-old message SHOULD be marked stale with the 7-day cutoff
+        await _process_message(
+            redis_client=mock_redis,
+            stream_name=STREAM_LLM_INTENT,
+            message_id=message_id,
+            data=data,
+            handlers=handlers,
+            core_api=mock_core_api,
+            retry_tracker=retry_manager,
+            config=llm_worker_config,
+            from_pel=False,
+        )
+
+        # Handler should NOT have been called (message is stale)
+        mock_handler.handle.assert_not_called()
+
+        # DB job should be marked as failed
+        mock_core_api.update_job.assert_called_once()
+        call_kwargs = mock_core_api.update_job.call_args[1]
+        assert call_kwargs["job_id"] == job_id
+        assert call_kwargs["status"] == "failed"
+        assert "exceeded" in call_kwargs["error_message"]
 
 
 # =============================================================================
