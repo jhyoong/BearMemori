@@ -458,19 +458,3 @@ def _try_parse_datetime(dt_string: str) -> datetime | None:
     except (ValueError, TypeError):
         logger.warning("Could not parse datetime string: %s", dt_string)
         return None
-
-
-def _is_stale(dt_string: str) -> bool:
-    """Return True if the ISO datetime string represents a past moment.
-
-    Args:
-        dt_string: ISO 8601 datetime string (e.g. "2024-01-01T09:00:00").
-
-    Returns:
-        True if the parsed datetime is before now (UTC), False otherwise.
-        Returns False on parse error so we do not wrongly flag valid datetimes.
-    """
-    dt = _try_parse_datetime(dt_string)
-    if dt is None:
-        return False
-    return dt < datetime.now(tz=timezone.utc)

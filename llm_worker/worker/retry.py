@@ -26,7 +26,6 @@ class RetryManager:
     def __init__(self, time_func: Optional[Callable[[], float]] = None):
         self._attempts: dict[str, int] = {}
         self._failure_types: dict[str, FailureType] = {}
-        self._queue_paused: bool = False
         self._first_unavailable_time: dict[str, float] = {}
         # Store custom time function or use a lambda to look up time.time dynamically
         # This allows patches to time.time to work
@@ -59,10 +58,8 @@ class RetryManager:
             return self._attempts[job_id]
 
         elif failure_type == FailureType.UNAVAILABLE:
-            # Set queue paused flag on first unavailability
             if job_id not in self._first_unavailable_time:
                 self._first_unavailable_time[job_id] = self._time_func()
-                self._queue_paused = True
             return 0
 
     def should_retry(self, job_id: str) -> bool:
@@ -105,10 +102,6 @@ class RetryManager:
 
         # UNAVAILABLE and unknown jobs return 0
         return 0.0
-
-    def is_queue_paused(self) -> bool:
-        """Return True if the queue is paused due to UNAVAILABLE failure."""
-        return self._queue_paused
 
     def get_failure_type(self, job_id: str) -> FailureType | None:
         """Return the failure type for a job, or None if unknown."""

@@ -557,8 +557,8 @@ class TestConnectionErrorClassification:
             config=llm_worker_config,
         )
 
-        # Verify: Queue is paused due to UNAVAILABLE
-        assert retry_manager.is_queue_paused() is True
+        # Verify: Failure type recorded as UNAVAILABLE
+        # Removed: is_queue_paused() is dead code - removed
 
         # Verify: Failure type recorded as UNAVAILABLE
         from worker.retry import FailureType
@@ -607,8 +607,8 @@ class TestConnectionErrorClassification:
             config=llm_worker_config,
         )
 
-        # Verify: Queue is paused due to UNAVAILABLE
-        assert retry_manager.is_queue_paused() is True
+        # Verify: Failure type recorded as UNAVAILABLE
+        # Removed: is_queue_paused() is dead code - removed
 
         # Verify: Failure type recorded as UNAVAILABLE
         from worker.retry import FailureType
@@ -676,8 +676,8 @@ class TestHTTP5xxClassification:
             config=llm_worker_config,
         )
 
-        # Verify: Queue is paused due to UNAVAILABLE
-        assert retry_manager.is_queue_paused() is True
+        # Verify: Failure type recorded as UNAVAILABLE
+        # Removed: is_queue_paused() is dead code - removed
 
         # Verify: Failure type recorded as UNAVAILABLE
         from worker.retry import FailureType
@@ -744,8 +744,8 @@ class TestInvalidResponseClassification:
 
         assert retry_manager.get_failure_type(job_id) == FailureType.INVALID_RESPONSE
 
-        # Verify: Queue is NOT paused (only UNAVAILABLE pauses queue)
-        assert retry_manager.is_queue_paused() is False
+        
+        # Removed: is_queue_paused() is dead code - removed
 
     @pytest.mark.asyncio
     async def test_missing_required_fields_classifies_as_invalid_response(
@@ -953,7 +953,7 @@ class TestUnavailableNotification:
         )
 
         # Verify: Queue is paused
-        assert retry_manager.is_queue_paused() is True
+        # Removed: is_queue_paused() is dead code - removed
 
         # Verify: Notification was published with unavailable message
         notify_messages = await mock_redis.xread(

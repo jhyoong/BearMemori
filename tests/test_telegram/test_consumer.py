@@ -5,7 +5,6 @@ Covers:
 - _handle_intent_result for all five intent types
 - Stale datetime detection (reminder / task)
 - Flood control in run_notify_consumer
-- _is_stale helper
 """
 
 import asyncio
@@ -18,7 +17,6 @@ from tg_gateway.consumer import (
     FLOOD_CONTROL_DELAY_SECONDS,
     _dispatch_notification,
     _handle_intent_result,
-    _is_stale,
     run_notify_consumer,
 )
 from tg_gateway.handlers.conversation import (
@@ -54,43 +52,6 @@ def _past_iso() -> str:
     return (datetime.now(tz=timezone.utc) - timedelta(hours=1)).isoformat()
 
 
-# ---------------------------------------------------------------------------
-# _is_stale
-# ---------------------------------------------------------------------------
-
-
-class TestIsStale:
-    def test_past_datetime_is_stale(self):
-        assert _is_stale(_past_iso()) is True
-
-    def test_future_datetime_is_not_stale(self):
-        assert _is_stale(_future_iso()) is False
-
-    def test_invalid_string_returns_false(self):
-        assert _is_stale("not-a-date") is False
-
-    def test_empty_string_returns_false(self):
-        assert _is_stale("") is False
-
-    def test_naive_past_datetime_treated_as_utc_and_stale(self):
-        # A naive ISO string from the past should be treated as UTC and return True.
-        naive_past = (
-            (datetime.now(tz=timezone.utc) - timedelta(hours=2))
-            .replace(tzinfo=None)
-            .isoformat()
-        )
-        assert _is_stale(naive_past) is True
-
-    def test_naive_future_datetime_treated_as_utc_and_not_stale(self):
-        naive_future = (
-            (datetime.now(tz=timezone.utc) + timedelta(hours=2))
-            .replace(tzinfo=None)
-            .isoformat()
-        )
-        assert _is_stale(naive_future) is False
-
-
-# ---------------------------------------------------------------------------
 # _handle_intent_result — reminder intent
 # ---------------------------------------------------------------------------
 

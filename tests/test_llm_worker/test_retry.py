@@ -67,16 +67,6 @@ class TestInvalidResponse:
 class TestUnavailable:
     """Tests for UNAVAILABLE failure type."""
 
-    def test_unavailable_sets_queue_paused_on_first_failure(self):
-        """On first UNAVAILABLE failure, _queue_paused should be True."""
-        manager = RetryManager()
-
-        assert manager.is_queue_paused() is False
-
-        manager.record_attempt("job-1", FailureType.UNAVAILABLE)
-
-        assert manager.is_queue_paused() is True
-
     def test_unavailable_tracks_first_unavailable_time_per_job(self):
         """Each job tracks its own first_unavailable_time."""
         current_time = [1000.0]
@@ -135,12 +125,11 @@ class TestRetryManagerInterface:
         assert manager.get_failure_type("job-1") == FailureType.INVALID_RESPONSE
 
     def test_record_attempt_with_unavailable(self):
-        """record_attempt with UNAVAILABLE sets queue paused."""
+        """record_attempt with UNAVAILABLE tracks time but has no public state check."""
         manager = RetryManager()
 
         manager.record_attempt("job-1", FailureType.UNAVAILABLE)
 
-        assert manager.is_queue_paused() is True
         assert manager.get_failure_type("job-1") == FailureType.UNAVAILABLE
 
     def test_get_failure_type_returns_none_for_unknown_job(self):
