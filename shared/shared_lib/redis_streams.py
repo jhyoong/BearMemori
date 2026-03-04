@@ -5,8 +5,11 @@ Redis Streams across different services in the BearMemori application.
 """
 
 import json
+import logging
 from typing import Any
 import redis.exceptions
+
+logger = logging.getLogger(__name__)
 
 
 # Stream name constants
@@ -66,7 +69,7 @@ async def consume(
     group_name: str,
     consumer_name: str,
     id: str = ">",
-    count: int = 1,
+    count: int = 10,
     block_ms: int = 5000,
 ) -> list[tuple[str, dict[str, Any]]]:
     """Consume messages from a Redis stream using a consumer group.
@@ -77,7 +80,7 @@ async def consume(
         group_name: Name of the consumer group
         consumer_name: Name of this consumer instance
         id: Message ID to start from (">" for new messages, "0" for pending)
-        count: Maximum number of messages to retrieve (default: 1)
+        count: Maximum number of messages to retrieve (default: 10)
         block_ms: Time to block waiting for messages in milliseconds (default: 5000)
 
     Returns:
@@ -111,7 +114,15 @@ async def consume(
                         messages.append((msg_id, data))
                     except json.JSONDecodeError:
                         # Handle invalid JSON - skip or log
+                        logger.debug(f"Message {msg_id} has invalid JSON in data field")
                         pass
+                else:
+                    # Message lacks "data" field - return with None data
+                    # This prevents messages from being blocked in the PEL
+                    logger.debug(
+                        f"Message {msg_id} missing 'data' field, returning None"
+                    )
+                    messages.append((msg_id, None))
 
     return messages
 

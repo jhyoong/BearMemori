@@ -25,10 +25,10 @@ Possible intents:
 For each intent, extract the following structured entities:
 
 If intent is "reminder":
-{{"intent": "reminder", "action": "what the user wants to be reminded about", "time": "raw time reference from message", "resolved_time": "absolute ISO8601 datetime resolved relative to original_timestamp"}}
+{{"intent": "reminder", "action": "what the user wants to be reminded about", "time": "raw time reference from message", "resolved_time": "absolute ISO8601 datetime (original_timestamp PLUS the relative offset). For example, if original_timestamp is 2026-03-04T10:00:00Z and user says 'in 10 minutes', resolved_time must be 2026-03-04T10:10:00Z. NEVER return the original_timestamp unchanged."}}
 
 If intent is "task":
-{{"intent": "task", "description": "task description", "due_time": "raw due date from message", "resolved_due_time": "absolute ISO8601 datetime resolved relative to original_timestamp"}}
+{{"intent": "task", "description": "task description", "due_time": "raw due date from message", "resolved_due_time": "absolute ISO8601 datetime (original_timestamp PLUS the relative offset). For example, if original_timestamp is 2026-03-04T10:00:00Z and user says 'due tomorrow', resolved_due_time must be 2026-03-05T10:00:00Z. NEVER return the original_timestamp unchanged."}}
 
 If intent is "search":
 {{"intent": "search", "query": "search query", "keywords": ["extracted", "keywords"]}}
@@ -39,7 +39,7 @@ If intent is "general_note":
 If intent is "ambiguous":
 {{"intent": "ambiguous", "followup_question": "natural follow-up question to clarify intent", "possible_intents": ["list", "of", "possible", "intents"]}}
 
-Resolve relative time references (like "tomorrow", "next week", "in 2 hours") to absolute ISO8601 datetimes in UTC, accounting for the user's timezone. For example, if the user says "tomorrow at 9am" and their timezone is America/New_York, resolve to the UTC equivalent of 9am Eastern.
+Resolve relative time references (like "tomorrow", "next week", "in 2 hours") to absolute ISO8601 datetimes in UTC, accounting for the user's timezone. For example, if original_timestamp is 2026-03-04T10:00:00Z and user says "in 10 minutes", resolved_time must be 2026-03-04T10:10:00Z (the original timestamp PLUS the offset). NEVER return the original_timestamp unchanged - always ADD the relative offset to compute the resolved time.
 Generate a natural, conversational follow-up question for ambiguous intents.
 
 Respond ONLY with valid JSON in the appropriate format above."""
@@ -63,10 +63,10 @@ Possible intents:
 For each intent, extract the following structured entities:
 
 If intent is "reminder":
-{{"intent": "reminder", "action": "what the user wants to be reminded about", "time": "raw time reference from message", "resolved_time": "absolute ISO8601 datetime resolved relative to original_timestamp"}}
+{{"intent": "reminder", "action": "what the user wants to be reminded about", "time": "raw time reference from message", "resolved_time": "absolute ISO8601 datetime (original_timestamp PLUS the relative offset). For example, if original_timestamp is 2026-03-04T10:00:00Z and user says 'in 10 minutes', resolved_time must be 2026-03-04T10:10:00Z. NEVER return the original_timestamp unchanged."}}
 
 If intent is "task":
-{{"intent": "task", "description": "task description", "due_time": "raw due date from message", "resolved_due_time": "absolute ISO8601 datetime resolved relative to original_timestamp"}}
+{{"intent": "task", "description": "task description", "due_time": "raw due date from message", "resolved_due_time": "absolute ISO8601 datetime (original_timestamp PLUS the relative offset). For example, if original_timestamp is 2026-03-04T10:00:00Z and user says 'due tomorrow', resolved_due_time must be 2026-03-05T10:00:00Z. NEVER return the original_timestamp unchanged."}}
 
 If intent is "search":
 {{"intent": "search", "query": "search query", "keywords": ["extracted", "keywords"]}}

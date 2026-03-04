@@ -39,6 +39,10 @@ CONSUMER_NAME = "llm-worker-1"
 # after a restart.
 MAX_MESSAGE_AGE_SECONDS = 300  # 5 minutes
 
+# Batch size for reading from the Pending Entries List (PEL).
+# Setting this higher allows processing multiple pending messages per iteration.
+PEL_BATCH_SIZE = 50
+
 # Map handler keys to stream names (for consumer loop iteration)
 STREAM_HANDLER_MAP = {
     "image_tag": STREAM_LLM_IMAGE_TAG,
@@ -120,6 +124,12 @@ async def _process_message(
                    When True, skip the stale message check since the message has been
                    waiting due to user lock contention.
     """
+    # Check for unparseable message data (e.g., None from corrupted PEL entry)
+    if data is None:
+        logger.warning(f"Message {message_id} has unparseable format, acking")
+        await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+        return
+
     job_id = data.get("job_id")
 
     # If from_pel is not explicitly provided (None), default to False (run stale check).
@@ -424,7 +434,7 @@ async def run_consumer(
                     GROUP_LLM_WORKER,
                     CONSUMER_NAME,
                     id="0",  # Read pending messages from PEL
-                    count=1,
+                    count=PEL_BATCH_SIZE,
                     block_ms=1000,  # Short block for responsiveness
                 )
 
