@@ -399,7 +399,6 @@ async def _handle_intent_result(
         if redis_client:
             try:
                 await release_user_lock(redis_client, str(user_id))
-                await redis_client.aclose()
             except Exception:
                 logger.exception("Failed to release user lock for user %s", user_id)
         logger.info("Sent search results to user %s for query %s", user_id, query)

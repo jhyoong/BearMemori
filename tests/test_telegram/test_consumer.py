@@ -431,8 +431,13 @@ class TestHandleIntentResultSearch:
         )
 
     @pytest.mark.asyncio
-    async def test_search_lock_release_closes_redis_connection(self):
-        """Test that redis client connection is closed after releasing lock."""
+    async def test_search_lock_release_does_not_close_redis_connection(self):
+        """Test that redis client connection is NOT closed after releasing lock.
+
+        This is a regression test for the bug where aclose() was incorrectly
+        called, which would close the shared Redis connection and cause issues
+        for other parts of the application.
+        """
         mock_redis = AsyncMock()
 
         app = _make_application()
@@ -448,8 +453,24 @@ class TestHandleIntentResultSearch:
         with patch("tg_gateway.consumer.release_user_lock"):
             await _handle_intent_result(app, "12345", content)
 
-            # Verify redis client aclose is called
-            mock_redis.aclose.assert_called_once()
+            # Verify redis client aclose is NOT called (shared connection should stay open)
+            mock_redis.aclose.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_search_intent_does_not_close_redis_client(self):
+        """Verify search intent releases the lock but does NOT close the shared Redis client."""
+        application = _make_application()
+        mock_redis = application.bot_data["redis"] = AsyncMock()
+
+        content = {
+            "intent": "search",
+            "query": "test query",
+            "results": [],
+        }
+
+        await _handle_intent_result(application, "12345", content)
+
+        mock_redis.aclose.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_search_with_results_sends_keyboard(self):
