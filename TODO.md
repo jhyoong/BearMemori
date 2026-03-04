@@ -3,16 +3,7 @@
 ## Critical
 1. assistant chatbot - unable to actually make tasks or reminders. Telegram interface in this assistance will need a yes / no option for allowing creation of tasks/reminders/memories.
 
-~~2. When interacting with searched memory (image with no description), the telegram buttons all don't respond except for delete.~~ (Fixed in v0.1.1)
-
-~~3. When using natural language to set a reminder, the LLM does properly send a proposed time to which the user accepts. But the system then overrides it and follows up with a prompt asking for the time to set.~~ (Fixed in v0.1.1)
-
-4.  Bug: /cancel doesn't clear PENDING_LLM_CONVERSATION
-      # In cancel_command (lines 50-53):
-   context.user_data.pop(PENDING_TAG_MEMORY_ID, None)
-   context.user_data.pop(PENDING_TASK_MEMORY_ID, None)
-   context.user_data.pop(PENDING_REMINDER_MEMORY_ID, None)
-   # PENDING_LLM_CONVERSATION is NOT cleared!
+2. Conversation flow in ambiguous intent needs to be fixed. The behaviour should be adjusted to: 1. send follow up message. 2. Confirm with the user in natural language, asking if it is correct or not ( telegram yes / no buttons ) 3. Send the actual tool call with the correct information if user presses yes, or send another follow up message to user if pressed no. Continues for up to 3 nos before cancelling the current conversation ( ask the user to retry ). The entire conversation history must be maintained in this period and sent to the LLM so that it has all of the context needed, such as timestamps and current user timezone. 
 
 ## Minor
 1. Editing tags on pictures seem to add them. This needs to be better managed ( edit vs add vs delete tags )

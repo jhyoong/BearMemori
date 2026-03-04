@@ -419,6 +419,10 @@ async def _handle_intent_result(
         user_data[PENDING_LLM_CONVERSATION] = {
             "memory_id": memory_id,
             "original_text": query,
+            "original_timestamp": content.get("original_timestamp"),
+            "user_timezone": content.get("user_timezone"),
+            "source_chat_id": content.get("source_chat_id"),
+            "source_message_id": content.get("source_message_id"),
             "followup_question": followup_question,
         }
         logger.info(

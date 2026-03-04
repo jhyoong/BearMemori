@@ -214,7 +214,9 @@ async def receive_custom_date(
         if memory and memory.content:
             description = memory.content
     except Exception:
-        logger.exception(f"Failed to fetch memory {memory_id} content for task description")
+        logger.exception(
+            f"Failed to fetch memory {memory_id} content for task description"
+        )
 
     # Create task with custom due date and real memory content
     task_data = TaskCreate(
@@ -288,7 +290,9 @@ async def receive_custom_reminder(
         if memory and memory.content:
             reminder_text = memory.content
     except Exception:
-        logger.exception(f"Failed to fetch memory {memory_id} content for reminder text")
+        logger.exception(
+            f"Failed to fetch memory {memory_id} content for reminder text"
+        )
 
     # Create reminder with custom time and real memory content
     reminder_data = ReminderCreate(
@@ -370,10 +374,18 @@ async def receive_followup_answer(
                 job_type=JobType.intent_classify,
                 payload={
                     "message": original_text,
-                    "memory_id": memory_id,
+                    "original_timestamp": pending.get("original_timestamp"),
+                    "user_timezone": pending.get("user_timezone"),
+                    "source_chat_id": pending.get("source_chat_id"),
+                    "source_message_id": pending.get("source_message_id"),
                     "followup_context": {
                         "followup_question": followup_question,
                         "user_answer": user_answer,
+                        "conversation_history": [
+                            {"role": "user", "content": original_text},
+                            {"role": "assistant", "content": followup_question},
+                            {"role": "user", "content": user_answer},
+                        ],
                     },
                 },
                 user_id=user.id,

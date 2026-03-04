@@ -59,6 +59,12 @@ The user answered: {user_answer}
 Original timestamp: {original_timestamp}
 User timezone: {user_timezone}
 
+CRITICAL: When resolving time references like "5pm", use the provided
+user_timezone ({user_timezone}) to convert to UTC. For example, if
+user_timezone is "Asia/Singapore" and user says "5pm", the resolved
+time should be computed as 5pm in Singapore = 17:00 - 8 hours = 09:00 UTC.
+Do NOT assume times are in UTC - always use the provided user_timezone.
+
 Based on this conversation context, re-classify the intent and extract entities.
 
 CRITICAL RULES FOR INTENT CLASSIFICATION:
