@@ -156,3 +156,60 @@ class TestRetryManagerInterface:
         result = manager.backoff_seconds("unknown-job")
 
         assert result == 0.0
+
+
+class TestRetryTimeTracking:
+    """Tests for retry time tracking with delay markers."""
+
+    def test_is_ready_for_retry_true_when_no_delay_set(self):
+        """is_ready_for_retry returns True when no delay is set."""
+        manager = RetryManager()
+
+        result = manager.is_ready_for_retry("job-1")
+
+        assert result is True
+
+    def test_is_ready_for_retry_false_before_delay(self):
+        """is_ready_for_retry returns False before delay has elapsed."""
+        current_time = [1000.0]
+        manager = RetryManager(time_func=lambda: current_time[0])
+
+        # Set a delay of 10 seconds
+        manager.set_next_retry_time("job-1", 10.0)
+
+        # At current_time (1000s), next_retry is 1010s - not ready yet
+        assert manager.is_ready_for_retry("job-1") is False
+
+    def test_is_ready_for_retry_true_after_delay(self):
+        """is_ready_for_retry returns True after delay has elapsed."""
+        current_time = [1000.0]
+        manager = RetryManager(time_func=lambda: current_time[0])
+
+        # Set a delay of 10 seconds
+        manager.set_next_retry_time("job-1", 10.0)
+
+        # At current_time + 10 (1010s), next_retry is 1010s - ready now
+        current_time[0] = 1010.0
+        assert manager.is_ready_for_retry("job-1") is True
+
+        # At current_time + 11 (1011s), still ready
+        current_time[0] = 1011.0
+        assert manager.is_ready_for_retry("job-1") is True
+
+    def test_clear_removes_next_retry_time(self):
+        """clear removes the next_retry_time for a job."""
+        current_time = [1000.0]
+        manager = RetryManager(time_func=lambda: current_time[0])
+
+        # Set a delay
+        manager.set_next_retry_time("job-1", 10.0)
+
+        # Verify delay is set
+        assert manager._next_retry_time.get("job-1") == 1010.0
+
+        # Clear the job
+        manager.clear("job-1")
+
+        # Verify delay is removed
+        assert "job-1" not in manager._next_retry_time
+        assert manager.is_ready_for_retry("job-1") is True

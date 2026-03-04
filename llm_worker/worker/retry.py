@@ -27,6 +27,7 @@ class RetryManager:
         self._attempts: dict[str, int] = {}
         self._failure_types: dict[str, FailureType] = {}
         self._first_unavailable_time: dict[str, float] = {}
+        self._next_retry_time: dict[str, float] = {}
         # Store custom time function or use a lambda to look up time.time dynamically
         # This allows patches to time.time to work
         self._time_func = time_func if time_func is not None else (lambda: time.time())
@@ -112,3 +113,15 @@ class RetryManager:
         self._attempts.pop(job_id, None)
         self._failure_types.pop(job_id, None)
         self._first_unavailable_time.pop(job_id, None)
+        self._next_retry_time.pop(job_id, None)
+
+    def set_next_retry_time(self, job_id: str, delay_seconds: float) -> None:
+        """Set the earliest time this job should be retried."""
+        self._next_retry_time[job_id] = self._time_func() + delay_seconds
+
+    def is_ready_for_retry(self, job_id: str) -> bool:
+        """Return True if the job's retry delay has elapsed or no delay is set."""
+        next_time = self._next_retry_time.get(job_id)
+        if next_time is None:
+            return True
+        return self._time_func() >= next_time

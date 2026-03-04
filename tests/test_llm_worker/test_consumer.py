@@ -1,5 +1,6 @@
 """Tests for the LLM worker consumer loop."""
 
+import json
 import pytest
 import asyncio
 from unittest.mock import AsyncMock
@@ -22,6 +23,7 @@ from shared_lib.redis_streams import (
     STREAM_LLM_TASK_MATCH,
     STREAM_LLM_EMAIL_EXTRACT,
     GROUP_LLM_WORKER,
+    consume_multi,
     create_consumer_group,
     publish,
     consume,
@@ -360,7 +362,7 @@ async def test_consumer_graceful_shutdown(
     mock_redis, mock_llm_client, mock_core_api, retry_tracker, llm_worker_config
 ):
     """Consumer exits cleanly on CancelledError."""
-    # Setup: Add a message that will cause the consumer to sleep
+    # Setup: Add a message to the stream
     job_id = "job-shutdown"
     payload = {"memory_id": "mem-5"}
     await publish(
@@ -377,29 +379,68 @@ async def test_consumer_graceful_shutdown(
     mock_handler = create_mock_handler({"success": True})
     handlers = {"email_extract": mock_handler}
 
-    # Create a consumer task that will be cancelled
-    async def run_with_timeout():
-        # This should handle CancelledError gracefully
-        return await run_consumer(
-            redis_client=mock_redis,
-            handlers=handlers,
-            core_api=mock_core_api,
-            retry_tracker=retry_tracker,
-            config=llm_worker_config,
-        )
+    # Mock consume_multi to return empty on first call (no PEL), then the message
+    # New format: [(stream_name, msg_id, data)]
+    original_consume_multi = consume_multi
 
-    # Run consumer with cancellation
-    task = asyncio.create_task(run_with_timeout())
-    await asyncio.sleep(0.1)  # Let consumer start
+    async def mock_consume_multi(redis_client, streams, group_name, consumer_name, count=10, block_ms=5000):
+        # First call: PEL check - return empty
+        if "0" in streams.values():
+            return []
+        # Second call: new messages - return the message from email_extract stream
+        # Return format: [(stream_name, msg_id, data)]
+        messages = await original_consume_multi(redis_client, streams, group_name, consumer_name, count, block_ms)
+        # Transform format: [(msg_id, data)] -> [(stream_name, msg_id, data)]
+        result = []
+        for stream_name in streams.keys():
+            for msg_id, data in messages:
+                if stream_name in msg_id:
+                    result.append((stream_name, msg_id, data))
+                    break
+        return result
 
-    # Cancel the task
-    task.cancel()
+    # Actually, we need to mock differently since consume_multi is imported at module level
+    # Use unittest.mock.patch instead
+    from unittest.mock import patch
 
-    # Verify: Task raises CancelledError but doesn't crash
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    # Collect the message from the stream to know its ID
+    messages = await original_consume_multi(mock_redis, {STREAM_LLM_EMAIL_EXTRACT: ">"}, GROUP_LLM_WORKER, CONSUMER_NAME, count=1)
+    msg_id = messages[0][1] if messages else None
 
-    # Verify: No unhandled exceptions occurred
+    async def mock_consume_multi_impl(redis_client, streams, group_name, consumer_name, count=10, block_ms=5000):
+        # First call: PEL check with id="0"
+        if any(v == "0" for v in streams.values()):
+            return []
+        # Second call: new messages with id=">"
+        # Return the message we captured
+        if msg_id:
+            return [(STREAM_LLM_EMAIL_EXTRACT, msg_id, {"job_id": job_id, "payload": payload, "user_id": 12345, "job_type": "email_extract"})]
+        return []
+
+    with patch("worker.consumer.consume_multi", side_effect=mock_consume_multi_impl):
+        # Create a consumer task that will be cancelled
+        async def run_with_timeout():
+            # This should handle CancelledError gracefully
+            return await run_consumer(
+                redis_client=mock_redis,
+                handlers=handlers,
+                core_api=mock_core_api,
+                retry_tracker=retry_tracker,
+                config=llm_worker_config,
+            )
+
+        # Run consumer with cancellation
+        task = asyncio.create_task(run_with_timeout())
+        await asyncio.sleep(0.1)  # Let consumer start
+
+        # Cancel the task
+        task.cancel()
+
+        # Verify: Task raises CancelledError but doesn't crash
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # Verify: No unhandled exceptions occurred
 
 
 @pytest.mark.asyncio
@@ -1980,16 +2021,17 @@ class TestPELBatchSize:
         """When reading from PEL (id="0"), count should be >= 50 to process all pending messages."""
         from unittest.mock import patch, AsyncMock
 
-        # We'll mock the consume function to capture the parameters
+        # We'll mock the consume_multi function to capture the parameters
         consume_call_args = []
 
-        async def mock_consume(*args, **kwargs):
-            consume_call_args.append((args, kwargs))
+        async def mock_consume_multi(redis_client, streams, group_name, consumer_name, count=10, block_ms=5000):
+            consume_call_args.append({"streams": streams, "count": count, "block_ms": block_ms})
             # Return empty list to stop the consumer loop
+            # New format: [(stream_name, msg_id, data)]
             return []
 
-        # Patch the consume function in the consumer module
-        with patch("worker.consumer.consume", side_effect=mock_consume):
+        # Patch the consume_multi function in the consumer module
+        with patch("worker.consumer.consume_multi", side_effect=mock_consume_multi):
             mock_handler = create_mock_handler({"intent": "test"})
             handlers = {"intent_classify": mock_handler}
 
@@ -2013,19 +2055,18 @@ class TestPELBatchSize:
 
             await run_consumer_with_limit()
 
-        # Find the call where id="0" (PEL read)
+        # Find the call where streams has "0" (PEL read)
+        # New format: streams dict, so check if any stream uses "0"
         pel_calls = [
-            (args, kwargs)
-            for args, kwargs in consume_call_args
-            if kwargs.get("id") == "0"
+            call for call in consume_call_args if "0" in call["streams"].values()
         ]
 
         # There should be at least one PEL read call
-        assert len(pel_calls) > 0, "Expected at least one PEL read (id='0') call"
+        assert len(pel_calls) > 0, "Expected at least one PEL read (streams with '0') call"
 
         # Verify the count parameter for PEL reads is >= 50
-        for args, kwargs in pel_calls:
-            count = kwargs.get("count", 1)
+        for call in pel_calls:
+            count = call["count"]
             assert count >= 50, (
                 f"PEL read count should be >= 50 to process all pending messages, "
                 f"but got count={count}. This causes only one pending message "
@@ -2039,15 +2080,16 @@ class TestPELBatchSize:
         """PEL read should use the PEL_BATCH_SIZE constant value."""
         from unittest.mock import patch
 
-        # Capture the count value used in PEL reads
+        # Capture the count value used in PEL reads (stream id="0")
         pel_count_values = []
 
-        async def mock_consume(*args, **kwargs):
-            if kwargs.get("id") == "0":
-                pel_count_values.append(kwargs.get("count", 1))
+        async def mock_consume_multi(redis_client, streams, group_name, consumer_name, count=10, block_ms=5000):
+            # Check if any stream uses "0" (PEL read)
+            if "0" in streams.values():
+                pel_count_values.append(count)
             return []
 
-        with patch("worker.consumer.consume", side_effect=mock_consume):
+        with patch("worker.consumer.consume_multi", side_effect=mock_consume_multi):
             mock_handler = create_mock_handler({"intent": "test"})
             handlers = {"intent_classify": mock_handler}
 
@@ -2692,6 +2734,118 @@ class TestPELRecoveryIntegration:
 
         # Verify: All jobs completed
         assert mock_core_api.update_job.call_count >= 2
+
+
+# =============================================================================
+# Task T005: Non-blocking retry with delay marker
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_invalid_response_retry_does_not_block(
+    mock_redis, mock_llm_client, mock_core_api, retry_tracker, llm_worker_config
+):
+    """INVALID_RESPONSE retry should re-enqueue message without blocking asyncio.sleep."""
+    # Setup: Add a message to the stream
+    job_id = "job-non-blocking"
+    payload = {"memory_id": "mem-block"}
+    await publish(
+        mock_redis,
+        STREAM_LLM_IMAGE_TAG,
+        {
+            "job_id": job_id,
+            "payload": payload,
+            "user_id": 12345,
+            "job_type": "image_tag",
+        },
+    )
+
+    # Create mock handler that raises a JSON decode error (INVALID_RESPONSE)
+    error = json.JSONDecodeError("Invalid JSON", "doc", 0)
+    mock_handler = create_mock_handler(None, raises=error)
+
+    handlers = {"image_tag": mock_handler}
+
+    # Pre-seed with 2 attempts so we're on the 3rd (backoff will be 4.0 seconds)
+    retry_tracker.record_attempt(job_id, FailureType.INVALID_RESPONSE)
+    retry_tracker.record_attempt(job_id, FailureType.INVALID_RESPONSE)
+
+    # Import asyncio.sleep to verify it's not called
+    import asyncio
+
+    # Mock asyncio.sleep to track if it was called
+    original_sleep = asyncio.sleep
+    sleep_called = []
+    sleep_args = []
+
+    async def mock_sleep(duration):
+        sleep_called.append(True)
+        sleep_args.append(duration)
+        # Don't actually sleep
+
+    asyncio.sleep = mock_sleep
+
+    try:
+        # Execute: Process one message - should fail with INVALID_RESPONSE
+        messages = await consume(
+            mock_redis,
+            STREAM_LLM_IMAGE_TAG,
+            GROUP_LLM_WORKER,
+            CONSUMER_NAME,
+            count=1,
+        )
+
+        assert len(messages) == 1
+        message_id, data = messages[0]
+
+        # Mock publish to capture re-enqueued messages
+        original_publish = publish
+        requeued_messages = []
+
+        async def mock_publish_capture(redis_client, stream_name, data):
+            requeued_messages.append((stream_name, data.copy()))
+            return await original_publish(redis_client, stream_name, data)
+
+        # Patch publish to capture re-enqueue
+        import unittest.mock
+
+        with unittest.mock.patch("worker.consumer.publish", side_effect=mock_publish_capture):
+            await _process_message(
+                redis_client=mock_redis,
+                stream_name=STREAM_LLM_IMAGE_TAG,
+                message_id=message_id,
+                data=data,
+                handlers=handlers,
+                core_api=mock_core_api,
+                retry_tracker=retry_tracker,
+                config=llm_worker_config,
+            )
+
+        # Verify: asyncio.sleep was NOT called (the fix)
+        assert len(sleep_called) == 0, (
+            f"asyncio.sleep should NOT be called for INVALID_RESPONSE, but was called {len(sleep_called)} times with args {sleep_args}"
+        )
+
+        # Verify: Message was re-enqueued via publish
+        assert len(requeued_messages) >= 1, (
+            "Message should be re-enqueued via publish for retry"
+        )
+        requeued_stream, requeued_data = requeued_messages[0]
+        assert requeued_stream == STREAM_LLM_IMAGE_TAG
+        assert requeued_data.get("job_id") == job_id
+
+        # Verify: Job status was updated to processing
+        mock_core_api.update_job.assert_called_with(
+            job_id=job_id, status="processing", error_message=None
+        )
+
+        # Verify: Retry time was set
+        assert retry_tracker.is_ready_for_retry(job_id) is False, (
+            "Job should not be ready for retry yet (delay set)"
+        )
+
+    finally:
+        # Restore original sleep
+        asyncio.sleep = original_sleep
 
 
 # =============================================================================

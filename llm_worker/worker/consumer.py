@@ -17,7 +17,7 @@ from shared_lib.redis_streams import (
     STREAM_NOTIFY_TELEGRAM,
     ack,
     acquire_user_lock,
-    consume,
+    consume_multi,
     create_consumer_group,
     publish,
     release_user_lock,
@@ -131,6 +131,12 @@ async def _process_message(
         return
 
     job_id = data.get("job_id")
+
+    # Skip jobs that are waiting for their retry delay to elapse
+    # This prevents blocking while waiting for backoff periods
+    if job_id and not retry_tracker.is_ready_for_retry(job_id):
+        logger.debug("Job %s not ready for retry yet, skipping", job_id)
+        return
 
     # If from_pel is not explicitly provided (None), default to False (run stale check).
     # This ensures backward compatibility for direct function calls.
@@ -282,19 +288,22 @@ async def _process_message(
             should_retry = retry_tracker.should_retry(job_id)
 
             if should_retry:
-                # Should retry - update status to processing, don't ack
+                # Should retry - update status to processing
                 await core_api.update_job(
                     job_id=job_id, status="processing", error_message=None
                 )
                 backoff = retry_tracker.backoff_seconds(job_id)
-                logger.info(
-                    f"Job {job_id} failed (attempt {current_attempt}), "
-                    f"will retry in {backoff:.0f}s"
-                )
-                # Add backoff delay before returning (message not acked, will be retried)
-                await asyncio.sleep(backoff)
+                # Set the next retry time (delay marker)
+                retry_tracker.set_next_retry_time(job_id, backoff)
+                # Ack the original message and re-enqueue it for later retry
+                await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+                await publish(redis_client, stream_name, data)
                 if user_lock_acquired:
                     await release_user_lock(redis_client, str(user_id))
+                logger.info(
+                    f"Job {job_id} failed (attempt {current_attempt}), "
+                    f"will retry in {backoff:.0f}s (attempt {current_attempt}/{RetryManager.MAX_RETRIES})"
+                )
             else:
                 # Max retries exceeded - mark as failed
                 logger.error(f"Job {job_id} failed after {current_attempt} attempts")
@@ -402,71 +411,65 @@ async def run_consumer(
 ) -> None:
     """Run the LLM worker consumer loop.
 
-    Creates consumer groups for all streams and processes messages in round-robin
-    across all streams.
-
-    Args:
-        redis_client: Async Redis client instance
-        handlers: Dict mapping handler keys to handler instances
-        core_api: Core API client
-        retry_tracker: Retry manager for managing retry logic
-        config: LLM worker configuration
+    Uses multi-stream xreadgroup to check all streams in a single Redis call,
+    reducing idle overhead from 10 calls to 2 per cycle.
     """
-    # Get stream names from the mapping values
     streams = list(STREAM_HANDLER_MAP.values())
 
-    # Create consumer groups for all streams
     for stream_name in streams:
         await create_consumer_group(redis_client, stream_name, GROUP_LLM_WORKER)
-        logger.info(f"Created consumer group for {stream_name}")
+        logger.info("Created consumer group for %s", stream_name)
 
-    logger.info(f"Starting consumer loop for {len(streams)} streams")
+    logger.info("Starting consumer loop for %d streams", len(streams))
 
     try:
         while True:
-            # Round-robin through all streams
-            for stream_name in streams:
-                # First, try to read pending messages with "0"
-                from_pel = True
-                messages = await consume(
+            # 1. Check PEL across all streams (single call)
+            pel_streams = {s: "0" for s in streams}
+            pel_messages = await consume_multi(
+                redis_client,
+                pel_streams,
+                GROUP_LLM_WORKER,
+                CONSUMER_NAME,
+                count=PEL_BATCH_SIZE,
+                block_ms=100,
+            )
+
+            # 2. If no PEL messages, check for new messages (single call)
+            if not pel_messages:
+                new_streams = {s: ">" for s in streams}
+                new_messages = await consume_multi(
                     redis_client,
-                    stream_name,
+                    new_streams,
                     GROUP_LLM_WORKER,
                     CONSUMER_NAME,
-                    id="0",  # Read pending messages from PEL
-                    count=PEL_BATCH_SIZE,
-                    block_ms=1000,  # Short block for responsiveness
+                    count=1,
+                    block_ms=2000,
+                )
+                from_pel = False
+                all_messages = new_messages
+            else:
+                from_pel = True
+                all_messages = pel_messages
+
+            for stream_name, message_id, data in all_messages:
+                logger.info(
+                    "Processing message %s from %s", message_id, stream_name
+                )
+                await _process_message(
+                    redis_client=redis_client,
+                    stream_name=stream_name,
+                    message_id=message_id,
+                    data=data,
+                    handlers=handlers,
+                    core_api=core_api,
+                    retry_tracker=retry_tracker,
+                    config=config,
+                    from_pel=from_pel,
                 )
 
-                # If no pending messages, try reading new messages
-                if not messages:
-                    from_pel = False
-                    messages = await consume(
-                        redis_client,
-                        stream_name,
-                        GROUP_LLM_WORKER,
-                        CONSUMER_NAME,
-                        id=">",  # Read new messages
-                        count=1,
-                        block_ms=1000,  # Short block for responsiveness
-                    )
-
-                for message_id, data in messages:
-                    logger.info(f"Processing message {message_id} from {stream_name}")
-                    await _process_message(
-                        redis_client=redis_client,
-                        stream_name=stream_name,
-                        message_id=message_id,
-                        data=data,
-                        handlers=handlers,
-                        core_api=core_api,
-                        retry_tracker=retry_tracker,
-                        config=config,
-                        from_pel=from_pel,
-                    )
-
-            # Small delay to prevent tight loop
-            await asyncio.sleep(0.1)
+            if not all_messages:
+                await asyncio.sleep(0.1)
 
     except asyncio.CancelledError:
         logger.info("Consumer cancelled, shutting down gracefully")
