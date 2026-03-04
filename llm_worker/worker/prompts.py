@@ -22,6 +22,14 @@ Possible intents:
 - general_note: user is saving a general note or thought without specific time/action requirements
 - ambiguous: cannot determine intent with confidence, need more context
 
+CRITICAL RULES FOR INTENT CLASSIFICATION:
+- reminder: ONLY return this intent if the message contains an EXPLICIT time reference (e.g., "at 5pm", "tomorrow", "in 30 minutes", "next week", "on Monday"). If no explicit time is mentioned, return "ambiguous".
+- task: ONLY return this intent if the message contains an EXPLICIT due date/deadline (e.g., "due tomorrow", "due on Friday", "due next week"). If no explicit due date is mentioned, return "ambiguous".
+- NEVER make up a time or date. If the message lacks explicit time information, you MUST return "ambiguous".
+- Examples of messages that should be "ambiguous": "remind me", "remind me about the meeting", "remind me to call mom", "create a task", "add a todo". These have no specific time/deadline.
+- Examples of valid "reminder": "remind me in 10 minutes", "remind me tomorrow at 3pm", "remind me on Monday at 9am".
+- Examples of valid "task": "task to submit report due tomorrow", "todo due Friday", "task due next week".
+
 For each intent, extract the following structured entities:
 
 If intent is "reminder":
@@ -52,6 +60,12 @@ Original timestamp: {original_timestamp}
 User timezone: {user_timezone}
 
 Based on this conversation context, re-classify the intent and extract entities.
+
+CRITICAL RULES FOR INTENT CLASSIFICATION:
+- reminder: ONLY return this intent if the message contains an EXPLICIT time reference (e.g., "at 5pm", "tomorrow", "in 30 minutes", "next week", "on Monday"). If no explicit time is mentioned, return "ambiguous".
+- task: ONLY return this intent if the message contains an EXPLICIT due date/deadline (e.g., "due tomorrow", "due on Friday", "due next week"). If no explicit due date is mentioned, return "ambiguous".
+- NEVER make up a time or date. If the message lacks explicit time information, you MUST return "ambiguous".
+- Use the user's answer to the follow-up question to extract the missing time/deadline information.
 
 Possible intents:
 - reminder: user wants to be reminded about something at a specific time
