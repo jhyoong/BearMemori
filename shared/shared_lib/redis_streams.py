@@ -127,6 +127,68 @@ async def consume(
     return messages
 
 
+async def consume_multi(
+    redis_client,
+    streams: dict[str, str],
+    group_name: str,
+    consumer_name: str,
+    count: int = 10,
+    block_ms: int = 5000,
+) -> list[tuple[str, str, dict[str, Any] | None]]:
+    """Consume messages from multiple Redis streams in a single xreadgroup call.
+
+    Args:
+        redis_client: Async Redis client instance
+        streams: Dict mapping stream_name -> last_id (">" for new, "0" for PEL)
+        group_name: Name of the consumer group
+        consumer_name: Name of this consumer instance
+        count: Maximum number of messages to retrieve per stream
+        block_ms: Time to block waiting for messages in milliseconds
+
+    Returns:
+        List of (stream_name, message_id, data_dict) tuples.
+    """
+    result = await redis_client.xreadgroup(
+        group_name, consumer_name, streams, count=count, block=block_ms
+    )
+
+    messages = []
+    if result:
+        for stream, stream_messages in result:
+            s_name = stream.decode() if isinstance(stream, bytes) else stream
+            for message_id, fields in stream_messages:
+                msg_id = (
+                    message_id.decode()
+                    if isinstance(message_id, bytes)
+                    else message_id
+                )
+                data_field = (
+                    fields.get(b"data")
+                    if b"data" in fields
+                    else fields.get("data")
+                )
+                if data_field:
+                    json_str = (
+                        data_field.decode()
+                        if isinstance(data_field, bytes)
+                        else data_field
+                    )
+                    try:
+                        data = json.loads(json_str)
+                        messages.append((s_name, msg_id, data))
+                    except json.JSONDecodeError:
+                        logger.debug(
+                            "Message %s has invalid JSON in data field", msg_id
+                        )
+                else:
+                    logger.debug(
+                        "Message %s missing 'data' field, returning None", msg_id
+                    )
+                    messages.append((s_name, msg_id, None))
+
+    return messages
+
+
 async def ack(redis_client, stream_name: str, group_name: str, message_id: str) -> None:
     """Acknowledge a message in a Redis stream consumer group.
 
@@ -160,7 +222,12 @@ async def acquire_user_lock(
     """
     lock_key = f"llm:user_lock:{user_id}"
     result = await redis_client.set(lock_key, "1", nx=True, ex=ttl_seconds)
-    return result is not None
+    acquired = result is not None
+    if acquired:
+        logger.info("Lock ACQUIRED for user %s (ttl=%ds)", user_id, ttl_seconds)
+    else:
+        logger.debug("Lock NOT acquired for user %s (already held)", user_id)
+    return acquired
 
 
 async def release_user_lock(redis_client, user_id: str) -> None:
@@ -172,5 +239,6 @@ async def release_user_lock(redis_client, user_id: str) -> None:
     """
     lock_key = f"llm:user_lock:{user_id}"
     await redis_client.delete(lock_key)
+    logger.info("Lock RELEASED for user %s", user_id)
 
 

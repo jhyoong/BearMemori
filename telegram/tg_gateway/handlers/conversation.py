@@ -45,6 +45,7 @@ def increment_queue(context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     count = context.user_data.get(USER_QUEUE_COUNT, 0) + 1
     context.user_data[USER_QUEUE_COUNT] = count
+    logger.info("Queue count incremented to %d", count)
     return count
 
 
@@ -61,6 +62,7 @@ def decrement_queue(context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     count = max(0, context.user_data.get(USER_QUEUE_COUNT, 0) - 1)
     context.user_data[USER_QUEUE_COUNT] = count
+    logger.info("Queue count decremented to %d", count)
     return count
 
 

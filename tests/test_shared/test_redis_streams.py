@@ -1,14 +1,14 @@
-"""Tests for shared_lib/redis_streams.py consume() function.
+"""Tests for shared_lib/redis_streams.py consume() and consume_multi() functions.
 
-These tests verify that the consume() function properly handles messages
-that lack the expected "data" field (currently broken - silently skipped).
+These tests verify that the consume() and consume_multi() functions properly
+handle messages that lack the expected "data" field (currently broken - silently skipped).
 """
 
 import pytest
 import pytest_asyncio
 import fakeredis.aioredis
 
-from shared_lib.redis_streams import consume, create_consumer_group, publish
+from shared_lib.redis_streams import consume, consume_multi, create_consumer_group, publish
 
 
 @pytest_asyncio.fixture
@@ -143,3 +143,84 @@ async def test_consume_empty_stream(redis_client, stream_setup):
     messages = await consume(redis_client, stream_name, group_name, consumer_name)
 
     assert messages == []
+
+
+# Tests for consume_multi()
+
+
+@pytest_asyncio.fixture
+async def multi_stream_setup(redis_client):
+    """Setup multiple streams with consumer group for testing."""
+    stream1 = "test:stream:1"
+    stream2 = "test:stream:2"
+    group_name = "test-group-multi"
+    consumer_name = "test-consumer-multi"
+
+    # Create consumer group for both streams
+    await create_consumer_group(redis_client, stream1, group_name)
+    await create_consumer_group(redis_client, stream2, group_name)
+
+    return {
+        "redis_client": redis_client,
+        "streams": {stream1: ">", stream2: ">"},
+        "group_name": group_name,
+        "consumer_name": consumer_name,
+    }
+
+
+@pytest.mark.asyncio
+async def test_consume_multi_returns_empty_when_no_messages(multi_stream_setup):
+    """Test that consume_multi() returns empty list when no messages are available."""
+    redis_client = multi_stream_setup["redis_client"]
+    streams = multi_stream_setup["streams"]
+    group_name = multi_stream_setup["group_name"]
+    consumer_name = multi_stream_setup["consumer_name"]
+
+    # Consume from empty streams
+    messages = await consume_multi(redis_client, streams, group_name, consumer_name)
+
+    assert messages == []
+
+
+@pytest.mark.asyncio
+async def test_consume_multi_single_stream_with_message(multi_stream_setup):
+    """Test that consume_multi() reads a message from a single stream."""
+    redis_client = multi_stream_setup["redis_client"]
+
+    # Publish a message to one stream
+    await publish(redis_client, "test:stream:1", {"key": "value"})
+
+    # Consume from both streams
+    messages = await consume_multi(
+        redis_client,
+        {"test:stream:1": ">", "test:stream:2": ">"},  # stream:2 has no messages
+        "test-group-multi",
+        "test-consumer-multi",
+    )
+
+    # Should get 1 message from stream:1
+    assert len(messages) == 1
+    assert messages[0][0] == "test:stream:1"  # stream_name
+    assert messages[0][2] == {"key": "value"}  # data
+
+
+@pytest.mark.asyncio
+async def test_consume_multi_with_data_field_none(multi_stream_setup):
+    """Test that consume_multi() handles messages without 'data' field."""
+    redis_client = multi_stream_setup["redis_client"]
+
+    # Add a message without "data" field directly
+    msg_id = await redis_client.xadd("test:stream:1", {"other_field": "value"})
+
+    # Consume from both streams
+    messages = await consume_multi(
+        redis_client,
+        {"test:stream:1": ">", "test:stream:2": ">"},  # stream:2 has no messages
+        "test-group-multi",
+        "test-consumer-multi",
+    )
+
+    # Should get 1 message with None data (not silently dropped)
+    assert len(messages) == 1
+    assert messages[0][0] == "test:stream:1"  # stream_name
+    assert messages[0][2] is None  # data is None when field is missing

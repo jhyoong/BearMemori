@@ -394,6 +394,11 @@ async def _handle_intent_result(
 
         # Decrement queue: search is self-contained; no button action needed.
         user_data[USER_QUEUE_COUNT] = max(0, user_data.get(USER_QUEUE_COUNT, 0) - 1)
+        logger.info(
+            "Queue count decremented for user %s (search intent, count: %d)",
+            user_id,
+            user_data[USER_QUEUE_COUNT],
+        )
         # Release the per-user lock since search needs no confirmation
         redis_client = application.bot_data.get("redis")
         if redis_client:
