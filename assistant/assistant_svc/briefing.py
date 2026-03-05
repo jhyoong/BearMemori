@@ -1,6 +1,8 @@
 """Builds pre-loaded context briefing for the assistant."""
 
 import logging
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,28 @@ class BriefingBuilder:
         Formats into compact text within the token budget.
         """
         sections = []
+
+        # 0. Time and timezone context
+        try:
+            settings = await self._core_client.get_settings(user_id)
+            tz_name = settings.timezone
+        except Exception:
+            tz_name = "UTC"
+
+        try:
+            user_tz = ZoneInfo(tz_name)
+        except Exception:
+            user_tz = ZoneInfo("UTC")
+
+        now_utc = datetime.now(timezone.utc)
+        now_user = now_utc.astimezone(user_tz)
+
+        sections.append(
+            f"## Time Context\n"
+            f"User timezone: {tz_name}\n"
+            f"Current time (user): {now_user.strftime('%Y-%m-%d %H:%M %Z')}\n"
+            f"Current time (UTC): {now_utc.strftime('%Y-%m-%d %H:%M UTC')}"
+        )
 
         # 1. Upcoming tasks (NOT_DONE, up to 20)
         try:

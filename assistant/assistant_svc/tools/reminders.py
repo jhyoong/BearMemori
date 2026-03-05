@@ -59,7 +59,11 @@ CREATE_REMINDER_SCHEMA = {
                 },
                 "fire_at": {
                     "type": "string",
-                    "description": "When to fire the reminder, in ISO 8601 format",
+                    "description": (
+                        "When to fire the reminder, as an ISO 8601 datetime in UTC "
+                        "(e.g., '2026-03-06T09:00:00Z'). Convert the user's local "
+                        "time to UTC using their timezone before providing this value."
+                    ),
                 },
             },
             "required": ["memory_id", "text", "fire_at"],

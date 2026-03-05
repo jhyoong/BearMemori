@@ -123,6 +123,21 @@ class TestBriefingBuilder:
         assert "Task 20" not in text
 
     @pytest.mark.asyncio
+    async def test_briefing_includes_timezone_and_current_time(
+        self, builder, mock_core_client
+    ):
+        """Briefing includes the user's timezone and current time."""
+        mock_core_client.list_tasks.return_value = []
+        mock_core_client.list_reminders.return_value = []
+        settings = MagicMock()
+        settings.timezone = "Asia/Singapore"
+        mock_core_client.get_settings.return_value = settings
+
+        text = await builder.build(user_id=1)
+        assert "Asia/Singapore" in text
+        assert "Current time" in text
+
+    @pytest.mark.asyncio
     async def test_briefing_trims_to_budget(self, mock_core_client, mock_context_manager):
         """Briefing is trimmed when it exceeds the token budget."""
         # Set a very small budget

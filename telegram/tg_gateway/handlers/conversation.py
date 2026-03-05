@@ -375,6 +375,7 @@ async def receive_followup_answer(
             LLMJobCreate(
                 job_type=JobType.intent_classify,
                 payload={
+                    "memory_id": memory_id,
                     "message": original_text,
                     "original_timestamp": pending.get("original_timestamp"),
                     "user_timezone": pending.get("user_timezone"),

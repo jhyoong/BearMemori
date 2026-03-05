@@ -115,6 +115,12 @@ class IntentHandler(BaseHandler):
             if key != "intent":
                 structured_result[key] = value
 
+        # Forward payload metadata so the Telegram consumer can store it
+        # for followup conversations (timezone, timestamp, source IDs).
+        for meta_key in ("original_timestamp", "user_timezone", "source_chat_id", "source_message_id"):
+            if meta_key not in structured_result:
+                structured_result[meta_key] = payload.get(meta_key)
+
         # Handle stale flag for reminder and task intents
         if intent == "reminder":
             resolved_time = result.get("resolved_time")
