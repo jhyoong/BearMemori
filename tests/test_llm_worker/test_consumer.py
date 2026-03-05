@@ -383,13 +383,17 @@ async def test_consumer_graceful_shutdown(
     # New format: [(stream_name, msg_id, data)]
     original_consume_multi = consume_multi
 
-    async def mock_consume_multi(redis_client, streams, group_name, consumer_name, count=10, block_ms=5000):
+    async def mock_consume_multi(
+        redis_client, streams, group_name, consumer_name, count=10, block_ms=5000
+    ):
         # First call: PEL check - return empty
         if "0" in streams.values():
             return []
         # Second call: new messages - return the message from email_extract stream
         # Return format: [(stream_name, msg_id, data)]
-        messages = await original_consume_multi(redis_client, streams, group_name, consumer_name, count, block_ms)
+        messages = await original_consume_multi(
+            redis_client, streams, group_name, consumer_name, count, block_ms
+        )
         # Transform format: [(msg_id, data)] -> [(stream_name, msg_id, data)]
         result = []
         for stream_name in streams.keys():
@@ -404,17 +408,36 @@ async def test_consumer_graceful_shutdown(
     from unittest.mock import patch
 
     # Collect the message from the stream to know its ID
-    messages = await original_consume_multi(mock_redis, {STREAM_LLM_EMAIL_EXTRACT: ">"}, GROUP_LLM_WORKER, CONSUMER_NAME, count=1)
+    messages = await original_consume_multi(
+        mock_redis,
+        {STREAM_LLM_EMAIL_EXTRACT: ">"},
+        GROUP_LLM_WORKER,
+        CONSUMER_NAME,
+        count=1,
+    )
     msg_id = messages[0][1] if messages else None
 
-    async def mock_consume_multi_impl(redis_client, streams, group_name, consumer_name, count=10, block_ms=5000):
+    async def mock_consume_multi_impl(
+        redis_client, streams, group_name, consumer_name, count=10, block_ms=5000
+    ):
         # First call: PEL check with id="0"
         if any(v == "0" for v in streams.values()):
             return []
         # Second call: new messages with id=">"
         # Return the message we captured
         if msg_id:
-            return [(STREAM_LLM_EMAIL_EXTRACT, msg_id, {"job_id": job_id, "payload": payload, "user_id": 12345, "job_type": "email_extract"})]
+            return [
+                (
+                    STREAM_LLM_EMAIL_EXTRACT,
+                    msg_id,
+                    {
+                        "job_id": job_id,
+                        "payload": payload,
+                        "user_id": 12345,
+                        "job_type": "email_extract",
+                    },
+                )
+            ]
         return []
 
     with patch("worker.consumer.consume_multi", side_effect=mock_consume_multi_impl):
@@ -785,7 +808,6 @@ class TestInvalidResponseClassification:
 
         assert retry_manager.get_failure_type(job_id) == FailureType.INVALID_RESPONSE
 
-        
         # Removed: is_queue_paused() is dead code - removed
 
     @pytest.mark.asyncio
@@ -2019,13 +2041,17 @@ class TestPELBatchSize:
         self, mock_redis, mock_core_api, retry_manager, llm_worker_config
     ):
         """When reading from PEL (id="0"), count should be >= 50 to process all pending messages."""
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import patch
 
         # We'll mock the consume_multi function to capture the parameters
         consume_call_args = []
 
-        async def mock_consume_multi(redis_client, streams, group_name, consumer_name, count=10, block_ms=5000):
-            consume_call_args.append({"streams": streams, "count": count, "block_ms": block_ms})
+        async def mock_consume_multi(
+            redis_client, streams, group_name, consumer_name, count=10, block_ms=5000
+        ):
+            consume_call_args.append(
+                {"streams": streams, "count": count, "block_ms": block_ms}
+            )
             # Return empty list to stop the consumer loop
             # New format: [(stream_name, msg_id, data)]
             return []
@@ -2062,7 +2088,9 @@ class TestPELBatchSize:
         ]
 
         # There should be at least one PEL read call
-        assert len(pel_calls) > 0, "Expected at least one PEL read (streams with '0') call"
+        assert len(pel_calls) > 0, (
+            "Expected at least one PEL read (streams with '0') call"
+        )
 
         # Verify the count parameter for PEL reads is >= 50
         for call in pel_calls:
@@ -2083,7 +2111,9 @@ class TestPELBatchSize:
         # Capture the count value used in PEL reads (stream id="0")
         pel_count_values = []
 
-        async def mock_consume_multi(redis_client, streams, group_name, consumer_name, count=10, block_ms=5000):
+        async def mock_consume_multi(
+            redis_client, streams, group_name, consumer_name, count=10, block_ms=5000
+        ):
             # Check if any stream uses "0" (PEL read)
             if "0" in streams.values():
                 pel_count_values.append(count)
@@ -2165,12 +2195,7 @@ class TestUnparseablePELMessage:
         missing data that cannot be parsed. The consumer should ACK it to
         prevent it from blocking the PEL forever.
         """
-        import time
-        from unittest.mock import patch, AsyncMock
-        from shared_lib.redis_streams import ack
-
-        ts_ms = int(time.time() * 1000)
-        message_id = f"{ts_ms}-0"
+        from unittest.mock import patch
 
         # First, add a valid message to the stream
         job_id = "unparseable-job"
@@ -2366,7 +2391,6 @@ class TestPELRecoveryIntegration:
         - Verify valid message is processed
         - Verify unparseable messages are ACKed
         """
-        import time
         import json
 
         # Add 3 messages in old flat format (no "data" field)
@@ -2390,7 +2414,7 @@ class TestPELRecoveryIntegration:
             )
 
         # Add 1 message in new JSON format (with "data" field)
-        valid_message_id = await publish(
+        _valid_message_id = await publish(
             mock_redis,
             STREAM_LLM_INTENT,
             {
@@ -2482,7 +2506,6 @@ class TestPELRecoveryIntegration:
         Then all 3 messages should be consumed (not blocked by flat format ones)
         The flat format messages should be ACKed after detection
         """
-        import time
         import json
 
         # Add 3 messages in mixed format: 2 old flat format, 1 new JSON format
@@ -2510,7 +2533,7 @@ class TestPELRecoveryIntegration:
         old_msg_2 = old_msg_2.decode() if isinstance(old_msg_2, bytes) else old_msg_2
 
         # New JSON format (with "data" wrapper)
-        new_msg_id = await publish(
+        _new_msg_id = await publish(
             mock_redis,
             STREAM_LLM_IMAGE_TAG,
             {
@@ -2590,8 +2613,6 @@ class TestPELRecoveryIntegration:
         This verifies T002 fix: Using count >= 50 to read all pending messages,
         not just the first one.
         """
-        import time
-
         # Create 10 messages in the stream
         message_count = 10
         job_ids = []
@@ -2610,8 +2631,8 @@ class TestPELRecoveryIntegration:
             )
 
         # Mock handler
-        mock_handler = create_mock_handler({"intent": f"test-intent"})
-        handlers = {"intent_classify": mock_handler}
+        mock_handler = create_mock_handler({"intent": "test-intent"})
+        _handlers = {"intent_classify": mock_handler}
 
         # Consume with high count from PEL (should get all 10)
         messages = await consume(
@@ -2640,7 +2661,6 @@ class TestPELRecoveryIntegration:
         and some are unparseable (data=None), the valid messages should still be
         processed and unparseable ones should be ACKed.
         """
-        import time
         import json
 
         # Add messages: 2 unparseable (no "data"), 2 valid (with "data")
@@ -2740,6 +2760,7 @@ class TestPELRecoveryIntegration:
 # Task T005: Non-blocking retry with delay marker
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_invalid_response_retry_does_not_block(
     mock_redis, mock_llm_client, mock_core_api, retry_tracker, llm_worker_config
@@ -2808,7 +2829,9 @@ async def test_invalid_response_retry_does_not_block(
         # Patch publish to capture re-enqueue
         import unittest.mock
 
-        with unittest.mock.patch("worker.consumer.publish", side_effect=mock_publish_capture):
+        with unittest.mock.patch(
+            "worker.consumer.publish", side_effect=mock_publish_capture
+        ):
             await _process_message(
                 redis_client=mock_redis,
                 stream_name=STREAM_LLM_IMAGE_TAG,

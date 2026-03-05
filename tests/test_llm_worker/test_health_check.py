@@ -289,12 +289,14 @@ class TestLLMHealthChecker:
         # Seed with existing failure data
         await fake_redis_client.set(
             HEALTH_REDIS_KEY,
-            json.dumps({
-                "status": "unhealthy",
-                "consecutive_failures": 5,
-                "last_success": "2026-01-01T00:00:00+00:00",
-                "last_failure": "2026-03-01T00:00:00+00:00",
-            }),
+            json.dumps(
+                {
+                    "status": "unhealthy",
+                    "consecutive_failures": 5,
+                    "last_success": "2026-01-01T00:00:00+00:00",
+                    "last_failure": "2026-03-01T00:00:00+00:00",
+                }
+            ),
         )
 
         with patch("aiohttp.ClientSession") as mock_session_class:
@@ -367,9 +369,7 @@ class TestRunHealthCheck:
 
         # Run with very short interval and stop immediately
         task = asyncio.create_task(
-            run_health_check(
-                fake_redis_client, checker, stop_event, interval=0.1
-            )
+            run_health_check(fake_redis_client, checker, stop_event, interval=0.1)
         )
 
         # Wait for it to do at least one iteration
@@ -403,9 +403,7 @@ class TestRunHealthCheck:
         stop_event = asyncio.Event()
 
         task = asyncio.create_task(
-            run_health_check(
-                fake_redis_client, checker, stop_event, interval=0.1
-            )
+            run_health_check(fake_redis_client, checker, stop_event, interval=0.1)
         )
 
         # Wait for it to do first iteration
@@ -430,7 +428,6 @@ class TestRunHealthCheck:
         self, fake_redis_client, test_llm_config
     ):
         """Test that on_status_change callback is called on health transition."""
-        call_count = 0
         results = [
             {"status": "healthy"},
             {"status": "unhealthy"},  # transition: healthy -> unhealthy
@@ -487,9 +484,7 @@ class TestRunHealthCheck:
     ):
         """Test that callback is NOT called on the first check (no previous status)."""
         checker = AsyncMock()
-        checker.check_health = AsyncMock(
-            return_value={"status": "unhealthy"}
-        )
+        checker.check_health = AsyncMock(return_value={"status": "unhealthy"})
         checker.close = AsyncMock()
 
         callback_calls = []

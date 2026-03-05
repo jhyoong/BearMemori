@@ -8,7 +8,12 @@ import pytest
 import pytest_asyncio
 import fakeredis.aioredis
 
-from shared_lib.redis_streams import consume, consume_multi, create_consumer_group, publish
+from shared_lib.redis_streams import (
+    consume,
+    consume_multi,
+    create_consumer_group,
+    publish,
+)
 
 
 @pytest_asyncio.fixture
@@ -51,7 +56,7 @@ async def test_consume_message_without_data_field_returns_none(
 
     # Add a message without "data" field (flat format)
     # Using XADD directly to avoid the publish() which always adds "data"
-    msg_id = await redis_client.xadd(stream_name, {"other_field": "value"})
+    _msg_id = await redis_client.xadd(stream_name, {"other_field": "value"})
 
     # Consume messages
     messages = await consume(redis_client, stream_name, group_name, consumer_name)
@@ -210,7 +215,7 @@ async def test_consume_multi_with_data_field_none(multi_stream_setup):
     redis_client = multi_stream_setup["redis_client"]
 
     # Add a message without "data" field directly
-    msg_id = await redis_client.xadd("test:stream:1", {"other_field": "value"})
+    _msg_id = await redis_client.xadd("test:stream:1", {"other_field": "value"})
 
     # Consume from both streams
     messages = await consume_multi(

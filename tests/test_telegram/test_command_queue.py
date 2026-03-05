@@ -11,9 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from telegram import Update
-from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
-from telegram.error import BadRequest
 
 # Add telegram directory to path so tg_gateway module is importable
 telegram_dir = os.path.join(
@@ -116,7 +114,7 @@ def _assert_markdown_parseable(text: str) -> None:
 
     # Find stream names with underscores (e.g., llm:image_tag)
     stream_with_underscore_pattern = r"(?:^|[^`])[a-zA-Z0-9]:[a-zA-Z0-9_]+(?=$|[^`])"
-    matches = re.findall(stream_with_underscore_pattern, text, re.MULTILINE)
+    _matches = re.findall(stream_with_underscore_pattern, text, re.MULTILINE)
 
     # If there are stream names with underscores, they need to be escaped
     # Check if any are directly in the text without escaping
