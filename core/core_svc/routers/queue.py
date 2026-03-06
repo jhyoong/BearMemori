@@ -183,9 +183,22 @@ async def start_conversation(
 ) -> ConversationResponse:
     """Start a new conversation for a queued item."""
     redis = request.app.state.redis
+    conv_key = _conv_key(user_id)
+
+    # Check for existing active conversation
+    existing = await redis.hgetall(conv_key)
+    if existing:
+        existing_state = existing.get("state", "")
+        if isinstance(existing_state, bytes):
+            existing_state = existing_state.decode()
+        if existing_state in ("processing", "awaiting_reply"):
+            raise HTTPException(
+                status_code=409,
+                detail="An active conversation already exists",
+            )
+
     now = datetime.now(timezone.utc).isoformat()
     conv_id = str(uuid.uuid4())
-    conv_key = _conv_key(user_id)
     mapping = {
         "id": conv_id,
         "queue_item_id": body.queue_item_id,

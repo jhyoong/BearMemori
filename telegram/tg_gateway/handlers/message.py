@@ -66,26 +66,33 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         active_conv = await core_client.get_active_conversation(user.id)
 
         if active_conv and active_conv.state == "awaiting_reply":
-            # User is replying to a followup question
-            conv_resp = await core_client.reply_to_conversation(
-                user.id, msg.text
-            )
-
             # Get metadata stored when the conversation was started
             metadata = context.user_data.get(LLM_CONVERSATION_METADATA, {})
             memory_id = metadata.get("memory_id")
             original_text = metadata.get("original_text", "")
             followup_question = metadata.get("followup_question", "")
 
+            # Check if memory_id exists - if not, cancel and return
             if not memory_id:
                 logger.error(
                     "LLM_CONVERSATION_METADATA for user %s missing memory_id",
                     user.id,
                 )
+                try:
+                    await core_client.cancel_conversation(user.id)
+                except Exception:
+                    logger.exception(
+                        "Failed to cancel conversation for user %s", user.id
+                    )
                 await msg.reply_text(
                     "Something went wrong. Please try again."
                 )
                 return
+
+            # User is replying to a followup question
+            conv_resp = await core_client.reply_to_conversation(
+                user.id, msg.text
+            )
 
             # Build conversation history from metadata
             user_answer = msg.text.strip()

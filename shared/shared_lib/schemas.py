@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 from shared_lib.enums import (
     MemoryStatus,
@@ -317,7 +317,7 @@ class ConversationStart(BaseModel):
 
 
 class ConversationStateUpdate(BaseModel):
-    state: str  # processing, awaiting_reply, completed, cancelled
+    state: Literal["processing", "awaiting_reply", "completed", "cancelled"]
     history_entry: dict | None = None
 
 
@@ -337,7 +337,6 @@ class ConversationResponse(BaseModel):
 
 class DequeueResponse(BaseModel):
     item: QueueItem | None = None
-    conversation_expired: bool = False
 
 
 class CancelResponse(BaseModel):
