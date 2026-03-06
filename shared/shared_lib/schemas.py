@@ -287,3 +287,59 @@ class ReminderNotification(BaseModel):
     user_id: int
     text: str
     fire_at: datetime
+
+
+# Queue and conversation schemas
+
+
+class QueueItemCreate(BaseModel):
+    content: str | None = None
+    image_file_id: str | None = None
+    message_timestamp: str
+
+
+class QueueItem(BaseModel):
+    id: str
+    content: str | None = None
+    image_file_id: str | None = None
+    message_timestamp: str
+    created_at: str
+
+
+class QueueStatus(BaseModel):
+    queue_length: int
+    conversation_active: bool
+    conversation_state: str | None = None
+
+
+class ConversationStart(BaseModel):
+    queue_item_id: str
+
+
+class ConversationStateUpdate(BaseModel):
+    state: str  # processing, awaiting_reply, completed, cancelled
+    history_entry: dict | None = None
+
+
+class ConversationReply(BaseModel):
+    content: str
+
+
+class ConversationResponse(BaseModel):
+    id: str
+    user_id: int
+    queue_item_id: str
+    state: str
+    history: list[dict]
+    created_at: str
+    updated_at: str
+
+
+class DequeueResponse(BaseModel):
+    item: QueueItem | None = None
+    conversation_expired: bool = False
+
+
+class CancelResponse(BaseModel):
+    state: str
+    next_item: QueueItem | None = None
