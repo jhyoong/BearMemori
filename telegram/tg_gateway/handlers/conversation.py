@@ -363,7 +363,7 @@ async def receive_followup_answer(
     try:
         await core_client.create_llm_job(
             LLMJobCreate(
-                job_type=JobType.intent_classify,
+                job_type=JobType.followup,
                 payload={
                     "memory_id": memory_id,
                     "message": original_text,

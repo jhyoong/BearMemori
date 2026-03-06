@@ -41,7 +41,9 @@ def _make_update(text: str = "hello", user_id: int = 99) -> MagicMock:
     return update
 
 
-def _make_context(user_data: dict | None = None, bot_data: dict | None = None) -> MagicMock:
+def _make_context(
+    user_data: dict | None = None, bot_data: dict | None = None
+) -> MagicMock:
     """Return a minimal mock context with controllable user_data and bot_data."""
     context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
     context.user_data = user_data if user_data is not None else {}
@@ -583,7 +585,10 @@ class TestReceiveFollowupAnswer:
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.payload["memory_id"] == "mem-20"
         assert job_arg.payload["message"] == "Buy milk"
-        assert job_arg.payload["followup_context"]["followup_question"] == "When do you need this done?"
+        assert (
+            job_arg.payload["followup_context"]["followup_question"]
+            == "When do you need this done?"
+        )
         assert job_arg.payload["followup_context"]["user_answer"] == "Tomorrow morning"
 
     @pytest.mark.asyncio
@@ -609,7 +614,7 @@ class TestReceiveFollowupAnswer:
         await receive_followup_answer(update, context)
 
         job_arg = core_client.create_llm_job.call_args[0][0]
-        assert job_arg.job_type == JobType.intent_classify
+        assert job_arg.job_type == JobType.followup
 
     @pytest.mark.asyncio
     async def test_user_id_on_job(self):

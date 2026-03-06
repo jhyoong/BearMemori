@@ -45,9 +45,9 @@ PEL_BATCH_SIZE = 50
 
 # Map handler keys to stream names (for consumer loop iteration)
 STREAM_HANDLER_MAP = {
+    "followup": STREAM_LLM_FOLLOWUP,
     "image_tag": STREAM_LLM_IMAGE_TAG,
     "intent_classify": STREAM_LLM_INTENT,
-    "followup": STREAM_LLM_FOLLOWUP,
     "task_match": STREAM_LLM_TASK_MATCH,
     "email_extract": STREAM_LLM_EMAIL_EXTRACT,
 }
@@ -428,38 +428,53 @@ async def run_consumer(
 
     try:
         while True:
-            # 1. Check PEL across all streams (single call)
-            pel_streams = {s: "0" for s in streams}
-            pel_messages = await consume_multi(
+            # 1. Check STREAM_LLM_FOLLOWUP NEW first (highest priority)
+            followup_streams = {STREAM_LLM_FOLLOWUP: ">"}
+            followup_messages = await consume_multi(
                 redis_client,
-                pel_streams,
+                followup_streams,
                 GROUP_LLM_WORKER,
                 CONSUMER_NAME,
-                count=PEL_BATCH_SIZE,
-                block_ms=100,
+                count=1,
+                block_ms=100,  # Short block to check quickly
             )
 
-            # 2. If no PEL messages, check for new messages (single call)
-            if not pel_messages:
-                new_streams = {s: ">" for s in streams}
-                new_messages = await consume_multi(
+            if followup_messages:
+                # Process followup jobs immediately
+                all_messages = followup_messages
+                from_pel = False
+            else:
+                # 2. Check other streams' PEL
+                other_streams = [s for s in streams if s != STREAM_LLM_FOLLOWUP]
+                pel_streams = {s: "0" for s in other_streams}
+                pel_messages = await consume_multi(
                     redis_client,
-                    new_streams,
+                    pel_streams,
                     GROUP_LLM_WORKER,
                     CONSUMER_NAME,
-                    count=1,
-                    block_ms=2000,
+                    count=PEL_BATCH_SIZE,
+                    block_ms=100,
                 )
-                from_pel = False
-                all_messages = new_messages
-            else:
-                from_pel = True
-                all_messages = pel_messages
+
+                # 3. If no PEL, check other streams' NEW
+                if not pel_messages:
+                    new_streams = {s: ">" for s in other_streams}
+                    new_messages = await consume_multi(
+                        redis_client,
+                        new_streams,
+                        GROUP_LLM_WORKER,
+                        CONSUMER_NAME,
+                        count=1,
+                        block_ms=2000,
+                    )
+                    all_messages = new_messages
+                    from_pel = False
+                else:
+                    all_messages = pel_messages
+                    from_pel = True
 
             for stream_name, message_id, data in all_messages:
-                logger.debug(
-                    "Checking PEL message %s from %s", message_id, stream_name
-                )
+                logger.debug("Checking PEL message %s from %s", message_id, stream_name)
                 await _process_message(
                     redis_client=redis_client,
                     stream_name=stream_name,
