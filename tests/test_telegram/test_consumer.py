@@ -21,8 +21,7 @@ from tg_gateway.consumer import (
 )
 from tg_gateway.handlers.conversation import (
     AWAITING_BUTTON_ACTION,
-    PENDING_LLM_CONVERSATION,
-    USER_QUEUE_COUNT,
+    LLM_CONVERSATION_METADATA,
 )
 
 
@@ -37,8 +36,11 @@ def _make_application(user_data: dict | None = None) -> MagicMock:
     app.bot = MagicMock()
     app.bot.send_message = AsyncMock()
     app.user_data = user_data if user_data is not None else {}
-    # bot_data without core_client so timezone lookups fall back to UTC
-    app.bot_data = {}
+    # Include a mock core_client for conversation state updates
+    mock_core_client = MagicMock()
+    mock_core_client.update_conversation_state = AsyncMock()
+    mock_core_client.get_settings = AsyncMock(side_effect=Exception("no settings"))
+    app.bot_data = {"core_client": mock_core_client}
     return app
 
 
@@ -323,115 +325,25 @@ class TestHandleIntentResultTask:
 
 class TestHandleIntentResultSearch:
     @pytest.mark.asyncio
-    async def test_search_releases_user_lock_with_redis_client(self):
-        """Test that release_user_lock is called with redis client from bot_data."""
-        # Create mock redis client
-        mock_redis = AsyncMock()
-
+    async def test_search_completes_conversation_via_core_api(self):
+        """Test that search intent completes conversation via Core API."""
         app = _make_application()
-        app.bot_data = {"redis": mock_redis}
 
         content = {
             "intent": "search",
             "query": "test query",
             "memory_id": "",
-            "search_results": [
+            "results": [
                 {"title": "Result 1", "memory_id": "mem-s1"},
             ],
         }
 
-        with patch("tg_gateway.consumer.release_user_lock") as mock_release:
-            await _handle_intent_result(app, "12345", content)
-
-            # Verify release_user_lock was called with the redis client
-            mock_release.assert_called_once()
-            call_args = mock_release.call_args[0]
-            assert call_args[0] is mock_redis, (
-                "release_user_lock should be called with redis client from bot_data"
-            )
-            assert call_args[1] == "12345", (
-                "release_user_lock should be called with user_id"
-            )
-
-    @pytest.mark.asyncio
-    async def test_search_no_nameerror_when_processing_intent(self, caplog):
-        """Test that no NameError is raised when processing search intent.
-
-        This tests the bug where _handle_intent_result() uses an undefined 'redis' variable
-        instead of getting the redis client from application.bot_data.
-        """
-        import logging
-
-        # Create mock redis client
-        mock_redis = AsyncMock()
-
-        app = _make_application()
-        app.bot_data = {"redis": mock_redis}
-
-        content = {
-            "intent": "search",
-            "query": "test query",
-            "memory_id": "",
-            "search_results": [],
-        }
-
-        # This should NOT raise NameError: name 'redis' is not defined
-        # If the bug exists, this will fail with NameError
         await _handle_intent_result(app, "12345", content)
 
-        # Also verify that no error was logged about failing to release lock
-        # (which would happen if NameError occurred)
-        error_logs = [
-            record
-            for record in caplog.records
-            if record.levelno >= logging.ERROR
-            and "Failed to release user lock" in record.message
-        ]
-        assert len(error_logs) == 0, (
-            f"Error log found indicating NameError occurred: {[r.message for r in error_logs]}"
+        core_client = app.bot_data["core_client"]
+        core_client.update_conversation_state.assert_awaited_once_with(
+            12345, "completed"
         )
-
-    @pytest.mark.asyncio
-    async def test_search_lock_release_does_not_close_redis_connection(self):
-        """Test that redis client connection is NOT closed after releasing lock.
-
-        This is a regression test for the bug where aclose() was incorrectly
-        called, which would close the shared Redis connection and cause issues
-        for other parts of the application.
-        """
-        mock_redis = AsyncMock()
-
-        app = _make_application()
-        app.bot_data = {"redis": mock_redis}
-
-        content = {
-            "intent": "search",
-            "query": "test query",
-            "memory_id": "",
-            "search_results": [{"title": "Result 1", "memory_id": "mem-s1"}],
-        }
-
-        with patch("tg_gateway.consumer.release_user_lock"):
-            await _handle_intent_result(app, "12345", content)
-
-            # Verify redis client aclose is NOT called (shared connection should stay open)
-            mock_redis.aclose.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_search_intent_does_not_close_redis_client(self):
-        """Verify search intent releases the lock but does NOT close the shared Redis client."""
-        application = _make_application()
-        mock_redis = application.bot_data["redis"] = AsyncMock()
-
-        content = {
-            "intent": "search",
-            "query": "test query",
-            "results": [],
-        }
-
-        await _handle_intent_result(application, "12345", content)
-
-        mock_redis.aclose.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_search_with_results_sends_keyboard(self):
@@ -468,34 +380,6 @@ class TestHandleIntentResultSearch:
         call_kwargs = app.bot.send_message.call_args[1]
         assert call_kwargs.get("reply_markup") is None
         assert "no results" in call_kwargs.get("text", "").lower()
-
-    @pytest.mark.asyncio
-    async def test_search_decrements_queue_counter(self):
-        app = _make_application(user_data={12345: {USER_QUEUE_COUNT: 3}})
-        content = {
-            "intent": "search",
-            "query": "anything",
-            "memory_id": "",
-            "search_results": [],
-        }
-
-        await _handle_intent_result(app, "12345", content)
-
-        assert app.user_data[12345][USER_QUEUE_COUNT] == 2
-
-    @pytest.mark.asyncio
-    async def test_search_queue_clamps_at_zero(self):
-        app = _make_application(user_data={12345: {USER_QUEUE_COUNT: 0}})
-        content = {
-            "intent": "search",
-            "query": "anything",
-            "memory_id": "",
-            "search_results": [],
-        }
-
-        await _handle_intent_result(app, "12345", content)
-
-        assert app.user_data[12345][USER_QUEUE_COUNT] == 0
 
     @pytest.mark.asyncio
     async def test_search_does_not_set_awaiting_button_action(self):
@@ -578,7 +462,7 @@ class TestHandleIntentResultAmbiguous:
         assert call_kwargs.get("reply_markup") is None
 
     @pytest.mark.asyncio
-    async def test_ambiguous_sets_pending_llm_conversation(self):
+    async def test_ambiguous_sets_llm_conversation_metadata(self):
         app = _make_application()
         content = {
             "intent": "ambiguous",
@@ -589,11 +473,11 @@ class TestHandleIntentResultAmbiguous:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
-        assert pending is not None
-        assert pending["memory_id"] == "mem-a2"
-        assert pending["original_text"] == "do something"
-        assert pending["followup_question"] == "What exactly do you mean?"
+        metadata = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
+        assert metadata is not None
+        assert metadata["memory_id"] == "mem-a2"
+        assert metadata["original_text"] == "do something"
+        assert metadata["followup_question"] == "What exactly do you mean?"
 
     @pytest.mark.asyncio
     async def test_ambiguous_does_not_set_awaiting_button_action(self):
@@ -958,29 +842,27 @@ class TestConsumerSpecificPhrases:
         assert state["memory_id"] == "mem-task-456"
 
     @pytest.mark.asyncio
-    async def test_search_phrase_decrements_queue(self):
-        """Test that search phrase decrements queue counter."""
-        app = _make_application(user_data={12345: {USER_QUEUE_COUNT: 3}})
+    async def test_search_phrase_completes_conversation(self):
+        """Test that search phrase completes conversation via Core API."""
+        app = _make_application()
         content = {
             "intent": "search",
             "query": "all images about anime",
             "memory_id": "",
-            "search_results": [{"title": "Anime", "memory_id": "mem-a1"}],
+            "results": [{"title": "Anime", "memory_id": "mem-a1"}],
         }
 
         await _handle_intent_result(app, "12345", content)
 
-        # Queue should be decremented
-        assert app.user_data[12345][USER_QUEUE_COUNT] == 2
+        core_client = app.bot_data["core_client"]
+        core_client.update_conversation_state.assert_awaited_once_with(
+            12345, "completed"
+        )
 
     @pytest.mark.asyncio
-    async def test_reminder_phrase_does_not_decrement_queue(self):
-        """Test that reminder phrase does NOT decrement queue counter.
-
-        Note: The queue counter is handled differently - it's managed by
-        the conversation handler when user confirms/edits the proposal.
-        """
-        app = _make_application(user_data={12345: {USER_QUEUE_COUNT: 3}})
+    async def test_reminder_phrase_sets_awaiting_reply(self):
+        """Test that reminder phrase sets conversation state to awaiting_reply."""
+        app = _make_application()
         future_dt = _future_iso()
         content = {
             "intent": "reminder",

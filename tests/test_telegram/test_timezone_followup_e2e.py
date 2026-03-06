@@ -22,6 +22,7 @@ from tg_gateway.handlers.conversation import (
     PENDING_LLM_CONVERSATION,
     receive_followup_answer,
 )
+from tg_gateway.handlers.conversation import LLM_CONVERSATION_METADATA
 from tg_gateway.consumer import _handle_intent_result
 
 
@@ -58,7 +59,10 @@ def _make_application(user_data: dict | None = None) -> MagicMock:
     app.bot = MagicMock()
     app.bot.send_message = AsyncMock()
     app.user_data = user_data if user_data is not None else {}
-    app.bot_data = {}
+    mock_core_client = MagicMock()
+    mock_core_client.update_conversation_state = AsyncMock()
+    mock_core_client.get_settings = AsyncMock(side_effect=Exception("no settings"))
+    app.bot_data = {"core_client": mock_core_client}
     return app
 
 
@@ -107,18 +111,18 @@ class TestTimezoneAwareFollowupFlow:
         # Verify followup question was sent
         app.bot.send_message.assert_called_once()
 
-        # Verify PENDING_LLM_CONVERSATION is stored with user_timezone
+        # Verify LLM_CONVERSATION_METADATA is stored with user_timezone
         user_data = app.user_data.get(12345, {})
-        assert PENDING_LLM_CONVERSATION in user_data
-        pending_state = user_data[PENDING_LLM_CONVERSATION]
+        assert LLM_CONVERSATION_METADATA in user_data
+        pending_state = user_data[LLM_CONVERSATION_METADATA]
         assert pending_state["user_timezone"] == "Asia/Singapore"
         assert pending_state["memory_id"] == "mem-abc123"
 
         # Step 3: User answers "5pm"
         core_client.create_llm_job = AsyncMock()
 
-        # Create a new context for the followup answer
-        # The user_data now has the pending conversation from step 2
+        # Create a new context for the followup answer using PENDING_LLM_CONVERSATION
+        # (receive_followup_answer still reads from this key)
         followup_context = _make_context(
             user_data={PENDING_LLM_CONVERSATION: pending_state},
             bot_data={"core_client": core_client},

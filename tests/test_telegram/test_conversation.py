@@ -681,8 +681,7 @@ class TestReceiveFollowupAnswer:
 
         await receive_followup_answer(update, context)
 
-        # Helper function _get_submission_feedback returns "Processing your message..." when healthy
-        update.message.reply_text.assert_called_once_with("Processing your message...")
+        update.message.reply_text.assert_called_once_with("Processing your reply...")
 
     @pytest.mark.asyncio
     async def test_no_pending_state_replies_error(self):

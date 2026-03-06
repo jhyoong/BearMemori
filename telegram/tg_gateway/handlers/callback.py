@@ -17,7 +17,6 @@ from shared_lib.schemas import (
     TagsAddRequest,
 )
 from shared_lib.enums import TaskState, MemoryStatus
-from shared_lib.redis_streams import release_user_lock
 
 from tg_gateway.callback_data import (
     MemoryAction,
@@ -38,11 +37,10 @@ from tg_gateway.core_client import (
 )
 from tg_gateway.handlers.conversation import (
     AWAITING_BUTTON_ACTION,
-    PENDING_LLM_CONVERSATION,
+    LLM_CONVERSATION_METADATA,
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
     PENDING_REMINDER_MEMORY_ID,
-    USER_QUEUE_COUNT,
 )
 from tg_gateway.keyboards import (
     due_date_keyboard,
@@ -58,30 +56,30 @@ logger = logging.getLogger(__name__)
 async def _clear_conversation_state(
     context: ContextTypes.DEFAULT_TYPE, user_id: int | None = None
 ) -> None:
-    """Clear pending LLM conversation state and decrement the queue counter.
+    """Clear pending conversation state and complete the conversation via Core API.
 
     Called by button handlers that conclude a conversation flow so that
-    subsequent messages from the user are not misrouted. Also releases
-    the per-user LLM processing lock so the next queued job can proceed.
+    subsequent messages from the user are not misrouted.
 
     Args:
         context: The Telegram context with user_data.
-        user_id: Telegram user ID, used to release the per-user lock.
+        user_id: Telegram user ID, used to complete the conversation.
     """
     context.user_data.pop(AWAITING_BUTTON_ACTION, None)
-    context.user_data.pop(PENDING_LLM_CONVERSATION, None)
-    count = context.user_data.get(USER_QUEUE_COUNT, 0)
-    context.user_data[USER_QUEUE_COUNT] = max(0, count - 1)
+    context.user_data.pop(LLM_CONVERSATION_METADATA, None)
 
-    # Release the per-user LLM processing lock so the next job can proceed
+    # Complete the conversation via Core API
     if user_id is not None:
-        redis_client = context.bot_data.get("redis")
-        if redis_client:
+        core_client = context.bot_data.get("core_client")
+        if core_client:
             try:
-                await release_user_lock(redis_client, str(user_id))
+                await core_client.update_conversation_state(
+                    user_id, "completed"
+                )
             except Exception:
                 logger.exception(
-                    "Failed to release user lock for user %s", user_id
+                    "Failed to complete conversation for user %s",
+                    user_id,
                 )
 
 

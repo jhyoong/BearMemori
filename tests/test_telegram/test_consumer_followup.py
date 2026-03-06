@@ -1,8 +1,8 @@
-"""Tests for storing full context in PENDING_LLM_CONVERSATION for ambiguous followup.
+"""Tests for storing full context in LLM_CONVERSATION_METADATA for ambiguous followup.
 
 Covers:
 - _handle_intent_result with intent="ambiguous" stores user_timezone, original_timestamp,
-  source_chat_id, and source_message_id in the pending conversation state.
+  source_chat_id, and source_message_id in the conversation metadata.
 - Missing fields in incoming content result in None/empty values in stored dict.
 """
 
@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from tg_gateway.consumer import _handle_intent_result
-from tg_gateway.handlers.conversation import PENDING_LLM_CONVERSATION
+from tg_gateway.handlers.conversation import LLM_CONVERSATION_METADATA
 
 
 # ---------------------------------------------------------------------------
@@ -25,7 +25,10 @@ def _make_application(user_data: dict | None = None) -> MagicMock:
     app.bot = MagicMock()
     app.bot.send_message = AsyncMock()
     app.user_data = user_data if user_data is not None else {}
-    app.bot_data = {}
+    mock_core_client = MagicMock()
+    mock_core_client.update_conversation_state = AsyncMock()
+    mock_core_client.get_settings = AsyncMock(side_effect=Exception("no settings"))
+    app.bot_data = {"core_client": mock_core_client}
     return app
 
 
@@ -35,7 +38,7 @@ def _make_application(user_data: dict | None = None) -> MagicMock:
 
 
 class TestAmbiguousFollowupContext:
-    """Tests for storing full context in PENDING_LLM_CONVERSATION."""
+    """Tests for storing full context in LLM_CONVERSATION_METADATA."""
 
     @pytest.mark.asyncio
     async def test_ambiguous_stores_user_timezone_in_pending_conversation(self):
@@ -54,7 +57,7 @@ class TestAmbiguousFollowupContext:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
+        pending = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
         assert pending is not None
         assert "user_timezone" in pending
         assert pending["user_timezone"] == "America/New_York"
@@ -76,7 +79,7 @@ class TestAmbiguousFollowupContext:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
+        pending = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
         assert pending is not None
         assert "original_timestamp" in pending
         assert pending["original_timestamp"] == "2024-01-15T10:30:00"
@@ -98,7 +101,7 @@ class TestAmbiguousFollowupContext:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
+        pending = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
         assert pending is not None
         assert "source_chat_id" in pending
         assert pending["source_chat_id"] == "999888777"
@@ -120,7 +123,7 @@ class TestAmbiguousFollowupContext:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
+        pending = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
         assert pending is not None
         assert "source_message_id" in pending
         assert pending["source_message_id"] == "444"
@@ -143,7 +146,7 @@ class TestAmbiguousFollowupContext:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
+        pending = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
         assert pending is not None
         # Verify all four new fields are present
         assert "user_timezone" in pending
@@ -181,7 +184,7 @@ class TestAmbiguousFollowupMissingFields:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
+        pending = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
         assert pending is not None
         assert "user_timezone" in pending
         assert pending["user_timezone"] is None
@@ -203,7 +206,7 @@ class TestAmbiguousFollowupMissingFields:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
+        pending = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
         assert pending is not None
         assert "original_timestamp" in pending
         assert pending["original_timestamp"] is None
@@ -225,7 +228,7 @@ class TestAmbiguousFollowupMissingFields:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
+        pending = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
         assert pending is not None
         assert "source_chat_id" in pending
         assert pending["source_chat_id"] is None
@@ -247,7 +250,7 @@ class TestAmbiguousFollowupMissingFields:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
+        pending = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
         assert pending is not None
         assert "source_message_id" in pending
         assert pending["source_message_id"] is None
@@ -266,7 +269,7 @@ class TestAmbiguousFollowupMissingFields:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
+        pending = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
         assert pending is not None
         # All four new fields should be present (as None)
         assert "user_timezone" in pending

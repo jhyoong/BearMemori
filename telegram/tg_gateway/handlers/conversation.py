@@ -23,6 +23,7 @@ PENDING_TASK_MEMORY_ID = "pending_task_memory_id"
 PENDING_REMINDER_MEMORY_ID = "pending_reminder_memory_id"
 PENDING_LLM_CONVERSATION = "pending_llm_conversation"
 AWAITING_BUTTON_ACTION = "awaiting_button_action"
+LLM_CONVERSATION_METADATA = "llm_conversation_metadata"
 
 # Queue counter key — tracks how many LLM jobs are in flight for this user
 USER_QUEUE_COUNT = "user_queue_count"
@@ -384,10 +385,7 @@ async def receive_followup_answer(
                 user_id=user.id,
             )
         )
-        from tg_gateway.handlers.message import _get_submission_feedback
-
-        feedback_message = await _get_submission_feedback(context)
-        await update.message.reply_text(feedback_message)
+        await update.message.reply_text("Processing your reply...")
     except Exception:
         logger.exception(
             f"Failed to create followup LLM job for memory {memory_id}, user {user.id}"
