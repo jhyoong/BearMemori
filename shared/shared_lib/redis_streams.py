@@ -24,6 +24,12 @@ STREAM_NOTIFY_TELEGRAM = "notify:telegram"
 GROUP_LLM_WORKER = "llm-worker-group"
 GROUP_TELEGRAM = "telegram-group"
 
+# Queue and conversation Redis key patterns
+QUEUE_KEY_PREFIX = "queue:"          # queue:{user_id} — Redis list
+CONVERSATION_KEY_PREFIX = "conversation:"  # conversation:{user_id} — Redis hash
+QUEUE_TTL_SECONDS = 7 * 24 * 3600   # 7 days
+CONVERSATION_TTL_SECONDS = 24 * 3600  # 24 hours
+
 
 async def publish(redis_client, stream_name: str, data: dict[str, Any]) -> str:
     """Publish a message to a Redis stream.
