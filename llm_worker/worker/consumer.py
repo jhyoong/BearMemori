@@ -457,8 +457,8 @@ async def run_consumer(
                 all_messages = pel_messages
 
             for stream_name, message_id, data in all_messages:
-                logger.info(
-                    "Processing message %s from %s", message_id, stream_name
+                logger.debug(
+                    "Checking PEL message %s from %s", message_id, stream_name
                 )
                 await _process_message(
                     redis_client=redis_client,
