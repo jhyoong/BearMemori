@@ -2933,6 +2933,78 @@ async def test_followup_job_skips_lock_acquisition(
     mock_handlers["intent_classify"].handle.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_followup_job_error_does_not_release_lock(
+    mock_redis, mock_llm_client, mock_core_api, retry_tracker, llm_worker_config
+):
+    """When a continuation job (with followup_context) fails, the lock
+    should NOT be released because it was never acquired by this job."""
+    # Pre-set the user lock (simulating lock held from active conversation)
+    lock_key = "llm:user_lock:100"
+    await mock_redis.set(lock_key, "1", ex=604800)
+
+    # Verify lock is set
+    lock_exists = await mock_redis.exists(lock_key)
+    assert lock_exists, "Lock should be pre-set before test"
+
+    # Create a followup job with followup_context (continuation job)
+    job_id = "job-followup-error"
+    payload = {
+        "message": "what day works for you?",
+        "original_timestamp": "2026-03-06T10:00:00+00:00",
+        "user_timezone": "America/New_York",
+        "followup_context": {
+            "followup_question": "what day works for you?",
+            "user_answer": "next Tuesday",
+        },
+    }
+    await publish(
+        mock_redis,
+        STREAM_LLM_INTENT,
+        {
+            "job_id": job_id,
+            "payload": payload,
+            "user_id": 100,
+            "job_type": "intent_classify",
+        },
+    )
+
+    # Create a handler that raises an exception
+    error = Exception("LLM API error")
+    mock_handler = create_mock_handler(None, raises=error)
+    handlers = {"intent_classify": mock_handler}
+
+    # Consume and process the message
+    messages = await consume(
+        mock_redis, STREAM_LLM_INTENT, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
+    )
+    assert len(messages) == 1
+    message_id, data = messages[0]
+
+    await _process_message(
+        redis_client=mock_redis,
+        stream_name=STREAM_LLM_INTENT,
+        message_id=message_id,
+        data=data,
+        handlers=handlers,
+        core_api=mock_core_api,
+        retry_tracker=retry_tracker,
+        config=llm_worker_config,
+        from_pel=False,
+    )
+
+    # Handler should have been called
+    mock_handler.handle.assert_called_once()
+
+    # Verify: Lock is STILL held (not released) after error
+    # The existing code checks `if user_lock_acquired:` before releasing
+    # For continuation jobs, user_lock_acquired is False, so no release happens
+    lock_exists = await mock_redis.exists(lock_key)
+    assert lock_exists, (
+        "Lock should NOT be released for continuation jobs on error"
+    )
+
+
 # =============================================================================
 # End of Task T004 tests
 # =============================================================================
