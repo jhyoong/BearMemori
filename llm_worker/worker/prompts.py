@@ -54,6 +54,10 @@ user's timezone and convert to UTC. For example, if user_timezone is "Asia/Singa
 For relative times like "in 10 minutes", add the offset to original_timestamp.
 Do NOT assume times are in UTC - always use the provided user_timezone.
 NEVER return the original_timestamp unchanged - always compute the correct resolved time.
+If the resolved time would be in the past relative to the original_timestamp, resolve to
+the NEXT future occurrence. For example, if it is 7pm on March 6 and the user says
+"at 3pm", resolve to 3pm on March 7 (not March 6, which is already past).
+Similarly, "at 11" when current time is 7pm should resolve to 11am the next day.
 Generate a natural, conversational follow-up question for ambiguous intents.
 
 Respond ONLY with valid JSON in the appropriate format above."""
@@ -70,6 +74,10 @@ user_timezone ({user_timezone}) to convert to UTC. For example, if
 user_timezone is "Asia/Singapore" and user says "5pm", the resolved
 time should be computed as 5pm in Singapore = 17:00 - 8 hours = 09:00 UTC.
 Do NOT assume times are in UTC - always use the provided user_timezone.
+If the resolved time would be in the past relative to the original_timestamp, resolve to
+the NEXT future occurrence. For example, if it is 7pm on March 6 and the user says
+"at 3pm", resolve to 3pm on March 7 (not March 6, which is already past).
+Similarly, "at 11" when current time is 7pm should resolve to 11am the next day.
 
 Based on this conversation context, re-classify the intent and extract entities.
 
