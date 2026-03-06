@@ -94,6 +94,14 @@ def llm_worker_config():
     )
 
 
+@pytest.fixture
+def mock_handlers():
+    """Create a dict of mock handlers for testing."""
+    handler = AsyncMock()
+    handler.handle = AsyncMock(return_value={"result": "test"})
+    return {"intent_classify": handler}
+
+
 @pytest.mark.asyncio
 async def test_consumer_processes_job(
     mock_redis, mock_llm_client, mock_core_api, retry_tracker, llm_worker_config
@@ -2869,6 +2877,60 @@ async def test_invalid_response_retry_does_not_block(
     finally:
         # Restore original sleep
         asyncio.sleep = original_sleep
+
+
+@pytest.mark.asyncio
+async def test_followup_job_skips_lock_acquisition(
+    mock_redis, mock_handlers, mock_core_api, retry_tracker, llm_worker_config
+):
+    """A job with followup_context should skip lock acquisition and process
+    even when the user lock is already held."""
+    # Pre-set the user lock (simulating lock held from previous conversation)
+    await mock_redis.set("llm:user_lock:42", "1", ex=604800)
+
+    # Create a fresh message by publishing to Redis stream
+    job_id = "job-followup"
+    payload = {
+        "message": "remind me about courses",
+        "original_timestamp": "2026-03-06T01:00:00+00:00",
+        "user_timezone": "Asia/Singapore",
+        "followup_context": {
+            "followup_question": "When?",
+            "user_answer": "at 3pm",
+        },
+    }
+    await publish(
+        mock_redis,
+        STREAM_LLM_INTENT,
+        {
+            "job_id": job_id,
+            "payload": payload,
+            "user_id": 42,
+            "job_type": "intent_classify",
+        },
+    )
+
+    # Consume the message to get a fresh Redis-generated message_id
+    messages = await consume(
+        mock_redis, STREAM_LLM_INTENT, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
+    )
+    assert len(messages) == 1
+    message_id, data = messages[0]
+
+    await _process_message(
+        redis_client=mock_redis,
+        stream_name=STREAM_LLM_INTENT,
+        message_id=message_id,
+        data=data,
+        handlers=mock_handlers,
+        core_api=mock_core_api,
+        retry_tracker=retry_tracker,
+        config=llm_worker_config,
+        from_pel=False,
+    )
+
+    # Handler should have been called despite lock being held
+    mock_handlers["intent_classify"].handle.assert_called_once()
 
 
 # =============================================================================

@@ -204,8 +204,12 @@ async def _process_message(
     # Acquire per-user lock to prevent concurrent processing for the same user.
     # If the lock is held, return without acking so the message stays in the PEL
     # and is retried on the next consumer loop iteration.
+    # Exception: followup/reclassification jobs (those with followup_context in payload)
+    # bypass lock acquisition because the lock is already held by the same user's
+    # active conversation flow.
     user_lock_acquired = False
-    if user_id is not None:
+    is_continuation = bool(payload.get("followup_context"))
+    if user_id is not None and not is_continuation:
         user_lock_acquired = await acquire_user_lock(redis_client, str(user_id))
         if not user_lock_acquired:
             logger.debug("User %s lock held, deferring job %s", user_id, job_id)
