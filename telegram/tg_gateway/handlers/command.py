@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from shared_lib.redis_streams import release_user_lock
 from tg_gateway.handlers.conversation import (
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
@@ -55,14 +54,23 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data.pop(PENDING_REMINDER_MEMORY_ID, None)
     context.user_data.pop(PENDING_LLM_CONVERSATION, None)
 
-    # Release the per-user LLM processing lock so the next queued job can proceed
-    user_id = update.effective_user.id
-    redis_client = context.bot_data.get("redis")
-    if redis_client:
+    # Cancel the active conversation via Core API so the next queued item can proceed
+    user = update.effective_user
+    core_client = context.bot_data.get("core_client")
+    if core_client and user:
         try:
-            await release_user_lock(redis_client, str(user_id))
+            result = await core_client.cancel_conversation(user.id)
+            next_item = result.get("next_item")
+            if next_item:
+                logger.info(
+                    "Cancel for user %s returned next_item: %s",
+                    user.id,
+                    next_item,
+                )
         except Exception:
-            logger.exception("Failed to release user lock for user %s", user_id)
+            logger.exception(
+                "Failed to cancel conversation for user %s", user.id
+            )
 
     await update.message.reply_text("Current action cancelled.")
 

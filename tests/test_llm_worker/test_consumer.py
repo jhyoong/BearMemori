@@ -1497,169 +1497,6 @@ class TestStaleMessageDbCleanup:
         mock_handler.handle.assert_not_called()
 
 
-class TestPerUserLocking:
-    """Tests for per-user Redis locking to prevent concurrent processing."""
-
-    @pytest.fixture
-    def retry_manager(self):
-        return RetryManager()
-
-    @pytest.mark.asyncio
-    async def test_lock_acquired_before_processing_and_held_after(
-        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
-    ):
-        """Lock should be acquired before handler runs and held after (for Telegram to release)."""
-        import time
-
-        ts_ms = int(time.time() * 1000)
-        message_id = f"{ts_ms}-0"
-
-        data = {
-            "job_id": "lock-job-1",
-            "payload": {"text": "test"},
-            "user_id": 42,
-            "job_type": "intent_classify",
-        }
-
-        mock_handler = create_mock_handler({"intent": "test"})
-        handlers = {"intent_classify": mock_handler}
-
-        await _process_message(
-            redis_client=mock_redis,
-            stream_name=STREAM_LLM_INTENT,
-            message_id=message_id,
-            data=data,
-            handlers=handlers,
-            core_api=mock_core_api,
-            retry_tracker=retry_manager,
-            config=llm_worker_config,
-        )
-
-        # Handler should have been called
-        mock_handler.handle.assert_called_once()
-
-        # Lock should still be held after processing (released by Telegram gateway)
-        from shared_lib.redis_streams import acquire_user_lock
-
-        lock_acquired = await acquire_user_lock(mock_redis, "42")
-        assert lock_acquired is False, (
-            "Lock should remain held after handler success - "
-            "Telegram gateway releases it when user confirms"
-        )
-
-    @pytest.mark.asyncio
-    async def test_second_job_deferred_when_lock_held(
-        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
-    ):
-        """Second job for same user should be deferred (not acked) when lock held."""
-        import time
-        from shared_lib.redis_streams import acquire_user_lock
-
-        # Pre-acquire the lock for user 42
-        await acquire_user_lock(mock_redis, "42")
-
-        ts_ms = int(time.time() * 1000)
-        message_id = f"{ts_ms}-0"
-
-        data = {
-            "job_id": "lock-job-2",
-            "payload": {"text": "test"},
-            "user_id": 42,
-            "job_type": "intent_classify",
-        }
-
-        mock_handler = create_mock_handler({"intent": "test"})
-        handlers = {"intent_classify": mock_handler}
-
-        await _process_message(
-            redis_client=mock_redis,
-            stream_name=STREAM_LLM_INTENT,
-            message_id=message_id,
-            data=data,
-            handlers=handlers,
-            core_api=mock_core_api,
-            retry_tracker=retry_manager,
-            config=llm_worker_config,
-        )
-
-        # Handler should NOT have been called (lock was held)
-        mock_handler.handle.assert_not_called()
-
-        # Job should NOT be updated in DB (deferred, not failed)
-        mock_core_api.update_job.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_lock_released_on_handler_failure(
-        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
-    ):
-        """Lock should be released even when handler raises an exception."""
-        import time
-
-        ts_ms = int(time.time() * 1000)
-        message_id = f"{ts_ms}-0"
-
-        data = {
-            "job_id": "lock-fail-job",
-            "payload": {"text": "test"},
-            "user_id": 99,
-            "job_type": "intent_classify",
-        }
-
-        mock_handler = create_mock_handler(None, raises=ValueError("bad response"))
-        handlers = {"intent_classify": mock_handler}
-
-        await _process_message(
-            redis_client=mock_redis,
-            stream_name=STREAM_LLM_INTENT,
-            message_id=message_id,
-            data=data,
-            handlers=handlers,
-            core_api=mock_core_api,
-            retry_tracker=retry_manager,
-            config=llm_worker_config,
-        )
-
-        # Lock should be released even after failure
-        from shared_lib.redis_streams import acquire_user_lock
-
-        lock_acquired = await acquire_user_lock(mock_redis, "99")
-        assert lock_acquired is True, "Lock should be released after handler failure"
-
-    @pytest.mark.asyncio
-    async def test_no_lock_for_none_user_id(
-        self, mock_redis, mock_core_api, retry_manager, llm_worker_config
-    ):
-        """Jobs with user_id=None should process without locking."""
-        import time
-
-        ts_ms = int(time.time() * 1000)
-        message_id = f"{ts_ms}-0"
-
-        data = {
-            "job_id": "no-user-job",
-            "payload": {"text": "test"},
-            "user_id": None,
-            "job_type": "intent_classify",
-        }
-
-        mock_handler = create_mock_handler({"intent": "test"})
-        handlers = {"intent_classify": mock_handler}
-
-        await _process_message(
-            redis_client=mock_redis,
-            stream_name=STREAM_LLM_INTENT,
-            message_id=message_id,
-            data=data,
-            handlers=handlers,
-            core_api=mock_core_api,
-            retry_tracker=retry_manager,
-            config=llm_worker_config,
-        )
-
-        # Should process normally without locking
-        mock_handler.handle.assert_called_once()
-
-
 # =============================================================================
 # Task T002: PEL stale message check tests
 # =============================================================================
@@ -1788,45 +1625,32 @@ class TestPELStaleMessageCheck:
         assert "exceeded" in call_kwargs["error_message"]
 
     @pytest.mark.asyncio
-    async def test_deferred_message_waits_in_pel_not_acked(
+    async def test_pel_message_with_very_old_timestamp_still_processes(
         self, mock_redis, mock_core_api, retry_manager, llm_worker_config
     ):
-        """A message deferred due to user lock should remain in PEL, not be acked as stale.
+        """A message read from PEL with a very old timestamp should still process.
 
-        This test simulates the scenario where:
-        1. Message arrives and is processed
-        2. User lock is held, so message is deferred (not acked)
-        3. Message goes back to PEL
-        4. Consumer reads from PEL (id="0") after some time
-        5. Message should NOT be marked stale
+        Messages in the PEL may have old timestamps because they were waiting
+        to be processed. The from_pel=True flag bypasses the stale check.
         """
         import time
 
-        # First, simulate a message that gets deferred due to user lock
-        # Pre-acquire the lock for user 42
-        from shared_lib.redis_streams import acquire_user_lock
-
-        await acquire_user_lock(mock_redis, "42")
-
         # Create a message ID with a timestamp from 8 days ago
-        # This is still within the 7-day cutoff but the message should NOT be
-        # marked stale since it's read from PEL (from_pel=True)
         old_ts_ms = int((time.time() - 8 * 86400) * 1000)
         message_id = f"{old_ts_ms}-0"
 
-        job_id = "deferred-job-pel"
+        job_id = "pel-old-job"
         data = {
             "job_id": job_id,
             "payload": {"text": "test"},
-            "user_id": 42,  # Same user with held lock
+            "user_id": 42,
             "job_type": "intent_classify",
         }
 
         mock_handler = create_mock_handler({"intent": "test"})
         handlers = {"intent_classify": mock_handler}
 
-        # Process message - since lock is held, it will be deferred (not acked)
-        # This message should NOT be marked stale since it's from PEL
+        # Process message from PEL - should NOT be marked stale
         await _process_message(
             redis_client=mock_redis,
             stream_name=STREAM_LLM_INTENT,
@@ -1839,39 +1663,7 @@ class TestPELStaleMessageCheck:
             from_pel=True,
         )
 
-        # Handler should NOT have been called because lock was held
-        mock_handler.handle.assert_not_called()
-
-        # Job should NOT be updated (deferred, not failed)
-        mock_core_api.update_job.assert_not_called()
-
-        # Now simulate consumer reading from PEL (id="0") with the deferred message
-        # When this happens, the message should NOT be marked as stale
-        # Release the lock first to simulate the next consumer iteration
-        from shared_lib.redis_streams import release_user_lock
-
-        await release_user_lock(mock_redis, "42")
-
-        # Reset mocks
-        mock_handler.reset_mock()
-        mock_core_api.reset_mock()
-
-        # Now process the same message (which would have been read from PEL)
-        # This time it should succeed and NOT be marked stale
-        await _process_message(
-            redis_client=mock_redis,
-            stream_name=STREAM_LLM_INTENT,
-            message_id=message_id,
-            data=data,
-            handlers=handlers,
-            core_api=mock_core_api,
-            retry_tracker=retry_manager,
-            config=llm_worker_config,
-            from_pel=True,
-        )
-
-        # This assertion will FAIL with current bug because the stale check
-        # incorrectly marks the deferred PEL message as stale
+        # Handler should have been called - PEL messages bypass stale check
         mock_handler.handle.assert_called_once()
 
     @pytest.mark.asyncio
@@ -2878,131 +2670,6 @@ async def test_invalid_response_retry_does_not_block(
         # Restore original sleep
         asyncio.sleep = original_sleep
 
-
-@pytest.mark.asyncio
-async def test_followup_job_skips_lock_acquisition(
-    mock_redis, mock_handlers, mock_core_api, retry_tracker, llm_worker_config
-):
-    """A job with followup_context should skip lock acquisition and process
-    even when the user lock is already held."""
-    # Pre-set the user lock (simulating lock held from previous conversation)
-    await mock_redis.set("llm:user_lock:42", "1", ex=604800)
-
-    # Create a fresh message by publishing to Redis stream
-    job_id = "job-followup"
-    payload = {
-        "message": "remind me about courses",
-        "original_timestamp": "2026-03-06T01:00:00+00:00",
-        "user_timezone": "Asia/Singapore",
-        "followup_context": {
-            "followup_question": "When?",
-            "user_answer": "at 3pm",
-        },
-    }
-    await publish(
-        mock_redis,
-        STREAM_LLM_INTENT,
-        {
-            "job_id": job_id,
-            "payload": payload,
-            "user_id": 42,
-            "job_type": "intent_classify",
-        },
-    )
-
-    # Consume the message to get a fresh Redis-generated message_id
-    messages = await consume(
-        mock_redis, STREAM_LLM_INTENT, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
-    )
-    assert len(messages) == 1
-    message_id, data = messages[0]
-
-    await _process_message(
-        redis_client=mock_redis,
-        stream_name=STREAM_LLM_INTENT,
-        message_id=message_id,
-        data=data,
-        handlers=mock_handlers,
-        core_api=mock_core_api,
-        retry_tracker=retry_tracker,
-        config=llm_worker_config,
-        from_pel=False,
-    )
-
-    # Handler should have been called despite lock being held
-    mock_handlers["intent_classify"].handle.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_followup_job_error_does_not_release_lock(
-    mock_redis, mock_llm_client, mock_core_api, retry_tracker, llm_worker_config
-):
-    """When a continuation job (with followup_context) fails, the lock
-    should NOT be released because it was never acquired by this job."""
-    # Pre-set the user lock (simulating lock held from active conversation)
-    lock_key = "llm:user_lock:100"
-    await mock_redis.set(lock_key, "1", ex=604800)
-
-    # Verify lock is set
-    lock_exists = await mock_redis.exists(lock_key)
-    assert lock_exists, "Lock should be pre-set before test"
-
-    # Create a followup job with followup_context (continuation job)
-    job_id = "job-followup-error"
-    payload = {
-        "message": "what day works for you?",
-        "original_timestamp": "2026-03-06T10:00:00+00:00",
-        "user_timezone": "America/New_York",
-        "followup_context": {
-            "followup_question": "what day works for you?",
-            "user_answer": "next Tuesday",
-        },
-    }
-    await publish(
-        mock_redis,
-        STREAM_LLM_INTENT,
-        {
-            "job_id": job_id,
-            "payload": payload,
-            "user_id": 100,
-            "job_type": "intent_classify",
-        },
-    )
-
-    # Create a handler that raises an exception
-    error = Exception("LLM API error")
-    mock_handler = create_mock_handler(None, raises=error)
-    handlers = {"intent_classify": mock_handler}
-
-    # Consume and process the message
-    messages = await consume(
-        mock_redis, STREAM_LLM_INTENT, GROUP_LLM_WORKER, CONSUMER_NAME, count=1
-    )
-    assert len(messages) == 1
-    message_id, data = messages[0]
-
-    await _process_message(
-        redis_client=mock_redis,
-        stream_name=STREAM_LLM_INTENT,
-        message_id=message_id,
-        data=data,
-        handlers=handlers,
-        core_api=mock_core_api,
-        retry_tracker=retry_tracker,
-        config=llm_worker_config,
-        from_pel=False,
-    )
-
-    # Handler should have been called
-    mock_handler.handle.assert_called_once()
-
-    # Verify: Lock is STILL held (not released) after error
-    # The existing code checks `if user_lock_acquired:` before releasing
-    # For continuation jobs, user_lock_acquired is False, so no release happens
-    lock_exists = await mock_redis.exists(lock_key)
-    assert lock_exists, (
-        "Lock should NOT be released for continuation jobs on error"
-    )
 
 
 # =============================================================================

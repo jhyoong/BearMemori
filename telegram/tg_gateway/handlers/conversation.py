@@ -25,58 +25,6 @@ PENDING_LLM_CONVERSATION = "pending_llm_conversation"
 AWAITING_BUTTON_ACTION = "awaiting_button_action"
 LLM_CONVERSATION_METADATA = "llm_conversation_metadata"
 
-# Queue counter key — tracks how many LLM jobs are in flight for this user
-USER_QUEUE_COUNT = "user_queue_count"
-
-
-# ---------------------------------------------------------------------------
-# Queue counter helpers
-# ---------------------------------------------------------------------------
-
-
-def increment_queue(context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Increment the in-flight LLM job counter for the current user.
-
-    Args:
-        context: The Telegram context with user_data.
-
-    Returns:
-        The new queue count after incrementing.
-    """
-    count = context.user_data.get(USER_QUEUE_COUNT, 0) + 1
-    context.user_data[USER_QUEUE_COUNT] = count
-    logger.info("Queue count incremented to %d", count)
-    return count
-
-
-def decrement_queue(context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Decrement the in-flight LLM job counter for the current user.
-
-    Clamps at zero so the counter never goes negative.
-
-    Args:
-        context: The Telegram context with user_data.
-
-    Returns:
-        The new queue count after decrementing (minimum 0).
-    """
-    count = max(0, context.user_data.get(USER_QUEUE_COUNT, 0) - 1)
-    context.user_data[USER_QUEUE_COUNT] = count
-    logger.info("Queue count decremented to %d", count)
-    return count
-
-
-def get_queue_count(context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Return the current in-flight LLM job count for the user.
-
-    Args:
-        context: The Telegram context with user_data.
-
-    Returns:
-        Current queue count (0 if not set).
-    """
-    return context.user_data.get(USER_QUEUE_COUNT, 0)
-
 
 # ---------------------------------------------------------------------------
 # Date/time parsing utility

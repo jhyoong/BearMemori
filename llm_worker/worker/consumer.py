@@ -16,11 +16,9 @@ from shared_lib.redis_streams import (
     STREAM_LLM_TASK_MATCH,
     STREAM_NOTIFY_TELEGRAM,
     ack,
-    acquire_user_lock,
     consume_multi,
     create_consumer_group,
     publish,
-    release_user_lock,
 )
 
 from worker.core_api_client import CoreAPIClient
@@ -201,20 +199,6 @@ async def _process_message(
         await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
         return
 
-    # Acquire per-user lock to prevent concurrent processing for the same user.
-    # If the lock is held, return without acking so the message stays in the PEL
-    # and is retried on the next consumer loop iteration.
-    # Exception: followup/reclassification jobs (those with followup_context in payload)
-    # bypass lock acquisition because the lock is already held by the same user's
-    # active conversation flow.
-    user_lock_acquired = False
-    is_continuation = bool(payload.get("followup_context"))
-    if user_id is not None and not is_continuation:
-        user_lock_acquired = await acquire_user_lock(redis_client, str(user_id))
-        if not user_lock_acquired:
-            logger.debug("User %s lock held, deferring job %s", user_id, job_id)
-            return
-
     try:
         # Call the handler
         logger.info(
@@ -261,10 +245,6 @@ async def _process_message(
 
         # Ack the message after successful processing
         await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
-        # NOTE: user lock is NOT released here. It is released by the Telegram
-        # gateway when the user completes the conversation (confirm/reject/cancel).
-        # This prevents the next job from being processed while the user is still
-        # interacting with the current one.
 
     except Exception as e:
         # Classify the failure type before logging so we can choose the right log level.
@@ -302,8 +282,6 @@ async def _process_message(
                 # Ack the original message and re-enqueue it for later retry
                 await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
                 await publish(redis_client, stream_name, data)
-                if user_lock_acquired:
-                    await release_user_lock(redis_client, str(user_id))
                 logger.info(
                     f"Job {job_id} failed (attempt {current_attempt}), "
                     f"will retry in {backoff:.0f}s (attempt {current_attempt}/{RetryManager.MAX_RETRIES})"
@@ -334,8 +312,6 @@ async def _process_message(
                 # Clear retry state and ack the message
                 retry_tracker.clear(job_id)
                 await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
-                if user_lock_acquired:
-                    await release_user_lock(redis_client, str(user_id))
 
         elif failure_type == FailureType.UNAVAILABLE:
             # Check if this is the first time we see this job as unavailable
@@ -373,8 +349,6 @@ async def _process_message(
                 # Clear retry state and ack the message
                 retry_tracker.clear(job_id)
                 await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
-                if user_lock_acquired:
-                    await release_user_lock(redis_client, str(user_id))
             else:
                 # Within 14-day window - update status to processing, don't ack
                 await core_api.update_job(
@@ -402,8 +376,6 @@ async def _process_message(
                     )
 
                 # Message not acked - will be retried later
-                if user_lock_acquired:
-                    await release_user_lock(redis_client, str(user_id))
 
 
 async def run_consumer(

@@ -12,10 +12,6 @@ from tg_gateway.handlers.conversation import (
     PENDING_REMINDER_MEMORY_ID,
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
-    USER_QUEUE_COUNT,
-    decrement_queue,
-    get_queue_count,
-    increment_queue,
     parse_datetime,
     receive_custom_date,
     receive_custom_reminder,
@@ -99,70 +95,18 @@ class TestParseDatetime:
 
 
 # ---------------------------------------------------------------------------
-# Queue counter helpers
-# ---------------------------------------------------------------------------
-
-
-class TestQueueCounterHelpers:
-    """Tests for increment_queue, decrement_queue, get_queue_count."""
-
-    def test_get_queue_count_default_is_zero(self):
-        context = _make_context()
-        assert get_queue_count(context) == 0
-
-    def test_increment_queue_increments_from_zero(self):
-        context = _make_context()
-        result = increment_queue(context)
-        assert result == 1
-        assert context.user_data[USER_QUEUE_COUNT] == 1
-
-    def test_increment_queue_twice(self):
-        context = _make_context()
-        increment_queue(context)
-        result = increment_queue(context)
-        assert result == 2
-
-    def test_decrement_queue_after_increment(self):
-        context = _make_context()
-        increment_queue(context)
-        result = decrement_queue(context)
-        assert result == 0
-        assert context.user_data[USER_QUEUE_COUNT] == 0
-
-    def test_decrement_queue_clamps_at_zero(self):
-        context = _make_context()
-        # Decrement on an empty counter — must not go negative
-        result = decrement_queue(context)
-        assert result == 0
-
-    def test_get_queue_count_reflects_increments(self):
-        context = _make_context()
-        increment_queue(context)
-        increment_queue(context)
-        assert get_queue_count(context) == 2
-
-    def test_queue_state_persists_in_user_data(self):
-        context = _make_context()
-        increment_queue(context)
-        assert USER_QUEUE_COUNT in context.user_data
-
-
-# ---------------------------------------------------------------------------
 # State key constants
 # ---------------------------------------------------------------------------
 
 
 class TestStateKeyConstants:
-    """Verify the new constants exist with expected string values."""
+    """Verify the constants exist with expected string values."""
 
     def test_pending_llm_conversation_value(self):
         assert PENDING_LLM_CONVERSATION == "pending_llm_conversation"
 
     def test_awaiting_button_action_value(self):
         assert AWAITING_BUTTON_ACTION == "awaiting_button_action"
-
-    def test_user_queue_count_value(self):
-        assert USER_QUEUE_COUNT == "user_queue_count"
 
     def test_existing_constants_unchanged(self):
         assert PENDING_TAG_MEMORY_ID == "pending_tag_memory_id"
@@ -767,41 +711,3 @@ class TestReceiveFollowupAnswer:
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.payload["followup_context"]["user_answer"] == "High"
 
-    @pytest.mark.asyncio
-    async def test_followup_answer_does_not_release_lock(self):
-        """receive_followup_answer should NOT release the user lock.
-        The lock stays held so queued messages can't jump ahead."""
-        from unittest.mock import AsyncMock
-        from fakeredis.aioredis import FakeRedis
-
-        # Pre-set the lock
-        mock_redis = FakeRedis()
-        await mock_redis.set("llm:user_lock:42", "1", ex=604800)
-
-        # Build update and context mocks
-        update = AsyncMock()
-        update.message = AsyncMock()
-        update.message.from_user.id = 42
-        update.message.text = "at 3pm"
-        update.message.reply_text = AsyncMock()
-
-        context = AsyncMock()
-        context.user_data = {
-            PENDING_LLM_CONVERSATION: {
-                "memory_id": "mem-123",
-                "original_text": "remind me about courses",
-                "followup_question": "When?",
-                "original_timestamp": "2026-03-06T01:00:00+00:00",
-                "user_timezone": "Asia/Singapore",
-            }
-        }
-        context.bot_data = {
-            "core_client": AsyncMock(),
-            "redis": mock_redis,
-        }
-
-        await receive_followup_answer(update, context)
-
-        # Lock should still be held
-        lock_value = await mock_redis.get("llm:user_lock:42")
-        assert lock_value is not None, "Lock should NOT be released during followup"
