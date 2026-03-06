@@ -762,3 +762,42 @@ class TestReceiveFollowupAnswer:
 
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.payload["followup_context"]["user_answer"] == "High"
+
+    @pytest.mark.asyncio
+    async def test_followup_answer_does_not_release_lock(self):
+        """receive_followup_answer should NOT release the user lock.
+        The lock stays held so queued messages can't jump ahead."""
+        from unittest.mock import AsyncMock
+        from fakeredis.aioredis import FakeRedis
+
+        # Pre-set the lock
+        mock_redis = FakeRedis()
+        await mock_redis.set("llm:user_lock:42", "1", ex=604800)
+
+        # Build update and context mocks
+        update = AsyncMock()
+        update.message = AsyncMock()
+        update.message.from_user.id = 42
+        update.message.text = "at 3pm"
+        update.message.reply_text = AsyncMock()
+
+        context = AsyncMock()
+        context.user_data = {
+            PENDING_LLM_CONVERSATION: {
+                "memory_id": "mem-123",
+                "original_text": "remind me about courses",
+                "followup_question": "When?",
+                "original_timestamp": "2026-03-06T01:00:00+00:00",
+                "user_timezone": "Asia/Singapore",
+            }
+        }
+        context.bot_data = {
+            "core_client": AsyncMock(),
+            "redis": mock_redis,
+        }
+
+        await receive_followup_answer(update, context)
+
+        # Lock should still be held
+        lock_value = await mock_redis.get("llm:user_lock:42")
+        assert lock_value is not None, "Lock should NOT be released during followup"
