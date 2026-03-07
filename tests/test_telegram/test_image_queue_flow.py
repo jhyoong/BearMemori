@@ -29,9 +29,9 @@ async def test_image_queued_then_processed_after_conversation_ends():
 
     # -- Phase 1: Image arrives while text conversation is active --
     core_client.ensure_user = AsyncMock()
-    core_client.create_memory = AsyncMock(
-        return_value=type("M", (), {"id": "mem-img"})(),
-    )
+    memory_stub = MagicMock()
+    memory_stub.id = "mem-img"
+    core_client.create_memory = AsyncMock(return_value=memory_stub)
     core_client.get_active_conversation = AsyncMock(
         return_value=type("C", (), {"state": "processing"})(),
     )
