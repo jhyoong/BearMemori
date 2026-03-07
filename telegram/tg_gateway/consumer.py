@@ -10,8 +10,7 @@ from telegram.ext import Application
 from tg_gateway.callback_data import TaskAction
 from tg_gateway.handlers.conversation import (
     AWAITING_BUTTON_ACTION,
-    PENDING_LLM_CONVERSATION,
-    USER_QUEUE_COUNT,
+    LLM_CONVERSATION_METADATA,
 )
 from tg_gateway.keyboards import (
     due_date_keyboard,
@@ -31,7 +30,6 @@ from shared_lib.redis_streams import (
     ack,
     consume,
     create_consumer_group,
-    release_user_lock,
 )
 
 logger = logging.getLogger(__name__)
@@ -247,7 +245,8 @@ async def _handle_intent_result(
     """Handle an llm_intent_result notification with intent-specific routing.
 
     Creates or references pending memories, sends appropriate keyboards, and
-    sets conversation state in application.user_data.
+    sets conversation state in application.user_data. Updates conversation
+    state via Core API.
 
     Args:
         application: The Telegram bot application instance (for bot and user_data).
@@ -322,6 +321,21 @@ async def _handle_intent_result(
             "resolved_time": resolved_time_str,
             "query": query,
         }
+
+        # Update Core API conversation state
+        if core_client:
+            try:
+                await core_client.update_conversation_state(
+                    uid,
+                    "awaiting_reply",
+                    history_entry={"role": "assistant", "content": text},
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to update conversation state for user %s",
+                    user_id,
+                )
+
         logger.info(
             "Sent reminder intent proposal to user %s for memory %s", user_id, memory_id
         )
@@ -366,6 +380,21 @@ async def _handle_intent_result(
             "resolved_due_time": resolved_due_time_str,
             "query": query,
         }
+
+        # Update Core API conversation state
+        if core_client:
+            try:
+                await core_client.update_conversation_state(
+                    uid,
+                    "awaiting_reply",
+                    history_entry={"role": "assistant", "content": text},
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to update conversation state for user %s",
+                    user_id,
+                )
+
         logger.info(
             "Sent task intent proposal to user %s for memory %s", user_id, memory_id
         )
@@ -392,20 +421,18 @@ async def _handle_intent_result(
             text = f'{keywords_text}No results found for "{query}".'
             await bot.send_message(chat_id=user_id, text=text)
 
-        # Decrement queue: search is self-contained; no button action needed.
-        user_data[USER_QUEUE_COUNT] = max(0, user_data.get(USER_QUEUE_COUNT, 0) - 1)
-        logger.info(
-            "Queue count decremented for user %s (search intent, count: %d)",
-            user_id,
-            user_data[USER_QUEUE_COUNT],
-        )
-        # Release the per-user lock since search needs no confirmation
-        redis_client = application.bot_data.get("redis")
-        if redis_client:
+        # Complete the conversation via Core API (search is self-contained)
+        if core_client:
             try:
-                await release_user_lock(redis_client, str(user_id))
+                await core_client.update_conversation_state(
+                    uid, "completed"
+                )
             except Exception:
-                logger.exception("Failed to release user lock for user %s", user_id)
+                logger.exception(
+                    "Failed to complete conversation for user %s",
+                    user_id,
+                )
+
         logger.info("Sent search results to user %s for query %s", user_id, query)
 
     elif intent == "general_note":
@@ -414,13 +441,28 @@ async def _handle_intent_result(
         keyboard = general_note_keyboard(memory_id, suggested_tags)
         await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
         user_data[AWAITING_BUTTON_ACTION] = {"memory_id": memory_id}
+
+        # Update Core API conversation state
+        if core_client:
+            try:
+                await core_client.update_conversation_state(
+                    uid,
+                    "awaiting_reply",
+                    history_entry={"role": "assistant", "content": text},
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to update conversation state for user %s",
+                    user_id,
+                )
+
         logger.info(
             "Sent general_note proposal to user %s for memory %s", user_id, memory_id
         )
 
     elif intent == "ambiguous":
         await bot.send_message(chat_id=user_id, text=followup_question)
-        user_data[PENDING_LLM_CONVERSATION] = {
+        user_data[LLM_CONVERSATION_METADATA] = {
             "memory_id": memory_id,
             "original_text": query,
             "original_timestamp": content.get("original_timestamp"),
@@ -429,6 +471,24 @@ async def _handle_intent_result(
             "source_message_id": content.get("source_message_id"),
             "followup_question": followup_question,
         }
+
+        # Update Core API conversation state
+        if core_client:
+            try:
+                await core_client.update_conversation_state(
+                    uid,
+                    "awaiting_reply",
+                    history_entry={
+                        "role": "assistant",
+                        "content": followup_question,
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to update conversation state for user %s",
+                    user_id,
+                )
+
         logger.info(
             "Sent ambiguous followup question to user %s for memory %s",
             user_id,

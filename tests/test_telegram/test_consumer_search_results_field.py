@@ -16,15 +16,16 @@ from tg_gateway.consumer import (
     _handle_intent_result,
 )
 
-from tg_gateway.handlers.conversation import USER_QUEUE_COUNT
-
-
 def _make_application(user_data: dict | None = None) -> MagicMock:
     """Return a mock Application with a mocked bot and user_data store."""
     app = MagicMock()
     app.bot = MagicMock()
     app.bot.send_message = AsyncMock()
     app.user_data = user_data if user_data is not None else {}
+    mock_core_client = MagicMock()
+    mock_core_client.update_conversation_state = AsyncMock()
+    mock_core_client.get_settings = AsyncMock(side_effect=Exception("no settings"))
+    app.bot_data = {"core_client": mock_core_client}
     return app
 
 
@@ -224,12 +225,12 @@ class TestTelegramConsumerSearchNoResults:
 
 
 class TestTelegramConsumerSearchQueueManagement:
-    """Test search intent queue counter management."""
+    """Test search intent conversation state management."""
 
     @pytest.mark.asyncio
-    async def test_search_decrements_queue_counter(self):
-        """Test that search intent decrements USER_QUEUE_COUNT."""
-        app = _make_application(user_data={12345: {USER_QUEUE_COUNT: 5}})
+    async def test_search_completes_conversation_via_core_api(self):
+        """Test that search intent completes conversation via Core API."""
+        app = _make_application()
         content = {
             "intent": "search",
             "query": "test",
@@ -241,22 +242,10 @@ class TestTelegramConsumerSearchQueueManagement:
 
         await _handle_intent_result(app, "12345", content)
 
-        assert app.user_data[12345][USER_QUEUE_COUNT] == 4
-
-    @pytest.mark.asyncio
-    async def test_search_queue_clamps_at_zero(self):
-        """Test that queue counter doesn't go below zero."""
-        app = _make_application(user_data={12345: {USER_QUEUE_COUNT: 0}})
-        content = {
-            "intent": "search",
-            "query": "test",
-            "memory_id": "",
-            "results": [],
-        }
-
-        await _handle_intent_result(app, "12345", content)
-
-        assert app.user_data[12345][USER_QUEUE_COUNT] == 0
+        core_client = app.bot_data["core_client"]
+        core_client.update_conversation_state.assert_awaited_once_with(
+            12345, "completed"
+        )
 
     @pytest.mark.asyncio
     async def test_search_does_not_set_awaiting_button_action(self):

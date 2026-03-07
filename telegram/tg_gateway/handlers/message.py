@@ -4,7 +4,6 @@ This module contains handlers for text messages, image messages,
 and unauthorized users.
 """
 
-import json
 import logging
 
 from telegram import Update
@@ -17,70 +16,26 @@ from tg_gateway.core_client import CoreUnavailableError
 from tg_gateway.keyboards import memory_actions_keyboard
 from tg_gateway.handlers import conversation
 from tg_gateway.handlers.conversation import (
-    PENDING_LLM_CONVERSATION,
+    LLM_CONVERSATION_METADATA,
     PENDING_REMINDER_MEMORY_ID,
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
-    increment_queue,
 )
 from tg_gateway.media import download_and_upload_image
 
 logger = logging.getLogger(__name__)
 
 
-async def _get_submission_feedback(context: ContextTypes.DEFAULT_TYPE) -> str:
-    """Get appropriate submission feedback message based on LLM health and queue depth.
-
-    Args:
-        context: The Telegram context with bot_data containing redis client
-                and user_data containing user_queue_count.
-
-    Returns:
-        Feedback message string:
-        - "Processing your message..." when healthy and queue_count == 0
-        - "Added to queue (X messages ahead)" when healthy and queue_count > 0
-        - "I'm catching up with processing..." when unhealthy
-    """
-    user_queue_count = context.user_data.get("user_queue_count", 0)
-    redis_client = context.bot_data.get("redis")
-
-    # If Redis is not available, fall back to default message
-    if redis_client is None:
-        return "Processing your message..."
-
-    try:
-        health_status_raw = await redis_client.get("llm:health_status")
-        if health_status_raw is None:
-            return "Processing your message..."
-
-        health_status = json.loads(health_status_raw.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return "Processing your message..."
-
-    # Check if LLM is healthy
-    # Only "unhealthy" is explicitly unhealthy; missing/other status is healthy
-    is_healthy = health_status.get("status") != "unhealthy"
-
-    if is_healthy:
-        if user_queue_count == 0:
-            return "Processing your message..."
-        else:
-            message = "message" if user_queue_count == 1 else "messages"
-            return f"Added to queue ({user_queue_count} {message} ahead)"
-    else:
-        return "I'm catching up with processing... please wait."
-
-
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle incoming text messages.
 
     Routing priority (checked in order):
-    1. PENDING_TAG_MEMORY_ID — route to conversation.receive_tags
-    2. PENDING_TASK_MEMORY_ID — route to conversation.receive_custom_date
-    3. PENDING_REMINDER_MEMORY_ID — route to conversation.receive_custom_reminder
-    4. PENDING_LLM_CONVERSATION — route to conversation.receive_followup_answer
-    5. AWAITING_BUTTON_ACTION (without PENDING_LLM_CONVERSATION) — fall through to queue
-    6. Default — queue text for LLM intent classification
+    1. PENDING_TAG_MEMORY_ID -- route to conversation.receive_tags
+    2. PENDING_TASK_MEMORY_ID -- route to conversation.receive_custom_date
+    3. PENDING_REMINDER_MEMORY_ID -- route to conversation.receive_custom_reminder
+    4. Core API active conversation (awaiting_reply) -- reply to conversation
+    5. Core API active conversation (processing) -- enqueue message
+    6. No active conversation -- enqueue, dequeue, start conversation, create LLM job
 
     Args:
         update: The Telegram update.
@@ -102,18 +57,137 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await conversation.receive_custom_reminder(update, context)
         return
 
-    if PENDING_LLM_CONVERSATION in context.user_data:
-        await conversation.receive_followup_answer(update, context)
-        return
-
-    # If AWAITING_BUTTON_ACTION is set (but no PENDING_LLM_CONVERSATION above),
-    # the user is sending new text while buttons are displayed — fall through to queue.
-
-    # Queue text for LLM intent classification
     core_client = context.bot_data["core_client"]
 
     try:
         await core_client.ensure_user(user.id, user.full_name)
+
+        # Check for active conversation via Core API
+        active_conv = await core_client.get_active_conversation(user.id)
+
+        if active_conv and active_conv.state == "awaiting_reply":
+            # Get metadata stored when the conversation was started
+            metadata = context.user_data.get(LLM_CONVERSATION_METADATA, {})
+            memory_id = metadata.get("memory_id")
+            original_text = metadata.get("original_text", "")
+            followup_question = metadata.get("followup_question", "")
+
+            # Check if memory_id exists - if not, cancel and return
+            if not memory_id:
+                logger.error(
+                    "LLM_CONVERSATION_METADATA for user %s missing memory_id",
+                    user.id,
+                )
+                try:
+                    await core_client.cancel_conversation(user.id)
+                except Exception:
+                    logger.exception(
+                        "Failed to cancel conversation for user %s", user.id
+                    )
+                await msg.reply_text(
+                    "Something went wrong. Please try again."
+                )
+                return
+
+            # User is replying to a followup question
+            conv_resp = await core_client.reply_to_conversation(
+                user.id, msg.text
+            )
+
+            # Build conversation history from metadata
+            user_answer = msg.text.strip()
+            try:
+                await core_client.create_llm_job(
+                    LLMJobCreate(
+                        job_type=JobType.followup,
+                        payload={
+                            "memory_id": memory_id,
+                            "message": original_text,
+                            "original_timestamp": metadata.get(
+                                "original_timestamp"
+                            ),
+                            "user_timezone": metadata.get("user_timezone"),
+                            "source_chat_id": metadata.get(
+                                "source_chat_id"
+                            ),
+                            "source_message_id": metadata.get(
+                                "source_message_id"
+                            ),
+                            "followup_context": {
+                                "followup_question": followup_question,
+                                "user_answer": user_answer,
+                                "conversation_history": [
+                                    {
+                                        "role": "user",
+                                        "content": original_text,
+                                    },
+                                    {
+                                        "role": "assistant",
+                                        "content": followup_question,
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": user_answer,
+                                    },
+                                ],
+                            },
+                        },
+                        user_id=user.id,
+                    )
+                )
+                try:
+                    await msg.reply_text("Processing your reply...")
+                except Exception:
+                    logger.exception(
+                        "Failed to send feedback message to user"
+                    )
+            except Exception:
+                logger.exception(
+                    "Failed to create followup LLM job for user %s",
+                    user.id,
+                )
+                await msg.reply_text(
+                    "Failed to submit your answer. Please try again."
+                )
+            return
+
+        if active_conv and active_conv.state == "processing":
+            # Already processing a message -- enqueue this one
+            ts = msg.date.isoformat() if msg.date else ""
+            await core_client.enqueue_message(
+                user.id, content=msg.text, message_timestamp=ts
+            )
+            queue_status = await core_client.get_queue_status(user.id)
+            ahead = queue_status.queue_length
+            word = "message" if ahead == 1 else "messages"
+            try:
+                await msg.reply_text(
+                    f"Added to queue ({ahead} {word} ahead)"
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to send feedback message to user"
+                )
+            return
+
+        # No active conversation -- enqueue, dequeue, start, create LLM job
+        ts = msg.date.isoformat() if msg.date else ""
+        await core_client.enqueue_message(
+            user.id, content=msg.text, message_timestamp=ts
+        )
+        dequeue_resp = await core_client.dequeue_message(user.id)
+        item = dequeue_resp.item
+
+        if item is None:
+            logger.warning(
+                "Dequeue returned no item for user %s", user.id
+            )
+            await msg.reply_text("Processing your message...")
+            return
+
+        await core_client.start_conversation(
+            user.id, queue_item_id=item.id
+        )
 
         # Fetch user timezone for LLM time resolution
         try:
@@ -122,17 +196,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         except Exception:
             user_tz = "UTC"
 
-        # Reply based on LLM health status and queue depth
-        feedback_message = await _get_submission_feedback(context)
-
-        # Try to send feedback message to user - don't fail if Telegram API is down
+        # Try to send feedback message -- don't fail if Telegram API is down
         try:
-            await msg.reply_text(feedback_message)
+            await msg.reply_text("Processing your message...")
         except Exception:
             logger.exception("Failed to send feedback message to user")
-
-        # Increment queue count and create LLM job regardless of reply success
-        increment_queue(context)
 
         await core_client.create_llm_job(
             LLMJobCreate(
@@ -140,7 +208,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 payload={
                     "message": msg.text,
                     "memory_id": None,
-                    "original_timestamp": msg.date.isoformat() if msg.date else None,
+                    "original_timestamp": (
+                        msg.date.isoformat() if msg.date else None
+                    ),
                     "source_chat_id": msg.chat_id,
                     "source_message_id": msg.message_id,
                     "user_timezone": user_tz,
