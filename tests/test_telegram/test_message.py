@@ -750,3 +750,20 @@ class TestHandleImage:
         core_client.dequeue_message.assert_not_called()
         reply_text = update.message.reply_text.call_args[0][0]
         assert "queue" in reply_text.lower() or "ahead" in reply_text.lower()
+
+    @pytest.mark.asyncio
+    async def test_handle_image_core_unavailable_on_ensure_user(self):
+        """CoreUnavailableError from ensure_user replies with error and does not create memory."""
+        core_client = _make_core_client(active_conversation=None)
+        core_client.ensure_user = AsyncMock(side_effect=CoreUnavailableError("down"))
+
+        update = _make_update_photo(user_id=99)
+        context = _make_context(bot_data={"core_client": core_client})
+
+        with patch("tg_gateway.handlers.message.download_and_upload_image", new_callable=AsyncMock):
+            await handle_image(update, context)
+
+        update.message.reply_text.assert_called_once()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "trouble" in reply_text.lower() or "try again" in reply_text.lower()
+        core_client.create_memory.assert_not_called()

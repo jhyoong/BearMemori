@@ -241,59 +241,63 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     try:
         await core_client.ensure_user(user.id, user.full_name)
+
+        # 1. Create memory immediately
+        try:
+            memory = await core_client.create_memory(
+                MemoryCreate(
+                    owner_user_id=user.id,
+                    content=caption,
+                    media_type=MediaType.image,
+                    media_file_id=photo.file_id,
+                    source_chat_id=msg.chat_id,
+                    source_message_id=msg.message_id,
+                )
+            )
+        except Exception:
+            logger.exception("Failed to create memory for image from user %s", user.id)
+            await msg.reply_text("Something went wrong saving your image. Please try again.")
+            return
+
+        # 2. Download from Telegram and upload to Core immediately (non-fatal)
+        local_path = await download_and_upload_image(
+            context.bot, core_client, memory.id, photo.file_id,
+        )
+
+        # 3. Enqueue with memory_id and local_path
+        await core_client.enqueue_message(
+            user_id=user.id,
+            content=caption,
+            memory_id=memory.id,
+            image_local_path=local_path,
+            message_timestamp=msg.date,
+        )
+
+        # 4. Check for active conversation
+        active_conv = await core_client.get_active_conversation(user.id)
+
+        if active_conv and active_conv.state in ("processing", "awaiting_reply"):
+            status = await core_client.get_queue_status(user.id)
+            ahead = status.queue_length
+            word = "message" if ahead == 1 else "messages"
+            await msg.reply_text(f"Added to queue ({ahead} {word} ahead)")
+        else:
+            dequeue_resp = await core_client.dequeue_message(user.id)
+            if dequeue_resp.item:
+                await core_client.start_conversation(user.id, queue_item_id=dequeue_resp.item.id)
+                await _process_image_queue_item(
+                    core_client, user.id, dequeue_resp.item,
+                )
+                await msg.reply_text("Processing your image...")
+            else:
+                logger.warning(
+                    "Dequeue returned no item for image from user %s", user.id
+                )
     except CoreUnavailableError:
         await msg.reply_text(
             "I'm having trouble right now, please try again in a moment."
         )
         return
-
-    # 1. Create memory immediately
-    try:
-        memory = await core_client.create_memory(
-            MemoryCreate(
-                owner_user_id=user.id,
-                content=caption,
-                media_type=MediaType.image,
-                media_file_id=photo.file_id,
-                source_chat_id=msg.chat_id,
-                source_message_id=msg.message_id,
-            )
-        )
-    except Exception:
-        logger.exception("Failed to create memory for image from user %s", user.id)
-        await msg.reply_text("Something went wrong saving your image. Please try again.")
-        return
-
-    # 2. Download from Telegram and upload to Core immediately (non-fatal)
-    local_path = await download_and_upload_image(
-        context.bot, core_client, memory.id, photo.file_id,
-    )
-
-    # 3. Enqueue with memory_id and local_path
-    await core_client.enqueue_message(
-        user_id=user.id,
-        content=caption,
-        memory_id=memory.id,
-        image_local_path=local_path,
-        message_timestamp=msg.date,
-    )
-
-    # 4. Check for active conversation
-    active_conv = await core_client.get_active_conversation(user.id)
-
-    if active_conv and active_conv.state in ("processing", "awaiting_reply"):
-        status = await core_client.get_queue_status(user.id)
-        ahead = status.queue_length
-        word = "message" if ahead == 1 else "messages"
-        await msg.reply_text(f"Added to queue ({ahead} {word} ahead)")
-    else:
-        dequeue_resp = await core_client.dequeue_message(user.id)
-        if dequeue_resp.item:
-            await core_client.start_conversation(user.id, queue_item_id=dequeue_resp.item.id)
-            await _process_image_queue_item(
-                core_client, user.id, dequeue_resp.item,
-            )
-        await msg.reply_text("Processing your image...")
 
 
 async def handle_unauthorized(
