@@ -1,7 +1,13 @@
 import logging
+from datetime import datetime
 from httpx import AsyncClient, ConnectError, TimeoutException
 
 from shared_lib.schemas import (
+    ConversationReply,
+    ConversationResponse,
+    ConversationStart,
+    ConversationStateUpdate,
+    DequeueResponse,
     LLMJobCreate,
     LLMJobResponse,
     MemoryCreate,
@@ -9,6 +15,9 @@ from shared_lib.schemas import (
     MemoryUpdate,
     MemoryResponse,
     MemoryWithTags,
+    QueueItem,
+    QueueItemCreate,
+    QueueStatus,
     ReminderCreate,
     ReminderResponse,
     TagsAddRequest,
@@ -17,6 +26,7 @@ from shared_lib.schemas import (
     TaskResponse,
     TaskUpdateResponse,
     UserSettingsResponse,
+    UserSettingsUpdate,
     UserUpsert,
 )
 
@@ -349,6 +359,29 @@ class CoreClient:
 
         return UserSettingsResponse.model_validate(response.json())
 
+    async def update_settings(
+        self, user_id: int, data: UserSettingsUpdate
+    ) -> UserSettingsResponse:
+        """Update user settings."""
+        try:
+            response = await self._client.put(
+                f"/settings/{user_id}",
+                json=data.model_dump(mode="json", exclude_none=True),
+            )
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to update settings: {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to update settings: {response.status_code} {response.text}"
+            )
+
+        return UserSettingsResponse.model_validate(response.json())
+
     async def create_llm_job(self, data: LLMJobCreate) -> LLMJobResponse:
         """Create a new LLM job."""
         try:
@@ -372,3 +405,353 @@ class CoreClient:
             )
 
         return LLMJobResponse.model_validate(response.json())
+
+    async def get_queue_stats(self, user_id: int | None = None) -> dict:
+        """Get LLM job queue statistics.
+
+        Args:
+            user_id: Optional user ID to filter stats for a specific user.
+
+        Returns:
+            Dict with queue stats including total_pending, by_status, by_type,
+            and oldest_queued_age_seconds.
+        """
+        params = {}
+        if user_id is not None:
+            params["user_id"] = user_id
+        try:
+            response = await self._client.get("/admin/queue-stats", params=params)
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to get queue stats: {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to get queue stats: {response.status_code} {response.text}"
+            )
+
+        return response.json()
+
+    async def get_health(self) -> dict:
+        """Get system health status.
+
+        Returns:
+            Dict with status ("healthy" or "unhealthy") and optional error message.
+        """
+        try:
+            response = await self._client.get("/admin/health")
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to get health: {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to get health: {response.status_code} {response.text}"
+            )
+
+        return response.json()
+
+    async def get_stream_health(self) -> dict:
+        """Get Redis stream health status.
+
+        Returns:
+            Dict with stream health data including stream lengths
+            and consumer group info.
+        """
+        try:
+            response = await self._client.get("/admin/stream-health")
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to get stream health: {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to get stream health: {response.status_code}"
+                f" {response.text}"
+            )
+
+        return response.json()
+
+    async def get_llm_health(self) -> dict:
+        """Get LLM worker health status from Redis.
+
+        Returns:
+            Dict with LLM health data including status, last_check,
+            last_success, last_failure, and consecutive_failures.
+        """
+        try:
+            response = await self._client.get("/admin/llm-health")
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to get LLM health: {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to get LLM health: {response.status_code}"
+                f" {response.text}"
+            )
+
+        return response.json()
+
+    # ── Queue methods ──────────────────────────────────────────────────
+
+    async def enqueue_message(
+        self,
+        user_id: int,
+        content: str | None = None,
+        memory_id: str | None = None,
+        image_local_path: str | None = None,
+        message_timestamp: datetime | None = None,
+    ) -> QueueItem:
+        """Enqueue a message for processing."""
+        body = QueueItemCreate(
+            content=content,
+            memory_id=memory_id,
+            image_local_path=image_local_path,
+            message_timestamp=message_timestamp,
+        )
+        try:
+            response = await self._client.post(
+                f"/queue/{user_id}/enqueue",
+                json=body.model_dump(mode="json", exclude_none=True),
+            )
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if response.status_code == 404:
+            raise CoreNotFoundError(f"Queue for user {user_id} not found")
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to enqueue message: {response.status_code}"
+                f" {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to enqueue message: {response.status_code}"
+                f" {response.text}"
+            )
+
+        return QueueItem.model_validate(response.json())
+
+    async def dequeue_message(self, user_id: int) -> DequeueResponse:
+        """Dequeue the next message for processing."""
+        try:
+            response = await self._client.delete(
+                f"/queue/{user_id}/dequeue",
+            )
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if response.status_code == 404:
+            raise CoreNotFoundError(f"Queue for user {user_id} not found")
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to dequeue message: {response.status_code}"
+                f" {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to dequeue message: {response.status_code}"
+                f" {response.text}"
+            )
+
+        return DequeueResponse.model_validate(response.json())
+
+    async def get_queue_status(self, user_id: int) -> QueueStatus:
+        """Get the queue status for a user."""
+        try:
+            response = await self._client.get(
+                f"/queue/{user_id}/status",
+            )
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if response.status_code == 404:
+            raise CoreNotFoundError(f"Queue for user {user_id} not found")
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to get queue status: {response.status_code}"
+                f" {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to get queue status: {response.status_code}"
+                f" {response.text}"
+            )
+
+        return QueueStatus.model_validate(response.json())
+
+    # ── Conversation methods ───────────────────────────────────────────
+
+    async def get_active_conversation(
+        self, user_id: int
+    ) -> ConversationResponse | None:
+        """Get the active conversation for a user. Returns None if none."""
+        try:
+            response = await self._client.get(
+                f"/conversations/{user_id}/active",
+            )
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if response.status_code == 404:
+            raise CoreNotFoundError(
+                f"Conversation for user {user_id} not found"
+            )
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to get active conversation:"
+                f" {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to get active conversation:"
+                f" {response.status_code} {response.text}"
+            )
+
+        data = response.json()
+        if data is None:
+            return None
+
+        return ConversationResponse.model_validate(data)
+
+    async def start_conversation(
+        self, user_id: int, queue_item_id: str
+    ) -> ConversationResponse:
+        """Start a new conversation for a queue item."""
+        body = ConversationStart(queue_item_id=queue_item_id)
+        try:
+            response = await self._client.post(
+                f"/conversations/{user_id}/start",
+                json=body.model_dump(mode="json"),
+            )
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if response.status_code == 404:
+            raise CoreNotFoundError(
+                f"Conversation for user {user_id} not found"
+            )
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to start conversation:"
+                f" {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to start conversation:"
+                f" {response.status_code} {response.text}"
+            )
+
+        return ConversationResponse.model_validate(response.json())
+
+    async def update_conversation_state(
+        self,
+        user_id: int,
+        state: str,
+        history_entry: dict | None = None,
+    ) -> ConversationResponse:
+        """Update the state of the active conversation."""
+        body = ConversationStateUpdate(
+            state=state, history_entry=history_entry
+        )
+        try:
+            response = await self._client.patch(
+                f"/conversations/{user_id}/state",
+                json=body.model_dump(mode="json", exclude_none=True),
+            )
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if response.status_code == 404:
+            raise CoreNotFoundError(
+                f"Conversation for user {user_id} not found"
+            )
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to update conversation state:"
+                f" {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to update conversation state:"
+                f" {response.status_code} {response.text}"
+            )
+
+        return ConversationResponse.model_validate(response.json())
+
+    async def reply_to_conversation(
+        self, user_id: int, content: str
+    ) -> ConversationResponse:
+        """Send a reply to the active conversation."""
+        body = ConversationReply(content=content)
+        try:
+            response = await self._client.post(
+                f"/conversations/{user_id}/reply",
+                json=body.model_dump(mode="json"),
+            )
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if response.status_code == 404:
+            raise CoreNotFoundError(
+                f"Conversation for user {user_id} not found"
+            )
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to reply to conversation:"
+                f" {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to reply to conversation:"
+                f" {response.status_code} {response.text}"
+            )
+
+        return ConversationResponse.model_validate(response.json())
+
+    async def cancel_conversation(self, user_id: int) -> dict:
+        """Cancel the active conversation."""
+        try:
+            response = await self._client.post(
+                f"/conversations/{user_id}/cancel",
+            )
+        except (ConnectError, TimeoutException) as e:
+            logger.exception("Failed to connect to Core API")
+            raise CoreUnavailableError(f"Core API unavailable: {e}") from e
+
+        if response.status_code == 404:
+            raise CoreNotFoundError(
+                f"Conversation for user {user_id} not found"
+            )
+
+        if not response.is_success:
+            logger.error(
+                f"Failed to cancel conversation:"
+                f" {response.status_code} {response.text}"
+            )
+            raise CoreClientError(
+                f"Failed to cancel conversation:"
+                f" {response.status_code} {response.text}"
+            )
+
+        return response.json()

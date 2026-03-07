@@ -22,6 +22,7 @@ class IntentHandler(BaseHandler):
         memory_id = payload.get("memory_id", "")
         original_timestamp = payload.get("original_timestamp")
         followup_context = payload.get("followup_context")
+        user_timezone = payload.get("user_timezone", "UTC")
 
         # Determine if using legacy format (only 'query', no 'original_timestamp')
         is_legacy = "query" in payload and "original_timestamp" not in payload
@@ -36,12 +37,14 @@ class IntentHandler(BaseHandler):
                 followup_question=followup_question,
                 user_answer=user_answer,
                 original_timestamp=original_timestamp or "",
+                user_timezone=user_timezone,
             )
         else:
             # Use standard INTENT_CLASSIFY_PROMPT
             prompt = INTENT_CLASSIFY_PROMPT.format(
                 message=message,
                 original_timestamp=original_timestamp or "",
+                user_timezone=user_timezone,
             )
 
         logger.info(
@@ -66,7 +69,7 @@ class IntentHandler(BaseHandler):
             memory_response = await self.core_api.create_memory(
                 content=message, owner_user_id=user_id
             )
-            memory_id = memory_response.get("memory_id")
+            memory_id = memory_response.get("id")
 
         # For legacy format (old 'query' only, no 'original_timestamp'), maintain old behavior
         # But if search intent, still call the search API
@@ -111,6 +114,12 @@ class IntentHandler(BaseHandler):
         for key, value in result.items():
             if key != "intent":
                 structured_result[key] = value
+
+        # Forward payload metadata so the Telegram consumer can store it
+        # for followup conversations (timezone, timestamp, source IDs).
+        for meta_key in ("original_timestamp", "user_timezone", "source_chat_id", "source_message_id"):
+            if meta_key not in structured_result:
+                structured_result[meta_key] = payload.get(meta_key)
 
         # Handle stale flag for reminder and task intents
         if intent == "reminder":

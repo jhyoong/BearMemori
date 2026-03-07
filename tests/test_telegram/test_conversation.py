@@ -1,7 +1,7 @@
 """Tests for conversation handlers in tg_gateway/handlers/conversation.py."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -12,10 +12,6 @@ from tg_gateway.handlers.conversation import (
     PENDING_REMINDER_MEMORY_ID,
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
-    USER_QUEUE_COUNT,
-    decrement_queue,
-    get_queue_count,
-    increment_queue,
     parse_datetime,
     receive_custom_date,
     receive_custom_reminder,
@@ -41,7 +37,9 @@ def _make_update(text: str = "hello", user_id: int = 99) -> MagicMock:
     return update
 
 
-def _make_context(user_data: dict | None = None, bot_data: dict | None = None) -> MagicMock:
+def _make_context(
+    user_data: dict | None = None, bot_data: dict | None = None
+) -> MagicMock:
     """Return a minimal mock context with controllable user_data and bot_data."""
     context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
     context.user_data = user_data if user_data is not None else {}
@@ -90,59 +88,10 @@ class TestParseDatetime:
     def test_returns_none_on_empty_string(self):
         assert parse_datetime("") is None
 
-    def test_result_is_utc_aware(self):
-        from datetime import timezone
+    def test_result_is_naive(self):
+        """parse_datetime returns naive datetimes; caller converts to UTC."""
         dt = parse_datetime("2024-06-15 12:00")
-        assert dt.tzinfo == timezone.utc
-
-
-# ---------------------------------------------------------------------------
-# Queue counter helpers
-# ---------------------------------------------------------------------------
-
-
-class TestQueueCounterHelpers:
-    """Tests for increment_queue, decrement_queue, get_queue_count."""
-
-    def test_get_queue_count_default_is_zero(self):
-        context = _make_context()
-        assert get_queue_count(context) == 0
-
-    def test_increment_queue_increments_from_zero(self):
-        context = _make_context()
-        result = increment_queue(context)
-        assert result == 1
-        assert context.user_data[USER_QUEUE_COUNT] == 1
-
-    def test_increment_queue_twice(self):
-        context = _make_context()
-        increment_queue(context)
-        result = increment_queue(context)
-        assert result == 2
-
-    def test_decrement_queue_after_increment(self):
-        context = _make_context()
-        increment_queue(context)
-        result = decrement_queue(context)
-        assert result == 0
-        assert context.user_data[USER_QUEUE_COUNT] == 0
-
-    def test_decrement_queue_clamps_at_zero(self):
-        context = _make_context()
-        # Decrement on an empty counter — must not go negative
-        result = decrement_queue(context)
-        assert result == 0
-
-    def test_get_queue_count_reflects_increments(self):
-        context = _make_context()
-        increment_queue(context)
-        increment_queue(context)
-        assert get_queue_count(context) == 2
-
-    def test_queue_state_persists_in_user_data(self):
-        context = _make_context()
-        increment_queue(context)
-        assert USER_QUEUE_COUNT in context.user_data
+        assert dt.tzinfo is None
 
 
 # ---------------------------------------------------------------------------
@@ -151,16 +100,13 @@ class TestQueueCounterHelpers:
 
 
 class TestStateKeyConstants:
-    """Verify the new constants exist with expected string values."""
+    """Verify the constants exist with expected string values."""
 
     def test_pending_llm_conversation_value(self):
         assert PENDING_LLM_CONVERSATION == "pending_llm_conversation"
 
     def test_awaiting_button_action_value(self):
         assert AWAITING_BUTTON_ACTION == "awaiting_button_action"
-
-    def test_user_queue_count_value(self):
-        assert USER_QUEUE_COUNT == "user_queue_count"
 
     def test_existing_constants_unchanged(self):
         assert PENDING_TAG_MEMORY_ID == "pending_tag_memory_id"
@@ -175,6 +121,24 @@ class TestStateKeyConstants:
 
 class TestReceiveTags:
     """Tests for receive_tags handler."""
+
+    @pytest.fixture(autouse=True)
+    def patch_queue_calls(self):
+        """Patch the downstream queue-release calls added in Task 8.
+
+        receive_tags now calls _clear_conversation_state and
+        _process_next_queue_item on success. Tests that don't care about
+        those calls get them patched out automatically so they don't need to
+        set up full mock infrastructure for those functions.
+        """
+        with patch(
+            "tg_gateway.handlers.callback._clear_conversation_state",
+            new_callable=AsyncMock,
+        ), patch(
+            "tg_gateway.handlers.message._process_next_queue_item",
+            new_callable=AsyncMock,
+        ):
+            yield
 
     @pytest.mark.asyncio
     async def test_adds_tags_to_memory(self):
@@ -270,6 +234,33 @@ class TestReceiveTags:
 
         assert context.user_data.get(PENDING_TAG_MEMORY_ID) == "mem-4"
         update.message.reply_text.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_clears_conversation_and_processes_next_queue_item_on_success(self):
+        """After tags are added, _clear_conversation_state is called exactly once.
+
+        _clear_conversation_state internally handles next-queue processing, so
+        receive_tags must NOT call _process_next_queue_item directly (that would
+        cause a double dequeue). We only verify _clear_conversation_state is called.
+        """
+        core_client = MagicMock()
+        core_client.add_tags = AsyncMock()
+
+        update = _make_update(text="sunset, beach", user_id=99)
+        context = _make_context(
+            user_data={PENDING_TAG_MEMORY_ID: "mem-100"},
+            bot_data={"core_client": core_client},
+        )
+
+        # Patch at source module level — receive_tags uses a lazy import so we
+        # patch where the function is defined.
+        with patch(
+            "tg_gateway.handlers.callback._clear_conversation_state",
+            new_callable=AsyncMock,
+        ) as mock_clear:
+            await receive_tags(update, context)
+
+            mock_clear.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -583,7 +574,10 @@ class TestReceiveFollowupAnswer:
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.payload["memory_id"] == "mem-20"
         assert job_arg.payload["message"] == "Buy milk"
-        assert job_arg.payload["followup_context"]["followup_question"] == "When do you need this done?"
+        assert (
+            job_arg.payload["followup_context"]["followup_question"]
+            == "When do you need this done?"
+        )
         assert job_arg.payload["followup_context"]["user_answer"] == "Tomorrow morning"
 
     @pytest.mark.asyncio
@@ -609,7 +603,7 @@ class TestReceiveFollowupAnswer:
         await receive_followup_answer(update, context)
 
         job_arg = core_client.create_llm_job.call_args[0][0]
-        assert job_arg.job_type == JobType.intent_classify
+        assert job_arg.job_type == JobType.followup
 
     @pytest.mark.asyncio
     async def test_user_id_on_job(self):
@@ -658,7 +652,7 @@ class TestReceiveFollowupAnswer:
 
     @pytest.mark.asyncio
     async def test_replies_processing_on_success(self):
-        """Handler replies 'Processing...' after queuing the job."""
+        """Handler replies feedback message after queuing the job."""
         core_client = MagicMock()
         core_client.create_llm_job = AsyncMock()
 
@@ -676,7 +670,7 @@ class TestReceiveFollowupAnswer:
 
         await receive_followup_answer(update, context)
 
-        update.message.reply_text.assert_called_once_with("Processing...")
+        update.message.reply_text.assert_called_once_with("Processing your reply...")
 
     @pytest.mark.asyncio
     async def test_no_pending_state_replies_error(self):
@@ -761,3 +755,4 @@ class TestReceiveFollowupAnswer:
 
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.payload["followup_context"]["user_answer"] == "High"
+

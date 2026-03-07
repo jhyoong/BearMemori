@@ -37,11 +37,10 @@ from tg_gateway.core_client import (
 )
 from tg_gateway.handlers.conversation import (
     AWAITING_BUTTON_ACTION,
-    PENDING_LLM_CONVERSATION,
+    LLM_CONVERSATION_METADATA,
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
     PENDING_REMINDER_MEMORY_ID,
-    USER_QUEUE_COUNT,
 )
 from tg_gateway.keyboards import (
     due_date_keyboard,
@@ -54,19 +53,41 @@ from tg_gateway.keyboards import (
 logger = logging.getLogger(__name__)
 
 
-def _clear_conversation_state(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Clear pending LLM conversation state and decrement the queue counter.
+async def _clear_conversation_state(
+    context: ContextTypes.DEFAULT_TYPE, user_id: int | None = None
+) -> None:
+    """Clear pending conversation state and complete the conversation via Core API.
 
     Called by button handlers that conclude a conversation flow so that
-    subsequent messages from the user are not misrouted.
+    subsequent messages from the user are not misrouted. After completing
+    the conversation, auto-processes the next item in the user's queue.
 
     Args:
         context: The Telegram context with user_data.
+        user_id: Telegram user ID, used to complete the conversation.
     """
     context.user_data.pop(AWAITING_BUTTON_ACTION, None)
-    context.user_data.pop(PENDING_LLM_CONVERSATION, None)
-    count = context.user_data.get(USER_QUEUE_COUNT, 0)
-    context.user_data[USER_QUEUE_COUNT] = max(0, count - 1)
+    context.user_data.pop(LLM_CONVERSATION_METADATA, None)
+
+    core_client = context.bot_data.get("core_client")
+    if core_client and user_id is not None:
+        try:
+            await core_client.update_conversation_state(user_id, "completed")
+        except Exception:
+            logger.exception(
+                "Failed to complete conversation for user %s",
+                user_id,
+            )
+
+        # Auto-process next queue item
+        try:
+            from tg_gateway.handlers.message import _process_next_queue_item
+            await _process_next_queue_item(core_client, user_id)
+        except Exception:
+            logger.exception(
+                "Failed to process next queue item for user %s",
+                user_id,
+            )
 
 
 def _is_photo_message(callback_query) -> bool:
@@ -256,8 +277,9 @@ async def handle_memory_action(
         await core_client.update_memory(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
-        _clear_conversation_state(context)
-        await callback_query.edit_message_text(
+        await _clear_conversation_state(context, update.effective_user.id)
+        await _edit_message(
+            callback_query,
             "Select a due date for the task:",
             reply_markup=due_date_keyboard(memory_id),
         )
@@ -267,22 +289,25 @@ async def handle_memory_action(
         await core_client.update_memory(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
-        _clear_conversation_state(context)
-        await callback_query.edit_message_text(
+        await _clear_conversation_state(context, update.effective_user.id)
+        await _edit_message(
+            callback_query,
             "Select when to be reminded:",
             reply_markup=reminder_time_keyboard(memory_id),
         )
 
     elif action == "add_tag":
-        # Confirm the memory and set conversation state key for message handler
+        # Confirm the memory and set conversation state key for message handler.
+        # Do NOT call _clear_conversation_state here — the queue must remain held
+        # until the user submits their tags via receive_tags.
         await core_client.update_memory(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
-        _clear_conversation_state(context)
         context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
         # Prompt user for tags (send message asking for comma-separated tags)
-        await callback_query.edit_message_text(
-            "Please send the tags for this memory as a comma-separated list (e.g., work, important, project)."
+        await _edit_message(
+            callback_query,
+            "Please send the tags for this memory as a comma-separated list (e.g., work, important, project).",
         )
 
     elif action == "toggle_pin":
@@ -297,8 +322,8 @@ async def handle_memory_action(
         await core_client.update_memory(
             memory_id, MemoryUpdate(is_pinned=True, status=MemoryStatus.confirmed)
         )
-        _clear_conversation_state(context)
-        await callback_query.edit_message_text("Memory pinned and confirmed.")
+        await _clear_conversation_state(context, update.effective_user.id)
+        await _edit_message(callback_query, "Memory pinned and confirmed.")
 
     elif action == "confirm_delete":
         # Show delete confirmation keyboard
@@ -325,30 +350,41 @@ async def handle_due_date_choice(
         callback_data: The parsed callback data.
         core_client: The Core API client.
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
+
+    from tg_gateway.tz_utils import user_now, to_utc, format_for_user
 
     callback_query = update.callback_query
     memory_id = callback_data.memory_id
     choice = callback_data.choice
     user_id = update.effective_user.id
 
+    # Fetch user timezone
+    try:
+        settings = await core_client.get_settings(user_id)
+        tz_name = settings.timezone
+    except Exception:
+        tz_name = "UTC"
+
     # Handle custom date - prompt user for date entry
     if choice in ("custom", "custom_task"):
         context.user_data[PENDING_TASK_MEMORY_ID] = memory_id
-        await callback_query.edit_message_text(
-            "Please enter a custom due date and time (e.g., 2024-12-31 09:00):"
+        await _edit_message(
+            callback_query,
+            "Please enter a custom due date and time (e.g., 2024-12-31 09:00):",
         )
         return
 
-    # Calculate the due date based on choice
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    # Calculate the due date based on choice (in user's local timezone, then convert to UTC)
+    now_local = user_now(tz_name)
+    today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if choice == "today":
-        due_at = today
+        due_at = to_utc(today_local, tz_name)
     elif choice == "tomorrow":
-        due_at = today + timedelta(days=1)
+        due_at = to_utc(today_local + timedelta(days=1), tz_name)
     elif choice == "next_week":
-        due_at = today + timedelta(days=7)
+        due_at = to_utc(today_local + timedelta(days=7), tz_name)
     elif choice == "no_date":
         due_at = None
     else:
@@ -358,7 +394,7 @@ async def handle_due_date_choice(
     # Get the memory to get its content for task description
     memory = await core_client.get_memory(memory_id)
     if memory is None:
-        await callback_query.edit_message_text("Memory not found.")
+        await _edit_message(callback_query, "Memory not found.")
         return
 
     # Create the task description from memory content
@@ -374,14 +410,14 @@ async def handle_due_date_choice(
 
     await core_client.create_task(task_create)
 
-    # Format confirmation message
+    # Format confirmation message in user's local timezone
     if due_at:
-        due_date_str = due_at.strftime("%Y-%m-%d")
-        await callback_query.edit_message_text(
-            f"Task created with due date: {due_date_str}"
+        due_date_str = format_for_user(due_at, tz_name)
+        await _edit_message(
+            callback_query, f"Task created with due date: {due_date_str}"
         )
     else:
-        await callback_query.edit_message_text("Task created with no due date.")
+        await _edit_message(callback_query, "Task created with no due date.")
 
 
 async def handle_reminder_time_choice(
@@ -402,54 +438,52 @@ async def handle_reminder_time_choice(
     """
     from datetime import datetime, timedelta
 
+    from tg_gateway.tz_utils import user_now, to_utc, format_for_user
+
     callback_query = update.callback_query
     memory_id = callback_data.memory_id
     choice = callback_data.choice
     user_id = update.effective_user.id
 
+    # Fetch user timezone
+    try:
+        settings = await core_client.get_settings(user_id)
+        tz_name = settings.timezone
+    except Exception:
+        tz_name = "UTC"
+
     # Handle custom reminder time - prompt user for custom time
     if choice == "custom":
         context.user_data[PENDING_REMINDER_MEMORY_ID] = memory_id
-        await callback_query.edit_message_text(
+        await _edit_message(
+            callback_query,
             "Please enter a custom reminder time in YYYY-MM-DD HH:MM format "
-            "(e.g., 2024-12-31 14:30):"
+            "(e.g., 2024-12-31 14:30):",
         )
         return
 
     # Get the memory to get its content for reminder text
     memory = await core_client.get_memory(memory_id)
     if memory is None:
-        await callback_query.edit_message_text("Memory not found.")
+        await _edit_message(callback_query, "Memory not found.")
         return
 
     # Use memory content as the reminder text, or fallback
     reminder_text = memory.content if memory.content else "Reminder for your memory"
 
-    # Calculate the reminder time based on choice
-    now = datetime.now()
+    # Calculate the reminder time in user's local timezone, then convert to UTC
+    now_local = user_now(tz_name)
 
     if choice == "1h":
-        # Reminder for 1 hour from now
-        fire_at = now + timedelta(hours=1)
+        fire_at = to_utc(now_local + timedelta(hours=1), tz_name)
     elif choice == "tomorrow_9am":
-        # Try to get user settings for default reminder time, fallback to 9am
-        try:
-            _settings = await core_client.get_settings(user_id)
-            # User settings might have a default reminder time preference
-            # For now, use 9am as default (could be extended to read from settings)
-            default_hour = 9
-            default_minute = 0
-        except Exception:
-            # If settings not available, use default 9am
-            default_hour = 9
-            default_minute = 0
-
-        # Calculate tomorrow at 9am
-        tomorrow = now.date() + timedelta(days=1)
-        fire_at = datetime.combine(
+        # Tomorrow at 9am in the user's local timezone
+        tomorrow = now_local.date() + timedelta(days=1)
+        local_9am = datetime.combine(
             tomorrow,
-            datetime.min.time().replace(hour=default_hour, minute=default_minute),
+            datetime.min.time().replace(hour=9, minute=0),
         )
+        fire_at = to_utc(local_9am, tz_name)
     else:
         logger.warning(f"Unknown reminder time choice: {choice}")
         return
@@ -464,9 +498,9 @@ async def handle_reminder_time_choice(
 
     await core_client.create_reminder(reminder_create)
 
-    # Format confirmation message
-    reminder_time_str = fire_at.strftime("%Y-%m-%d %H:%M")
-    await callback_query.edit_message_text(f"Reminder set for {reminder_time_str}")
+    # Format confirmation message in user's local timezone
+    reminder_time_str = format_for_user(fire_at, tz_name)
+    await _edit_message(callback_query, f"Reminder set for {reminder_time_str}")
 
 
 async def handle_confirm_delete(
@@ -492,7 +526,7 @@ async def handle_confirm_delete(
     if confirmed:
         # Delete the memory and show confirmation message
         await core_client.delete_memory(memory_id)
-        _clear_conversation_state(context)
+        await _clear_conversation_state(context, update.effective_user.id)
         await _edit_message(callback_query, "Memory deleted")
     else:
         # Cancel and restore the original keyboard
@@ -534,7 +568,7 @@ async def handle_search_detail(
     # Get memory by ID
     memory = await core_client.get_memory(memory_id)
     if memory is None:
-        await callback_query.edit_message_text("Memory not found.")
+        await _edit_message(callback_query, "Memory not found.")
         return
 
     # Check if memory has an image
@@ -556,8 +590,9 @@ async def handle_search_detail(
         )
     else:
         # Send text message with keyboard
-        await callback_query.edit_message_text(
-            text=message_text,
+        await _edit_message(
+            callback_query,
+            message_text,
             reply_markup=reply_markup,
         )
 
@@ -600,7 +635,7 @@ async def handle_task_action(
                 f"{updated_task.recurrence_minutes} min)."
             )
 
-        await callback_query.edit_message_text(message)
+        await _edit_message(callback_query, message)
 
 
 async def handle_tag_confirm(
@@ -630,7 +665,7 @@ async def handle_tag_confirm(
         # Get the memory to get suggested tags
         memory = await core_client.get_memory(memory_id)
         if memory is None:
-            await callback_query.edit_message_text("Memory not found.")
+            await _edit_message(callback_query, "Memory not found.")
             return
 
         # Get suggested tags (tags with status "suggested")
@@ -647,20 +682,22 @@ async def handle_tag_confirm(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
 
-        _clear_conversation_state(context)
+        await _clear_conversation_state(context, update.effective_user.id)
         tags_str = ", ".join(suggested_tags) if suggested_tags else "all tags"
-        await callback_query.edit_message_text(f"Tags confirmed: {tags_str}")
+        await _edit_message(callback_query, f"Tags confirmed: {tags_str}")
 
     elif action == "edit":
-        # Confirm the memory and set conversation state key for message handler
+        # Confirm the memory and set conversation state key for message handler.
+        # Do NOT call _clear_conversation_state here — the queue must remain held
+        # until the user submits their tags via receive_tags.
         await core_client.update_memory(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
-        _clear_conversation_state(context)
         context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
         # Prompt user for comma-separated tag input
-        await callback_query.edit_message_text(
-            "Please send the tags for this memory as a comma-separated list (e.g., work, important, project)."
+        await _edit_message(
+            callback_query,
+            "Please send the tags for this memory as a comma-separated list (e.g., work, important, project).",
         )
 
 
@@ -690,10 +727,19 @@ async def handle_intent_confirm(
     """
     from datetime import datetime, timezone
 
+    from tg_gateway.tz_utils import format_for_user
+
     callback_query = update.callback_query
     memory_id = callback_data.memory_id
     action = callback_data.action
     user_id = update.effective_user.id
+
+    # Fetch user timezone for display
+    try:
+        settings = await core_client.get_settings(user_id)
+        tz_name = settings.timezone
+    except Exception:
+        tz_name = "UTC"
 
     # Read the stored state before clearing it
     raw_awaiting = context.user_data.get(AWAITING_BUTTON_ACTION)
@@ -703,7 +749,7 @@ async def handle_intent_confirm(
     await core_client.update_memory(
         memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
     )
-    _clear_conversation_state(context)
+    await _clear_conversation_state(context, update.effective_user.id)
 
     if action == "confirm_reminder":
         resolved_time = awaiting.get("resolved_time")
@@ -720,6 +766,15 @@ async def handle_intent_confirm(
                 if fire_at.tzinfo is None:
                     fire_at = fire_at.replace(tzinfo=timezone.utc)
 
+                # Reject times in the past
+                if fire_at < datetime.now(tz=timezone.utc):
+                    await _edit_message(
+                        callback_query,
+                        "That time has already passed. Please select a new time:",
+                        reply_markup=reminder_time_keyboard(memory_id),
+                    )
+                    return
+
                 # Get reminder text from memory content
                 reminder_text = awaiting.get("query", "Reminder")
                 reminder_data = ReminderCreate(
@@ -729,8 +784,9 @@ async def handle_intent_confirm(
                     fire_at=fire_at,
                 )
                 await core_client.create_reminder(reminder_data)
-                await callback_query.edit_message_text(
-                    f"Reminder set for {fire_at.strftime('%Y-%m-%d %H:%M')}"
+                await _edit_message(
+                    callback_query,
+                    f"Reminder set for {format_for_user(fire_at, tz_name)}",
                 )
                 return
             except (ValueError, TypeError):
@@ -738,15 +794,26 @@ async def handle_intent_confirm(
                     "Could not parse resolved_time '%s', falling back to picker",
                     resolved_time,
                 )
+                await _edit_message(
+                    callback_query,
+                    (
+                        f"The suggested time ({resolved_time}) could not be "
+                        f"processed. Please select a time:"
+                    ),
+                    reply_markup=reminder_time_keyboard(memory_id),
+                )
+                return
 
         # Fallback: show time picker if no resolved time available
-        await callback_query.edit_message_text(
-            "Select when to be reminded:",
+        await _edit_message(
+            callback_query,
+            "No time was set. Please select when to be reminded:",
             reply_markup=reminder_time_keyboard(memory_id),
         )
 
     elif action == "edit_reminder_time":
-        await callback_query.edit_message_text(
+        await _edit_message(
+            callback_query,
             "Select a new reminder time:",
             reply_markup=reminder_time_keyboard(memory_id),
         )
@@ -766,6 +833,15 @@ async def handle_intent_confirm(
                 if due_at.tzinfo is None:
                     due_at = due_at.replace(tzinfo=timezone.utc)
 
+                # Reject due dates in the past
+                if due_at < datetime.now(tz=timezone.utc):
+                    await _edit_message(
+                        callback_query,
+                        "That due date has already passed. Please select a new date:",
+                        reply_markup=due_date_keyboard(memory_id),
+                    )
+                    return
+
                 description = awaiting.get("query", "Task")
                 task_data = TaskCreate(
                     memory_id=memory_id,
@@ -774,8 +850,9 @@ async def handle_intent_confirm(
                     due_at=due_at,
                 )
                 await core_client.create_task(task_data)
-                await callback_query.edit_message_text(
-                    f"Task created with due date: {due_at.strftime('%Y-%m-%d %H:%M')}"
+                await _edit_message(
+                    callback_query,
+                    f"Task created with due date: {format_for_user(due_at, tz_name)}",
                 )
                 return
             except (ValueError, TypeError):
@@ -783,21 +860,33 @@ async def handle_intent_confirm(
                     "Could not parse resolved_due_time '%s', falling back to picker",
                     resolved_due_time,
                 )
+                await _edit_message(
+                    callback_query,
+                    (
+                        f"The suggested due date ({resolved_due_time}) could not be "
+                        f"processed. Please select a due date:"
+                    ),
+                    reply_markup=due_date_keyboard(memory_id),
+                )
+                return
 
         # Fallback: show due date picker if no resolved time available
-        await callback_query.edit_message_text(
-            "Select a due date for the task:",
+        await _edit_message(
+            callback_query,
+            "No due date was set. Please select a due date for the task:",
             reply_markup=due_date_keyboard(memory_id),
         )
 
     elif action == "edit_task":
-        await callback_query.edit_message_text(
+        await _edit_message(
+            callback_query,
             "Select a due date:",
             reply_markup=due_date_keyboard(memory_id),
         )
 
     elif action == "just_a_note":
-        await callback_query.edit_message_text(
+        await _edit_message(
+            callback_query,
             "Kept as a note.",
             reply_markup=memory_actions_keyboard(memory_id),
         )
@@ -835,17 +924,18 @@ async def handle_reschedule_action(
     await core_client.update_memory(
         memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
     )
-    _clear_conversation_state(context)
+    await _clear_conversation_state(context, update.effective_user.id)
 
     if action == "reschedule":
         # Reuse the existing receive_custom_reminder flow
         context.user_data[PENDING_REMINDER_MEMORY_ID] = memory_id
-        await callback_query.edit_message_text(
-            "Please enter a new date/time (e.g., 2024-12-31 14:30):"
+        await _edit_message(
+            callback_query,
+            "Please enter a new date/time (e.g., 2024-12-31 14:30):",
         )
 
     elif action == "dismiss":
-        await callback_query.edit_message_text("Dismissed.")
+        await _edit_message(callback_query, "Dismissed.")
 
     else:
         logger.warning(f"Unknown RescheduleAction action: {action}")

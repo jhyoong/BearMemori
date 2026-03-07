@@ -354,9 +354,9 @@ class TestIntentHandler:
         - Call core_api.create_memory with the original message text
         - Add the returned memory_id to the result
         """
-        # Setup mock to return a memory_id
+        # Setup mock to return a memory id (Core API returns "id", not "memory_id")
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-reminder-123"}
+            return_value={"id": "mem-reminder-123"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"
@@ -400,7 +400,7 @@ class TestIntentHandler:
         """
         # Setup mock to return a memory_id
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-task-456"}
+            return_value={"id": "mem-task-456"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"
@@ -438,7 +438,7 @@ class TestIntentHandler:
         """
         # Setup mock to return a memory_id
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-note-789"}
+            return_value={"id": "mem-note-789"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"
@@ -465,6 +465,31 @@ class TestIntentHandler:
         assert result.get("memory_id") == "mem-note-789"
 
     @pytest.mark.asyncio
+    async def test_intent_result_includes_payload_metadata(
+        self, handler, mock_llm_client
+    ):
+        """Test that original_timestamp, user_timezone, source_chat_id, and
+        source_message_id from the payload are forwarded to the result."""
+        mock_llm_client.complete = AsyncMock(
+            return_value='{"intent": "ambiguous", "followup_question": "Task or reminder?", "possible_intents": ["reminder", "task"]}'
+        )
+
+        payload = {
+            "message": "remind me about the meeting",
+            "original_timestamp": "2026-03-05T13:06:54+00:00",
+            "user_timezone": "Asia/Singapore",
+            "source_chat_id": "123456",
+            "source_message_id": "789",
+        }
+
+        result = await handler.handle("job-meta", payload, user_id=12345)
+
+        assert result["original_timestamp"] == "2026-03-05T13:06:54+00:00"
+        assert result["user_timezone"] == "Asia/Singapore"
+        assert result["source_chat_id"] == "123456"
+        assert result["source_message_id"] == "789"
+
+    @pytest.mark.asyncio
     async def test_ambiguous_intent_creates_memory(
         self, handler, mock_llm_client, mock_core_api
     ):
@@ -476,7 +501,7 @@ class TestIntentHandler:
         """
         # Setup mock to return a memory_id
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-ambiguous-999"}
+            return_value={"id": "mem-ambiguous-999"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"
@@ -577,7 +602,7 @@ class TestIntentSpecificPhrases:
         """
         # Setup mock to return a memory_id
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-reminder-mom-123"}
+            return_value={"id": "mem-reminder-mom-123"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"
@@ -623,7 +648,7 @@ class TestIntentSpecificPhrases:
         """
         # Setup mock to return a memory_id
         mock_core_api.create_memory = AsyncMock(
-            return_value={"memory_id": "mem-task-report-456"}
+            return_value={"id": "mem-task-report-456"}
         )
 
         original_ts = "2026-02-24T10:00:00Z"

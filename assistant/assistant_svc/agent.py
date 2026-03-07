@@ -15,6 +15,12 @@ You help the user by:
 
 For write operations (creating tasks, reminders), ALWAYS ask the user to confirm before executing.
 
+## Time Handling
+- The Time Context section below shows the user's timezone and current time.
+- When the user mentions a time (e.g., "5pm", "tomorrow morning"), interpret it in their timezone.
+- When calling create_reminder or create_task, always convert to UTC for the fire_at/due_at parameter.
+- When displaying times to the user, convert from UTC to their timezone.
+
 ## Current Context
 {briefing}
 """

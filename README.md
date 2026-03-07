@@ -1,4 +1,4 @@
-# BearMemori
+# BearMemori v0.1.1
 
 [![GitHub release](https://img.shields.io/github/v/release/jhyoong/BearMemori)](https://github.com/jhyoong/BearMemori/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -45,6 +45,8 @@ SQLite with WAL mode, foreign keys enabled, and FTS5 for full-text search. Schem
 ### LLM Job Pattern
 
 When the Core API needs LLM processing (e.g., auto-tagging an image), it inserts a row into the `llm_jobs` table with `status=pending` and a JSON payload. The LLM Worker reads from Redis streams, calls the LLM via the OpenAI API, then PATCHes the result back to the Core API. The affected entity stays in `pending` status until the user confirms it.
+
+For a detailed architecture overview, see [docs/architecture.md](docs/architecture.md).
 
 ## Prerequisites
 

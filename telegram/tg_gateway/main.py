@@ -57,6 +57,9 @@ def main() -> None:
             tasks_command,
             pinned_command,
             cancel_command,
+            queue_command,
+            status_command,
+            timezone_command,
         )
 
         command_handlers = [
@@ -65,6 +68,9 @@ def main() -> None:
             CommandHandler("tasks", tasks_command, filters=allowed_filter),
             CommandHandler("pinned", pinned_command, filters=allowed_filter),
             CommandHandler("cancel", cancel_command, filters=allowed_filter),
+            CommandHandler("queue", queue_command, filters=allowed_filter),
+            CommandHandler("status", status_command, filters=allowed_filter),
+            CommandHandler("timezone", timezone_command, filters=allowed_filter),
         ]
         for handler in command_handlers:
             app.add_handler(handler)
@@ -186,6 +192,9 @@ async def post_init(application: Application) -> None:
         BotCommand("tasks", "List your tasks"),
         BotCommand("pinned", "Show pinned memories"),
         BotCommand("cancel", "Cancel current action"),
+        BotCommand("queue", "Queue statistics (admin)"),
+        BotCommand("status", "Your status and LLM health"),
+        BotCommand("timezone", "View or set your timezone"),
     ]
     await application.bot.set_my_commands(commands)
 

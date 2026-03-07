@@ -34,9 +34,9 @@ from tg_gateway.callback_data import (
 from tg_gateway.core_client import CoreUnavailableError, CoreNotFoundError
 from tg_gateway.handlers.conversation import (
     AWAITING_BUTTON_ACTION,
-    PENDING_LLM_CONVERSATION,
+    LLM_CONVERSATION_METADATA,
     PENDING_REMINDER_MEMORY_ID,
-    USER_QUEUE_COUNT,
+    PENDING_TAG_MEMORY_ID,
 )
 
 
@@ -412,6 +412,9 @@ class TestStubHandlers:
         mock_memory.content = "Test memory content"
         core_client.get_memory = AsyncMock(return_value=mock_memory)
         core_client.create_task = AsyncMock()
+        mock_settings = MagicMock()
+        mock_settings.timezone = "UTC"
+        core_client.get_settings = AsyncMock(return_value=mock_settings)
 
         callback_data = DueDateChoice(memory_id="123", choice="today")
 
@@ -439,7 +442,9 @@ class TestStubHandlers:
         mock_memory.content = "Test memory content"
         core_client.get_memory = AsyncMock(return_value=mock_memory)
         core_client.create_reminder = AsyncMock()
-        core_client.get_settings = AsyncMock()
+        mock_settings = MagicMock()
+        mock_settings.timezone = "UTC"
+        core_client.get_settings = AsyncMock(return_value=mock_settings)
 
         callback_data = ReminderTimeChoice(memory_id="123", choice="1h")
 
@@ -698,44 +703,77 @@ class TestDispatchNewCallbackTypes:
             mock_handler.assert_called_once()
 
 
+def _make_clear_conversation_context(user_data=None):
+    """Create a mock context with bot_data containing a mock core_client."""
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.user_data = user_data or {}
+    mock_core_client = MagicMock()
+    mock_core_client.update_conversation_state = AsyncMock()
+    context.bot_data = {"core_client": mock_core_client}
+    return context
+
+
 class TestClearConversationState:
     """Tests for _clear_conversation_state helper."""
 
-    def test_clears_awaiting_button_action(self):
+    def _make_context(self, user_data=None):
+        return _make_clear_conversation_context(user_data)
+
+    @pytest.mark.asyncio
+    async def test_clears_awaiting_button_action(self):
         """Test that AWAITING_BUTTON_ACTION is removed from user_data."""
-        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        context.user_data = {AWAITING_BUTTON_ACTION: True, USER_QUEUE_COUNT: 2}
-        _clear_conversation_state(context)
+        context = self._make_context(
+            {AWAITING_BUTTON_ACTION: True}
+        )
+        await _clear_conversation_state(context, user_id=123)
         assert AWAITING_BUTTON_ACTION not in context.user_data
 
-    def test_clears_pending_llm_conversation(self):
-        """Test that PENDING_LLM_CONVERSATION is removed from user_data."""
-        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        context.user_data = {PENDING_LLM_CONVERSATION: {"memory_id": "1"}, USER_QUEUE_COUNT: 1}
-        _clear_conversation_state(context)
-        assert PENDING_LLM_CONVERSATION not in context.user_data
+    @pytest.mark.asyncio
+    async def test_clears_llm_conversation_metadata(self):
+        """Test that LLM_CONVERSATION_METADATA is removed from user_data."""
+        context = self._make_context(
+            {LLM_CONVERSATION_METADATA: {"memory_id": "1"}}
+        )
+        await _clear_conversation_state(context, user_id=123)
+        assert LLM_CONVERSATION_METADATA not in context.user_data
 
-    def test_decrements_queue_count(self):
-        """Test that USER_QUEUE_COUNT is decremented by one."""
-        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        context.user_data = {USER_QUEUE_COUNT: 3}
-        _clear_conversation_state(context)
-        assert context.user_data[USER_QUEUE_COUNT] == 2
+    @pytest.mark.asyncio
+    async def test_completes_conversation_via_core_api(self):
+        """Test that conversation is completed via Core API."""
+        context = self._make_context({})
+        await _clear_conversation_state(context, user_id=123)
+        core_client = context.bot_data["core_client"]
+        core_client.update_conversation_state.assert_awaited_once_with(
+            123, "completed"
+        )
 
-    def test_queue_count_clamps_at_zero(self):
-        """Test that USER_QUEUE_COUNT never goes below zero."""
-        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        context.user_data = {USER_QUEUE_COUNT: 0}
-        _clear_conversation_state(context)
-        assert context.user_data[USER_QUEUE_COUNT] == 0
-
-    def test_handles_missing_keys_gracefully(self):
+    @pytest.mark.asyncio
+    async def test_handles_missing_keys_gracefully(self):
         """Test that missing keys in user_data do not raise exceptions."""
-        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        context.user_data = {}
+        context = self._make_context({})
         # Should not raise
-        _clear_conversation_state(context)
-        assert context.user_data[USER_QUEUE_COUNT] == 0
+        await _clear_conversation_state(context, user_id=123)
+        assert AWAITING_BUTTON_ACTION not in context.user_data
+
+
+class TestClearConversationStateProcessesNext:
+    """Tests that _clear_conversation_state auto-processes the next queue item."""
+
+    def _make_context(self, user_data=None):
+        return _make_clear_conversation_context(user_data)
+
+    @pytest.mark.asyncio
+    async def test_clears_state_and_processes_next_item(self):
+        """After clearing conversation state, the next queue item should be auto-processed."""
+        context = self._make_context()
+        core_client = context.bot_data["core_client"]
+
+        with patch(
+            "tg_gateway.handlers.message._process_next_queue_item",
+            new_callable=AsyncMock,
+        ) as mock_next:
+            await _clear_conversation_state(context, user_id=12345)
+            mock_next.assert_called_once_with(core_client, 12345)
 
 
 class TestHandleIntentConfirm:
@@ -751,13 +789,17 @@ class TestHandleIntentConfirm:
     @pytest.fixture
     def mock_context(self):
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        context.user_data = {AWAITING_BUTTON_ACTION: True, PENDING_LLM_CONVERSATION: {}, USER_QUEUE_COUNT: 1}
+        context.user_data = {AWAITING_BUTTON_ACTION: True, LLM_CONVERSATION_METADATA: {}}
         return context
 
     @pytest.fixture
     def mock_core_client(self):
         client = MagicMock()
         client.update_memory = AsyncMock()
+        client.update_conversation_state = AsyncMock()
+        mock_settings = MagicMock()
+        mock_settings.timezone = "UTC"
+        client.get_settings = AsyncMock(return_value=mock_settings)
         return client
 
     @pytest.mark.asyncio
@@ -770,7 +812,7 @@ class TestHandleIntentConfirm:
 
         mock_core_client.update_memory.assert_awaited_once()
         call_args = mock_update.callback_query.edit_message_text.call_args
-        assert call_args[0][0] == "Select when to be reminded:"
+        assert call_args[0][0] == "No time was set. Please select when to be reminded:"
         assert call_args[1]["reply_markup"] is not None
 
     @pytest.mark.asyncio
@@ -796,7 +838,7 @@ class TestHandleIntentConfirm:
 
         mock_core_client.update_memory.assert_awaited_once()
         call_args = mock_update.callback_query.edit_message_text.call_args
-        assert call_args[0][0] == "Select a due date for the task:"
+        assert call_args[0][0] == "No due date was set. Please select a due date for the task:"
         assert call_args[1]["reply_markup"] is not None
 
     @pytest.mark.asyncio
@@ -834,7 +876,8 @@ class TestHandleIntentConfirm:
         for action in actions:
             mock_core_client.update_memory.reset_mock()
             context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-            context.user_data = {USER_QUEUE_COUNT: 1}
+            context.user_data = {}
+            context.bot_data = {"core_client": mock_core_client}
             callback_data = IntentConfirm(memory_id="mem-1", action=action)
             await handle_intent_confirm(mock_update, context, callback_data, mock_core_client)
             mock_core_client.update_memory.assert_awaited_once()
@@ -849,14 +892,13 @@ class TestHandleIntentConfirm:
             context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
             context.user_data = {
                 AWAITING_BUTTON_ACTION: True,
-                PENDING_LLM_CONVERSATION: {},
-                USER_QUEUE_COUNT: 2,
+                LLM_CONVERSATION_METADATA: {},
             }
+            context.bot_data = {"core_client": mock_core_client}
             callback_data = IntentConfirm(memory_id="mem-1", action=action)
             await handle_intent_confirm(mock_update, context, callback_data, mock_core_client)
             assert AWAITING_BUTTON_ACTION not in context.user_data
-            assert PENDING_LLM_CONVERSATION not in context.user_data
-            assert context.user_data[USER_QUEUE_COUNT] == 1
+            assert LLM_CONVERSATION_METADATA not in context.user_data
 
 
 class TestHandleRescheduleAction:
@@ -872,13 +914,17 @@ class TestHandleRescheduleAction:
     @pytest.fixture
     def mock_context(self):
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        context.user_data = {AWAITING_BUTTON_ACTION: True, USER_QUEUE_COUNT: 1}
+        context.user_data = {AWAITING_BUTTON_ACTION: True}
+        mock_core_client = MagicMock()
+        mock_core_client.update_conversation_state = AsyncMock()
+        context.bot_data = {"core_client": mock_core_client}
         return context
 
     @pytest.fixture
     def mock_core_client(self):
         client = MagicMock()
         client.update_memory = AsyncMock()
+        client.update_conversation_state = AsyncMock()
         return client
 
     @pytest.mark.asyncio
@@ -913,7 +959,8 @@ class TestHandleRescheduleAction:
         for action in ("reschedule", "dismiss"):
             mock_core_client.update_memory.reset_mock()
             context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-            context.user_data = {USER_QUEUE_COUNT: 1}
+            context.user_data = {}
+            context.bot_data = {"core_client": mock_core_client}
             callback_data = RescheduleAction(memory_id="mem-2", action=action)
             await handle_reschedule_action(mock_update, context, callback_data, mock_core_client)
             mock_core_client.update_memory.assert_awaited_once()
@@ -927,14 +974,13 @@ class TestHandleRescheduleAction:
             context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
             context.user_data = {
                 AWAITING_BUTTON_ACTION: True,
-                PENDING_LLM_CONVERSATION: {},
-                USER_QUEUE_COUNT: 2,
+                LLM_CONVERSATION_METADATA: {},
             }
+            context.bot_data = {"core_client": mock_core_client}
             callback_data = RescheduleAction(memory_id="mem-2", action=action)
             await handle_reschedule_action(mock_update, context, callback_data, mock_core_client)
             assert AWAITING_BUTTON_ACTION not in context.user_data
-            assert PENDING_LLM_CONVERSATION not in context.user_data
-            assert context.user_data[USER_QUEUE_COUNT] == 1
+            assert LLM_CONVERSATION_METADATA not in context.user_data
 
 
 class TestExistingHandlersStateClearingAndConfirmation:
@@ -957,9 +1003,11 @@ class TestExistingHandlersStateClearingAndConfirmation:
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
         context.user_data = {
             AWAITING_BUTTON_ACTION: True,
-            PENDING_LLM_CONVERSATION: {"memory_id": "1"},
-            USER_QUEUE_COUNT: 2,
+            LLM_CONVERSATION_METADATA: {"memory_id": "1"},
         }
+        mock_cc = MagicMock()
+        mock_cc.update_conversation_state = AsyncMock()
+        context.bot_data = {"core_client": mock_cc}
         return context
 
     @pytest.fixture
@@ -969,6 +1017,7 @@ class TestExistingHandlersStateClearingAndConfirmation:
         client.delete_memory = AsyncMock()
         client.get_memory = AsyncMock()
         client.add_tags = AsyncMock()
+        client.update_conversation_state = AsyncMock()
         return client
 
     @pytest.mark.asyncio
@@ -983,7 +1032,7 @@ class TestExistingHandlersStateClearingAndConfirmation:
 
         mock_core_client.update_memory.assert_awaited_once()
         assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
-        assert PENDING_LLM_CONVERSATION not in mock_context_with_state.user_data
+        assert LLM_CONVERSATION_METADATA not in mock_context_with_state.user_data
 
     @pytest.mark.asyncio
     async def test_memory_action_set_reminder_confirms_and_clears_state(
@@ -999,17 +1048,25 @@ class TestExistingHandlersStateClearingAndConfirmation:
         assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
 
     @pytest.mark.asyncio
-    async def test_memory_action_add_tag_confirms_and_clears_state(
+    async def test_memory_action_add_tag_confirms_and_holds_queue(
         self, mock_update, mock_context_with_state, mock_core_client
     ):
-        """Test that add_tag confirms memory and clears conversation state."""
+        """Test that add_tag confirms memory and holds the queue (does NOT clear state).
+
+        The queue must remain held until the user submits tags via receive_tags.
+        _clear_conversation_state must NOT be called here — it will be called
+        by receive_tags after the user types their tags.
+        """
         callback_data = MemoryAction(action="add_tag", memory_id="mem-1")
         await handle_memory_action(
             mock_update, mock_context_with_state, callback_data, mock_core_client
         )
 
         mock_core_client.update_memory.assert_awaited_once()
-        assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
+        # Conversation state keys must NOT be cleared — queue remains held
+        assert AWAITING_BUTTON_ACTION in mock_context_with_state.user_data
+        # PENDING_TAG_MEMORY_ID must be set so receive_tags can pick it up
+        assert mock_context_with_state.user_data[PENDING_TAG_MEMORY_ID] == "mem-1"
 
     @pytest.mark.asyncio
     async def test_memory_action_toggle_pin_clears_state(
@@ -1036,7 +1093,7 @@ class TestExistingHandlersStateClearingAndConfirmation:
 
         mock_core_client.delete_memory.assert_awaited_once()
         assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
-        assert PENDING_LLM_CONVERSATION not in mock_context_with_state.user_data
+        assert LLM_CONVERSATION_METADATA not in mock_context_with_state.user_data
 
     @pytest.mark.asyncio
     async def test_tag_confirm_confirm_all_clears_state(
@@ -1056,21 +1113,86 @@ class TestExistingHandlersStateClearingAndConfirmation:
         )
 
         assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
-        assert PENDING_LLM_CONVERSATION not in mock_context_with_state.user_data
+        assert LLM_CONVERSATION_METADATA not in mock_context_with_state.user_data
 
     @pytest.mark.asyncio
-    async def test_tag_confirm_edit_confirms_memory_and_clears_state(
+    async def test_tag_confirm_edit_confirms_memory_and_sets_pending_tag(
         self, mock_update, mock_context_with_state, mock_core_client
     ):
-        """Test that tag edit confirms memory and clears conversation state."""
+        """Test that tag edit confirms memory and sets PENDING_TAG_MEMORY_ID.
+
+        Unlike confirm_all, the edit action does NOT clear conversation state
+        immediately. The queue stays held until the user submits tags via
+        receive_tags.
+        """
+        from tg_gateway.handlers.conversation import PENDING_TAG_MEMORY_ID
+
         callback_data = TagConfirm(memory_id="mem-1", action="edit")
         await handle_tag_confirm(
             mock_update, mock_context_with_state, callback_data, mock_core_client
         )
 
         mock_core_client.update_memory.assert_awaited_once()
-        assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
-        assert PENDING_LLM_CONVERSATION not in mock_context_with_state.user_data
+        assert mock_context_with_state.user_data.get(PENDING_TAG_MEMORY_ID) == "mem-1"
+
+
+class TestTagEditHoldsQueue:
+    """Tests that the 'edit' path in handle_tag_confirm holds the queue.
+
+    When a user clicks 'Edit Tags', the queue must remain active until the
+    user submits their tags via receive_tags. _clear_conversation_state must
+    NOT be called during handle_tag_confirm for the edit action.
+    """
+
+    @pytest.fixture
+    def mock_update(self):
+        update = MagicMock(spec=Update)
+        update.callback_query = MagicMock()
+        update.callback_query.edit_message_text = AsyncMock()
+        update.callback_query.edit_message_caption = AsyncMock()
+        update.callback_query.message = MagicMock()
+        update.callback_query.message.photo = None
+        update.effective_user = MagicMock()
+        update.effective_user.id = 12345
+        return update
+
+    @pytest.fixture
+    def mock_context(self):
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {}
+        mock_cc = MagicMock()
+        mock_cc.update_conversation_state = AsyncMock()
+        context.bot_data = {"core_client": mock_cc}
+        return context
+
+    @pytest.fixture
+    def mock_core_client(self):
+        client = MagicMock()
+        client.update_memory = AsyncMock()
+        return client
+
+    @pytest.mark.asyncio
+    async def test_edit_does_not_call_clear_conversation_state(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """Clicking 'Edit Tags' must NOT call _clear_conversation_state.
+
+        The queue must remain held until the user types their tags.
+        """
+        from tg_gateway.handlers.conversation import PENDING_TAG_MEMORY_ID
+
+        with patch(
+            "tg_gateway.handlers.callback._clear_conversation_state",
+            new_callable=AsyncMock,
+        ) as mock_clear:
+            callback_data = TagConfirm(memory_id="mem-100", action="edit")
+            await handle_tag_confirm(
+                mock_update, mock_context, callback_data, mock_core_client
+            )
+
+            mock_clear.assert_not_called()
+
+        assert mock_context.user_data.get(PENDING_TAG_MEMORY_ID) == "mem-100"
 
 
 class TestTogglePinAutoSavesTags:
@@ -1086,7 +1208,10 @@ class TestTogglePinAutoSavesTags:
     @pytest.fixture
     def mock_context(self):
         context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        context.user_data = {AWAITING_BUTTON_ACTION: True, USER_QUEUE_COUNT: 1}
+        context.user_data = {AWAITING_BUTTON_ACTION: True}
+        mock_cc = MagicMock()
+        mock_cc.update_conversation_state = AsyncMock()
+        context.bot_data = {"core_client": mock_cc}
         return context
 
     @pytest.fixture
@@ -1095,6 +1220,7 @@ class TestTogglePinAutoSavesTags:
         client.update_memory = AsyncMock()
         client.get_memory = AsyncMock()
         client.add_tags = AsyncMock()
+        client.update_conversation_state = AsyncMock()
         return client
 
     @pytest.mark.asyncio

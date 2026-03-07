@@ -19,6 +19,10 @@ from worker.handlers.followup import FollowupHandler
 from worker.handlers.task_match import TaskMatchHandler
 from worker.handlers.email_extract import EmailExtractHandler
 
+from worker.health_check import LLMHealthChecker, run_health_check
+
+from shared_lib.redis_streams import publish, STREAM_NOTIFY_TELEGRAM
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
@@ -60,7 +64,41 @@ async def main():
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, lambda s=sig: handle_signal(s))
 
+    async def on_health_status_change(
+        new_status: str, previous_status: str
+    ) -> None:
+        """Publish health status change notification to Telegram stream."""
+        logger.info(
+            "Publishing health change notification: %s -> %s",
+            previous_status,
+            new_status,
+        )
+        await publish(
+            redis_client,
+            STREAM_NOTIFY_TELEGRAM,
+            {
+                "user_id": 0,
+                "message_type": "llm_health_change",
+                "content": {
+                    "new_status": new_status,
+                    "previous_status": previous_status,
+                },
+            },
+        )
+
     try:
+        # Start the health check background task
+        health_checker = LLMHealthChecker(config)
+        health_check_task = asyncio.create_task(
+            run_health_check(
+                redis_client,
+                health_checker,
+                shutdown_event,
+                interval=30,
+                on_status_change=on_health_status_change,
+            )
+        )
+
         # Run the consumer
         await run_consumer(
             redis_client=redis_client,
@@ -74,6 +112,12 @@ async def main():
     finally:
         # Cleanup
         logger.info("Cleaning up LLM Worker resources...")
+        # Cancel health check task
+        health_check_task.cancel()
+        try:
+            await health_check_task
+        except asyncio.CancelledError:
+            pass
         await llm_client.close()
         await session.close()
         await redis_client.close()

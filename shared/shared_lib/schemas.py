@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 from shared_lib.enums import (
     MemoryStatus,
@@ -274,6 +274,23 @@ class LLMJobResponse(BaseModel):
     updated_at: datetime
 
 
+# Queue schemas
+class QueueItemCreate(BaseModel):
+    content: str | None = None
+    memory_id: str | None = None
+    image_local_path: str | None = None
+    message_timestamp: datetime | None = None
+
+
+class QueueItem(BaseModel):
+    id: str
+    content: str | None = None
+    memory_id: str | None = None
+    image_local_path: str | None = None
+    message_timestamp: datetime | None = None
+    created_at: datetime
+
+
 # Redis message schemas
 class TelegramOutboundMessage(BaseModel):
     chat_id: int
@@ -287,3 +304,44 @@ class ReminderNotification(BaseModel):
     user_id: int
     text: str
     fire_at: datetime
+
+
+# Conversation schemas
+
+
+class QueueStatus(BaseModel):
+    queue_length: int
+    conversation_active: bool
+    conversation_state: str | None = None
+
+
+class ConversationStart(BaseModel):
+    queue_item_id: str
+
+
+class ConversationStateUpdate(BaseModel):
+    state: Literal["processing", "awaiting_reply", "completed", "cancelled"]
+    history_entry: dict | None = None
+
+
+class ConversationReply(BaseModel):
+    content: str
+
+
+class ConversationResponse(BaseModel):
+    id: str
+    user_id: int
+    queue_item_id: str
+    state: str
+    history: list[dict]
+    created_at: str
+    updated_at: str
+
+
+class DequeueResponse(BaseModel):
+    item: QueueItem | None = None
+
+
+class CancelResponse(BaseModel):
+    state: str
+    next_item: QueueItem | None = None

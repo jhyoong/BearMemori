@@ -16,7 +16,7 @@ from shared_lib.redis_streams import (
     STREAM_LLM_TASK_MATCH,
     STREAM_NOTIFY_TELEGRAM,
     ack,
-    consume,
+    consume_multi,
     create_consumer_group,
     publish,
 )
@@ -35,13 +35,17 @@ CONSUMER_NAME = "llm-worker-1"
 # Maximum age (in seconds) for a Redis stream message before it is considered stale.
 # Messages older than this are acked and skipped to avoid processing outdated jobs
 # after a restart.
-MAX_MESSAGE_AGE_SECONDS = 300  # 5 minutes
+MAX_MESSAGE_AGE_SECONDS = 604800  # 7 days
+
+# Batch size for reading from the Pending Entries List (PEL).
+# Setting this higher allows processing multiple pending messages per iteration.
+PEL_BATCH_SIZE = 50
 
 # Map handler keys to stream names (for consumer loop iteration)
 STREAM_HANDLER_MAP = {
+    "followup": STREAM_LLM_FOLLOWUP,
     "image_tag": STREAM_LLM_IMAGE_TAG,
     "intent_classify": STREAM_LLM_INTENT,
-    "followup": STREAM_LLM_FOLLOWUP,
     "task_match": STREAM_LLM_TASK_MATCH,
     "email_extract": STREAM_LLM_EMAIL_EXTRACT,
 }
@@ -100,6 +104,7 @@ async def _process_message(
     core_api: CoreAPIClient,
     retry_tracker: RetryManager,
     config: LLMWorkerSettings,
+    from_pel: bool | None = None,
 ) -> None:
     """Process a single message from a Redis stream.
 
@@ -112,27 +117,65 @@ async def _process_message(
         core_api: Core API client for updating job status
         retry_tracker: Retry manager for managing retry logic
         config: LLM worker configuration
+        from_pel: Whether the message was read from the Pending Entries List (PEL).
+                   When None, will automatically check using Redis XPENDING.
+                   When True, skip the stale message check since the message has been
+                   waiting due to user lock contention.
     """
+    # Check for unparseable message data (e.g., None from corrupted PEL entry)
+    if data is None:
+        logger.warning(f"Message {message_id} has unparseable format, acking")
+        await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+        return
+
+    job_id = data.get("job_id")
+
+    # Skip jobs that are waiting for their retry delay to elapse
+    # This prevents blocking while waiting for backoff periods
+    if job_id and not retry_tracker.is_ready_for_retry(job_id):
+        logger.debug("Job %s not ready for retry yet, skipping", job_id)
+        return
+
+    # If from_pel is not explicitly provided (None), default to False (run stale check).
+    # This ensures backward compatibility for direct function calls.
+    # In production, run_consumer() explicitly passes from_pel=True or False.
+    if from_pel is None:
+        from_pel = False
+
     # Check message age using the Redis stream ID (format: {ms_timestamp}-{seq}).
     # Skip stale messages that were queued before a restart to avoid processing
     # outdated jobs against the wrong user context.
-    try:
-        msg_ts_ms = int(message_id.split("-")[0])
-        age_seconds = (time.time() * 1000 - msg_ts_ms) / 1000
-        if age_seconds > MAX_MESSAGE_AGE_SECONDS:
-            logger.warning(
-                "Skipping stale message %s from %s (age %.0fs > %ds)",
-                message_id,
-                stream_name,
-                age_seconds,
-                MAX_MESSAGE_AGE_SECONDS,
-            )
-            await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
-            return
-    except (ValueError, IndexError):
-        pass  # If we can't parse the ID, process the message normally
-
-    job_id = data.get("job_id")
+    # Skip this check for messages from PEL - they've been waiting due to lock contention
+    # and shouldn't be considered stale just because the original stream timestamp is old.
+    if not from_pel:
+        try:
+            msg_ts_ms = int(message_id.split("-")[0])
+            age_seconds = (time.time() * 1000 - msg_ts_ms) / 1000
+            if age_seconds > MAX_MESSAGE_AGE_SECONDS:
+                logger.warning(
+                    "Skipping stale message %s from %s (age %.0fs > %ds)",
+                    message_id,
+                    stream_name,
+                    age_seconds,
+                    MAX_MESSAGE_AGE_SECONDS,
+                )
+                await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+                # Mark the DB job as failed so it doesn't stay 'queued' forever
+                if job_id:
+                    try:
+                        await core_api.update_job(
+                            job_id=job_id,
+                            status="failed",
+                            error_message=(
+                                f"Skipped: message age ({age_seconds:.0f}s)"
+                                f" exceeded {MAX_MESSAGE_AGE_SECONDS}s limit"
+                            ),
+                        )
+                    except Exception:
+                        logger.exception("Failed to update stale job %s status", job_id)
+                return
+        except (ValueError, IndexError):
+            pass  # If we can't parse the ID, process the message normally
     payload = data.get("payload", {})
     user_id = data.get("user_id")
     job_type = data.get("job_type")
@@ -160,10 +203,14 @@ async def _process_message(
         # Call the handler
         logger.info(
             "Calling handler %s for job %s with payload: %s",
-            job_type, job_id, payload,
+            job_type,
+            job_id,
+            payload,
         )
         result = await handler.handle(job_id, payload, user_id)
-        logger.info("Handler %s returned result for job %s: %s", job_type, job_id, result)
+        logger.info(
+            "Handler %s returned result for job %s: %s", job_type, job_id, result
+        )
 
         if result is not None:
             # Job completed successfully with a result
@@ -182,7 +229,9 @@ async def _process_message(
                 }
                 logger.info(
                     "Publishing notification for job %s: type=%s, content=%s",
-                    job_id, msg_type, result,
+                    job_id,
+                    msg_type,
+                    result,
                 )
                 await publish(
                     redis_client,
@@ -223,17 +272,20 @@ async def _process_message(
             should_retry = retry_tracker.should_retry(job_id)
 
             if should_retry:
-                # Should retry - update status to processing, don't ack
+                # Should retry - update status to processing
                 await core_api.update_job(
                     job_id=job_id, status="processing", error_message=None
                 )
                 backoff = retry_tracker.backoff_seconds(job_id)
+                # Set the next retry time (delay marker)
+                retry_tracker.set_next_retry_time(job_id, backoff)
+                # Ack the original message and re-enqueue it for later retry
+                await ack(redis_client, stream_name, GROUP_LLM_WORKER, message_id)
+                await publish(redis_client, stream_name, data)
                 logger.info(
                     f"Job {job_id} failed (attempt {current_attempt}), "
-                    f"will retry in {backoff:.0f}s"
+                    f"will retry in {backoff:.0f}s (attempt {current_attempt}/{RetryManager.MAX_RETRIES})"
                 )
-                # Add backoff delay before returning (message not acked, will be retried)
-                await asyncio.sleep(backoff)
             else:
                 # Max retries exceeded - mark as failed
                 logger.error(f"Job {job_id} failed after {current_attempt} attempts")
@@ -252,7 +304,7 @@ async def _process_message(
                             "content": {
                                 "job_type": job_type,
                                 "memory_id": payload.get("memory_id", ""),
-                                "message": "I couldn't process your request after several attempts. Please try again later.",
+                                "message": "LLM endpoint not reachable or responsive. Please try again later.",
                             },
                         },
                     )
@@ -318,7 +370,7 @@ async def _process_message(
                             "content": {
                                 "job_type": job_type,
                                 "memory_id": payload.get("memory_id", ""),
-                                "message": "I couldn't generate tags right now due to a temporary service issue. I'll retry automatically once the service becomes available.",
+                                "message": "LLM endpoint not reachable or responsive. Will retry automatically once available.",
                             },
                         },
                     )
@@ -335,68 +387,80 @@ async def run_consumer(
 ) -> None:
     """Run the LLM worker consumer loop.
 
-    Creates consumer groups for all streams and processes messages in round-robin
-    across all streams.
-
-    Args:
-        redis_client: Async Redis client instance
-        handlers: Dict mapping handler keys to handler instances
-        core_api: Core API client
-        retry_tracker: Retry manager for managing retry logic
-        config: LLM worker configuration
+    Uses multi-stream xreadgroup to check all streams in a single Redis call,
+    reducing idle overhead from 10 calls to 2 per cycle.
     """
-    # Get stream names from the mapping values
     streams = list(STREAM_HANDLER_MAP.values())
 
-    # Create consumer groups for all streams
     for stream_name in streams:
         await create_consumer_group(redis_client, stream_name, GROUP_LLM_WORKER)
-        logger.info(f"Created consumer group for {stream_name}")
+        logger.info("Created consumer group for %s", stream_name)
 
-    logger.info(f"Starting consumer loop for {len(streams)} streams")
+    logger.info("Starting consumer loop for %d streams", len(streams))
 
     try:
         while True:
-            # Round-robin through all streams
-            for stream_name in streams:
-                # First, try to read pending messages with "0"
-                messages = await consume(
+            # 1. Check STREAM_LLM_FOLLOWUP NEW first (highest priority)
+            followup_streams = {STREAM_LLM_FOLLOWUP: ">"}
+            followup_messages = await consume_multi(
+                redis_client,
+                followup_streams,
+                GROUP_LLM_WORKER,
+                CONSUMER_NAME,
+                count=1,
+                block_ms=100,  # Short block to check quickly
+            )
+
+            if followup_messages:
+                # Process followup jobs immediately
+                all_messages = followup_messages
+                from_pel = False
+            else:
+                # 2. Check other streams' PEL
+                other_streams = [s for s in streams if s != STREAM_LLM_FOLLOWUP]
+                pel_streams = {s: "0" for s in other_streams}
+                pel_messages = await consume_multi(
                     redis_client,
-                    stream_name,
+                    pel_streams,
                     GROUP_LLM_WORKER,
                     CONSUMER_NAME,
-                    id="0",  # Read pending messages from PEL
-                    count=1,
-                    block_ms=1000,  # Short block for responsiveness
+                    count=PEL_BATCH_SIZE,
+                    block_ms=100,
                 )
 
-                # If no pending messages, try reading new messages
-                if not messages:
-                    messages = await consume(
+                # 3. If no PEL, check other streams' NEW
+                if not pel_messages:
+                    new_streams = {s: ">" for s in other_streams}
+                    new_messages = await consume_multi(
                         redis_client,
-                        stream_name,
+                        new_streams,
                         GROUP_LLM_WORKER,
                         CONSUMER_NAME,
-                        id=">",  # Read new messages
                         count=1,
-                        block_ms=1000,  # Short block for responsiveness
+                        block_ms=2000,
                     )
+                    all_messages = new_messages
+                    from_pel = False
+                else:
+                    all_messages = pel_messages
+                    from_pel = True
 
-                for message_id, data in messages:
-                    logger.info(f"Processing message {message_id} from {stream_name}")
-                    await _process_message(
-                        redis_client=redis_client,
-                        stream_name=stream_name,
-                        message_id=message_id,
-                        data=data,
-                        handlers=handlers,
-                        core_api=core_api,
-                        retry_tracker=retry_tracker,
-                        config=config,
-                    )
+            for stream_name, message_id, data in all_messages:
+                logger.debug("Checking PEL message %s from %s", message_id, stream_name)
+                await _process_message(
+                    redis_client=redis_client,
+                    stream_name=stream_name,
+                    message_id=message_id,
+                    data=data,
+                    handlers=handlers,
+                    core_api=core_api,
+                    retry_tracker=retry_tracker,
+                    config=config,
+                    from_pel=from_pel,
+                )
 
-            # Small delay to prevent tight loop
-            await asyncio.sleep(0.1)
+            if not all_messages:
+                await asyncio.sleep(0.1)
 
     except asyncio.CancelledError:
         logger.info("Consumer cancelled, shutting down gracefully")

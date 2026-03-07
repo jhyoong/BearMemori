@@ -67,16 +67,6 @@ class TestInvalidResponse:
 class TestUnavailable:
     """Tests for UNAVAILABLE failure type."""
 
-    def test_unavailable_sets_queue_paused_on_first_failure(self):
-        """On first UNAVAILABLE failure, _queue_paused should be True."""
-        manager = RetryManager()
-
-        assert manager.is_queue_paused() is False
-
-        manager.record_attempt("job-1", FailureType.UNAVAILABLE)
-
-        assert manager.is_queue_paused() is True
-
     def test_unavailable_tracks_first_unavailable_time_per_job(self):
         """Each job tracks its own first_unavailable_time."""
         current_time = [1000.0]
@@ -135,12 +125,11 @@ class TestRetryManagerInterface:
         assert manager.get_failure_type("job-1") == FailureType.INVALID_RESPONSE
 
     def test_record_attempt_with_unavailable(self):
-        """record_attempt with UNAVAILABLE sets queue paused."""
+        """record_attempt with UNAVAILABLE tracks time but has no public state check."""
         manager = RetryManager()
 
         manager.record_attempt("job-1", FailureType.UNAVAILABLE)
 
-        assert manager.is_queue_paused() is True
         assert manager.get_failure_type("job-1") == FailureType.UNAVAILABLE
 
     def test_get_failure_type_returns_none_for_unknown_job(self):
@@ -167,3 +156,60 @@ class TestRetryManagerInterface:
         result = manager.backoff_seconds("unknown-job")
 
         assert result == 0.0
+
+
+class TestRetryTimeTracking:
+    """Tests for retry time tracking with delay markers."""
+
+    def test_is_ready_for_retry_true_when_no_delay_set(self):
+        """is_ready_for_retry returns True when no delay is set."""
+        manager = RetryManager()
+
+        result = manager.is_ready_for_retry("job-1")
+
+        assert result is True
+
+    def test_is_ready_for_retry_false_before_delay(self):
+        """is_ready_for_retry returns False before delay has elapsed."""
+        current_time = [1000.0]
+        manager = RetryManager(time_func=lambda: current_time[0])
+
+        # Set a delay of 10 seconds
+        manager.set_next_retry_time("job-1", 10.0)
+
+        # At current_time (1000s), next_retry is 1010s - not ready yet
+        assert manager.is_ready_for_retry("job-1") is False
+
+    def test_is_ready_for_retry_true_after_delay(self):
+        """is_ready_for_retry returns True after delay has elapsed."""
+        current_time = [1000.0]
+        manager = RetryManager(time_func=lambda: current_time[0])
+
+        # Set a delay of 10 seconds
+        manager.set_next_retry_time("job-1", 10.0)
+
+        # At current_time + 10 (1010s), next_retry is 1010s - ready now
+        current_time[0] = 1010.0
+        assert manager.is_ready_for_retry("job-1") is True
+
+        # At current_time + 11 (1011s), still ready
+        current_time[0] = 1011.0
+        assert manager.is_ready_for_retry("job-1") is True
+
+    def test_clear_removes_next_retry_time(self):
+        """clear removes the next_retry_time for a job."""
+        current_time = [1000.0]
+        manager = RetryManager(time_func=lambda: current_time[0])
+
+        # Set a delay
+        manager.set_next_retry_time("job-1", 10.0)
+
+        # Verify delay is set
+        assert manager._next_retry_time.get("job-1") == 1010.0
+
+        # Clear the job
+        manager.clear("job-1")
+
+        # Verify delay is removed
+        assert "job-1" not in manager._next_retry_time
+        assert manager.is_ready_for_retry("job-1") is True

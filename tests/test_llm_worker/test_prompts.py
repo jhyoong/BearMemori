@@ -113,7 +113,9 @@ class TestIntentClassifyPrompt:
 
         # This should not raise an exception
         formatted = INTENT_CLASSIFY_PROMPT.format(
-            message=test_message, original_timestamp=test_timestamp
+            message=test_message,
+            original_timestamp=test_timestamp,
+            user_timezone="America/New_York",
         )
 
         # Verify the variables are substituted
@@ -182,6 +184,7 @@ class TestReclassifyPrompt:
             followup_question=followup_question,
             user_answer=user_answer,
             original_timestamp=original_timestamp,
+            user_timezone="UTC",
         )
 
         # Verify all variables are substituted
@@ -205,3 +208,96 @@ class TestReclassifyPrompt:
         # Both should reference the same intent categories
         # Check that reminder is in both
         assert "reminder" in reclassify_text and "reminder" in classify_text
+
+    def test_reclassify_prompt_contains_critical_timezone_instruction(self):
+        """Test that prompt contains CRITICAL instruction about timezone conversion."""
+        prompt_text = RECLASSIFY_PROMPT
+
+        # The prompt should contain explicit CRITICAL instruction about timezone
+        assert "CRITICAL" in prompt_text, (
+            "RECLASSIFY_PROMPT should contain CRITICAL instruction about timezone"
+        )
+        assert "timezone" in prompt_text.lower(), (
+            "RECLASSIFY_PROMPT should mention timezone"
+        )
+
+    def test_reclassify_prompt_contains_convert_to_utc_instruction(self):
+        """Test that prompt contains explicit 'convert to UTC' instruction."""
+        prompt_text = RECLASSIFY_PROMPT
+
+        # The prompt should explicitly instruct to convert times to UTC
+        assert (
+            "convert to UTC" in prompt_text.lower()
+            or "convert to utc" in prompt_text.lower()
+        ), (
+            "RECLASSIFY_PROMPT should explicitly instruct to convert time references to UTC"
+        )
+
+    def test_reclassify_prompt_contains_user_timezone_variable(self):
+        """Test that prompt template accepts {user_timezone} variable."""
+        prompt_text = RECLASSIFY_PROMPT
+
+        # The prompt should use {user_timezone} placeholder
+        assert "{user_timezone}" in prompt_text, (
+            "RECLASSIFY_PROMPT should accept {user_timezone} variable"
+        )
+
+    def test_reclassify_prompt_renders_with_timezone_value(self):
+        """Test that prompt can be formatted with user_timezone and the value is substituted."""
+        test_timezone = "Asia/Singapore"
+
+        # Format the prompt with the timezone
+        formatted = RECLASSIFY_PROMPT.format(
+            original_message="Remind me to call John",
+            followup_question="When exactly do you want to be reminded?",
+            user_answer="5pm",
+            original_timestamp="2026-03-04T10:00:00Z",
+            user_timezone=test_timezone,
+        )
+
+        # Verify the timezone value is substituted into the prompt
+        assert test_timezone in formatted, (
+            "user_timezone value should be substituted into the rendered prompt"
+        )
+
+    def test_reclassify_prompt_instructs_to_use_timezone_for_time_conversion(self):
+        """Test that prompt instructs LLM to use user_timezone for converting time references."""
+        prompt_text = RECLASSIFY_PROMPT
+
+        # The prompt should instruct to use the provided user_timezone for time conversion
+        assert (
+            "use" in prompt_text.lower() and "user_timezone" in prompt_text.lower()
+        ), "RECLASSIFY_PROMPT should instruct to use user_timezone variable"
+
+    def test_reclassify_prompt_contains_singapore_timezone_example(self):
+        """Test that prompt contains explicit example with Singapore timezone for time conversion."""
+        prompt_text = RECLASSIFY_PROMPT
+
+        # The prompt should contain the specific example showing Singapore timezone
+        # This is the required instruction per the task specification
+        assert "Asia/Singapore" in prompt_text, (
+            "RECLASSIFY_PROMPT should contain explicit example with Asia/Singapore timezone"
+        )
+
+    def test_reclassify_prompt_contains_time_computation_example(self):
+        """Test that prompt contains example showing time computation (e.g., 5pm = 17:00, 17:00 - 8 hours = 09:00 UTC)."""
+        prompt_text = RECLASSIFY_PROMPT
+
+        # The prompt should show the specific computation example
+        assert "17:00" in prompt_text or "5pm" in prompt_text.lower(), (
+            "RECLASSIFY_PROMPT should contain example showing time computation"
+        )
+        assert "UTC" in prompt_text, (
+            "RECLASSIFY_PROMPT should explicitly mention UTC in the time conversion example"
+        )
+
+    def test_reclassify_prompt_warns_not_to_assume_utc(self):
+        """Test that prompt warns against assuming times are in UTC."""
+        prompt_text = RECLASSIFY_PROMPT
+
+        # The prompt should warn NOT to assume times are in UTC
+        assert (
+            "NOT assume" in prompt_text or "do not assume" in prompt_text.lower()
+        ) and "UTC" in prompt_text, (
+            "RECLASSIFY_PROMPT should explicitly warn NOT to assume times are in UTC"
+        )

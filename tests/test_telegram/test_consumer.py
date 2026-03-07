@@ -5,7 +5,6 @@ Covers:
 - _handle_intent_result for all five intent types
 - Stale datetime detection (reminder / task)
 - Flood control in run_notify_consumer
-- _is_stale helper
 """
 
 import asyncio
@@ -18,13 +17,11 @@ from tg_gateway.consumer import (
     FLOOD_CONTROL_DELAY_SECONDS,
     _dispatch_notification,
     _handle_intent_result,
-    _is_stale,
     run_notify_consumer,
 )
 from tg_gateway.handlers.conversation import (
     AWAITING_BUTTON_ACTION,
-    PENDING_LLM_CONVERSATION,
-    USER_QUEUE_COUNT,
+    LLM_CONVERSATION_METADATA,
 )
 
 
@@ -39,6 +36,11 @@ def _make_application(user_data: dict | None = None) -> MagicMock:
     app.bot = MagicMock()
     app.bot.send_message = AsyncMock()
     app.user_data = user_data if user_data is not None else {}
+    # Include a mock core_client for conversation state updates
+    mock_core_client = MagicMock()
+    mock_core_client.update_conversation_state = AsyncMock()
+    mock_core_client.get_settings = AsyncMock(side_effect=Exception("no settings"))
+    app.bot_data = {"core_client": mock_core_client}
     return app
 
 
@@ -52,43 +54,6 @@ def _past_iso() -> str:
     return (datetime.now(tz=timezone.utc) - timedelta(hours=1)).isoformat()
 
 
-# ---------------------------------------------------------------------------
-# _is_stale
-# ---------------------------------------------------------------------------
-
-
-class TestIsStale:
-    def test_past_datetime_is_stale(self):
-        assert _is_stale(_past_iso()) is True
-
-    def test_future_datetime_is_not_stale(self):
-        assert _is_stale(_future_iso()) is False
-
-    def test_invalid_string_returns_false(self):
-        assert _is_stale("not-a-date") is False
-
-    def test_empty_string_returns_false(self):
-        assert _is_stale("") is False
-
-    def test_naive_past_datetime_treated_as_utc_and_stale(self):
-        # A naive ISO string from the past should be treated as UTC and return True.
-        naive_past = (
-            (datetime.now(tz=timezone.utc) - timedelta(hours=2))
-            .replace(tzinfo=None)
-            .isoformat()
-        )
-        assert _is_stale(naive_past) is True
-
-    def test_naive_future_datetime_treated_as_utc_and_not_stale(self):
-        naive_future = (
-            (datetime.now(tz=timezone.utc) + timedelta(hours=2))
-            .replace(tzinfo=None)
-            .isoformat()
-        )
-        assert _is_stale(naive_future) is False
-
-
-# ---------------------------------------------------------------------------
 # _handle_intent_result — reminder intent
 # ---------------------------------------------------------------------------
 
@@ -166,9 +131,15 @@ class TestHandleIntentResultReminder:
         call_kwargs = app.bot.send_message.call_args[1]
         text = call_kwargs.get("text", "")
         assert "Call mom" in text
-        assert future_dt in text, f"Expected resolved_time {future_dt} in text: {text}"
-        # Should NOT show "unspecified time"
+        # Time is now displayed in user-friendly format (YYYY-MM-DD HH:MM)
+        # rather than raw ISO string
         assert "unspecified" not in text.lower()
+        # Verify a formatted date is present (e.g., "2026-02-28 20:13")
+        import re
+
+        assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", text), (
+            f"Expected formatted datetime in text: {text}"
+        )
 
     @pytest.mark.asyncio
     async def test_reminder_stale_with_resolved_time_shows_reschedule(self):
@@ -301,11 +272,13 @@ class TestHandleIntentResultTask:
         text = call_kwargs.get("text", "")
         assert "Finish report" in text
         assert "Task:" in text
-        assert future_dt in text, (
-            f"Expected resolved_due_time {future_dt} in text: {text}"
-        )
-        # Should NOT show "unspecified"
+        # Time is now displayed in user-friendly format (YYYY-MM-DD HH:MM)
         assert "unspecified" not in text.lower()
+        import re
+
+        assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", text), (
+            f"Expected formatted datetime in text: {text}"
+        )
 
     @pytest.mark.asyncio
     async def test_task_stale_with_resolved_due_time_shows_reschedule(self):
@@ -352,6 +325,27 @@ class TestHandleIntentResultTask:
 
 class TestHandleIntentResultSearch:
     @pytest.mark.asyncio
+    async def test_search_completes_conversation_via_core_api(self):
+        """Test that search intent completes conversation via Core API."""
+        app = _make_application()
+
+        content = {
+            "intent": "search",
+            "query": "test query",
+            "memory_id": "",
+            "results": [
+                {"title": "Result 1", "memory_id": "mem-s1"},
+            ],
+        }
+
+        await _handle_intent_result(app, "12345", content)
+
+        core_client = app.bot_data["core_client"]
+        core_client.update_conversation_state.assert_awaited_once_with(
+            12345, "completed"
+        )
+
+    @pytest.mark.asyncio
     async def test_search_with_results_sends_keyboard(self):
         app = _make_application()
         content = {
@@ -386,34 +380,6 @@ class TestHandleIntentResultSearch:
         call_kwargs = app.bot.send_message.call_args[1]
         assert call_kwargs.get("reply_markup") is None
         assert "no results" in call_kwargs.get("text", "").lower()
-
-    @pytest.mark.asyncio
-    async def test_search_decrements_queue_counter(self):
-        app = _make_application(user_data={12345: {USER_QUEUE_COUNT: 3}})
-        content = {
-            "intent": "search",
-            "query": "anything",
-            "memory_id": "",
-            "search_results": [],
-        }
-
-        await _handle_intent_result(app, "12345", content)
-
-        assert app.user_data[12345][USER_QUEUE_COUNT] == 2
-
-    @pytest.mark.asyncio
-    async def test_search_queue_clamps_at_zero(self):
-        app = _make_application(user_data={12345: {USER_QUEUE_COUNT: 0}})
-        content = {
-            "intent": "search",
-            "query": "anything",
-            "memory_id": "",
-            "search_results": [],
-        }
-
-        await _handle_intent_result(app, "12345", content)
-
-        assert app.user_data[12345][USER_QUEUE_COUNT] == 0
 
     @pytest.mark.asyncio
     async def test_search_does_not_set_awaiting_button_action(self):
@@ -496,7 +462,7 @@ class TestHandleIntentResultAmbiguous:
         assert call_kwargs.get("reply_markup") is None
 
     @pytest.mark.asyncio
-    async def test_ambiguous_sets_pending_llm_conversation(self):
+    async def test_ambiguous_sets_llm_conversation_metadata(self):
         app = _make_application()
         content = {
             "intent": "ambiguous",
@@ -507,11 +473,11 @@ class TestHandleIntentResultAmbiguous:
 
         await _handle_intent_result(app, "12345", content)
 
-        pending = app.user_data[12345].get(PENDING_LLM_CONVERSATION)
-        assert pending is not None
-        assert pending["memory_id"] == "mem-a2"
-        assert pending["original_text"] == "do something"
-        assert pending["followup_question"] == "What exactly do you mean?"
+        metadata = app.user_data[12345].get(LLM_CONVERSATION_METADATA)
+        assert metadata is not None
+        assert metadata["memory_id"] == "mem-a2"
+        assert metadata["original_text"] == "do something"
+        assert metadata["followup_question"] == "What exactly do you mean?"
 
     @pytest.mark.asyncio
     async def test_ambiguous_does_not_set_awaiting_button_action(self):
@@ -876,29 +842,27 @@ class TestConsumerSpecificPhrases:
         assert state["memory_id"] == "mem-task-456"
 
     @pytest.mark.asyncio
-    async def test_search_phrase_decrements_queue(self):
-        """Test that search phrase decrements queue counter."""
-        app = _make_application(user_data={12345: {USER_QUEUE_COUNT: 3}})
+    async def test_search_phrase_completes_conversation(self):
+        """Test that search phrase completes conversation via Core API."""
+        app = _make_application()
         content = {
             "intent": "search",
             "query": "all images about anime",
             "memory_id": "",
-            "search_results": [{"title": "Anime", "memory_id": "mem-a1"}],
+            "results": [{"title": "Anime", "memory_id": "mem-a1"}],
         }
 
         await _handle_intent_result(app, "12345", content)
 
-        # Queue should be decremented
-        assert app.user_data[12345][USER_QUEUE_COUNT] == 2
+        core_client = app.bot_data["core_client"]
+        core_client.update_conversation_state.assert_awaited_once_with(
+            12345, "completed"
+        )
 
     @pytest.mark.asyncio
-    async def test_reminder_phrase_does_not_decrement_queue(self):
-        """Test that reminder phrase does NOT decrement queue counter.
-
-        Note: The queue counter is handled differently - it's managed by
-        the conversation handler when user confirms/edits the proposal.
-        """
-        app = _make_application(user_data={12345: {USER_QUEUE_COUNT: 3}})
+    async def test_reminder_phrase_sets_awaiting_reply(self):
+        """Test that reminder phrase sets conversation state to awaiting_reply."""
+        app = _make_application()
         future_dt = _future_iso()
         content = {
             "intent": "reminder",
@@ -913,3 +877,36 @@ class TestConsumerSpecificPhrases:
         # This test verifies the current behavior
         # Note: In the actual implementation, queue decrement may happen elsewhere
         # This test documents the expected behavior
+
+
+# ---------------------------------------------------------------------------
+# llm_image_tag_result conversation state
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchNotificationImageTagResult:
+    @pytest.mark.asyncio
+    async def test_image_tag_result_sets_conversation_awaiting_reply(self):
+        """llm_image_tag_result handler sets conversation state to awaiting_reply."""
+        app = _make_application()
+        mock_core_client = MagicMock()
+        mock_core_client.update_conversation_state = AsyncMock()
+        app.bot_data["core_client"] = mock_core_client
+
+        notification = {
+            "user_id": "12345",
+            "message_type": "llm_image_tag_result",
+            "content": {
+                "memory_id": "mem-100",
+                "tags": ["sunset", "beach"],
+                "description": "A sunset at the beach",
+            },
+        }
+
+        await _dispatch_notification(app, notification)
+
+        mock_core_client.update_conversation_state.assert_awaited_once()
+        call_args = mock_core_client.update_conversation_state.call_args
+        assert call_args[0][0] == 12345
+        assert call_args[0][1] == "awaiting_reply"
+        assert call_args[1].get("history_entry", {}).get("role") == "assistant"

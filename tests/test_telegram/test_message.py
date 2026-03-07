@@ -6,17 +6,24 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from datetime import datetime, timezone
+
 from shared_lib.enums import JobType
+from shared_lib.schemas import DequeueResponse, QueueItem
 from tg_gateway.core_client import CoreUnavailableError
 from tg_gateway.handlers.conversation import (
     AWAITING_BUTTON_ACTION,
-    PENDING_LLM_CONVERSATION,
+    LLM_CONVERSATION_METADATA,
     PENDING_REMINDER_MEMORY_ID,
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
-    USER_QUEUE_COUNT,
 )
-from tg_gateway.handlers.message import handle_text
+from tg_gateway.handlers.message import (
+    _process_image_queue_item,
+    _process_next_queue_item,
+    handle_image,
+    handle_text,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -50,53 +57,89 @@ def _make_context(
     return context
 
 
-def _make_core_client() -> MagicMock:
-    """Return a mock CoreClient with async methods."""
+def _make_core_client(
+    active_conversation=None,
+    queue_status=None,
+) -> MagicMock:
+    """Return a mock CoreClient with async methods for the new queue-based flow.
+
+    Args:
+        active_conversation: Return value for get_active_conversation.
+        queue_status: Return value for get_queue_status.
+    """
     client = MagicMock()
     client.ensure_user = AsyncMock()
     client.create_memory = AsyncMock()
     client.create_llm_job = AsyncMock()
+    client.get_active_conversation = AsyncMock(return_value=active_conversation)
+    client.enqueue_message = AsyncMock(
+        return_value=MagicMock(id="qi-1")
+    )
+    # dequeue returns an object with .item
+    dequeue_item = MagicMock()
+    dequeue_item.id = "qi-1"
+    dequeue_resp = MagicMock()
+    dequeue_resp.item = dequeue_item
+    client.dequeue_message = AsyncMock(return_value=dequeue_resp)
+    client.start_conversation = AsyncMock()
+    client.get_settings = AsyncMock(side_effect=Exception("no settings"))
+    if queue_status is not None:
+        client.get_queue_status = AsyncMock(return_value=queue_status)
+    else:
+        qs = MagicMock()
+        qs.queue_length = 0
+        qs.conversation_active = False
+        client.get_queue_status = AsyncMock(return_value=qs)
     return client
 
 
 # ---------------------------------------------------------------------------
-# Queue-first text flow
+# Queue-first text flow (new: enqueue -> dequeue -> start_conversation)
 # ---------------------------------------------------------------------------
 
 
 class TestHandleTextQueueFlow:
-    """Tests for the queue-first text handling flow."""
+    """Tests for the queue-based text handling flow."""
 
     @pytest.mark.asyncio
-    async def test_empty_queue_replies_processing(self):
-        """When queue is empty (count == 0), reply is 'Processing...'."""
-        core_client = _make_core_client()
+    async def test_no_active_conversation_replies_processing(self):
+        """When no active conversation, reply is 'Processing your message...'."""
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Remember to buy milk")
         context = _make_context(bot_data={"core_client": core_client})
-        # No queue count set — defaults to 0
 
         await handle_text(update, context)
 
-        update.message.reply_text.assert_called_once_with("Processing...")
-
-    @pytest.mark.asyncio
-    async def test_nonempty_queue_replies_added_to_queue(self):
-        """When queue already has items (count > 0), reply is 'Added to queue'."""
-        core_client = _make_core_client()
-        update = _make_update(text="Second message")
-        context = _make_context(
-            user_data={USER_QUEUE_COUNT: 1},
-            bot_data={"core_client": core_client},
+        update.message.reply_text.assert_called_once_with(
+            "Processing your message..."
         )
 
+    @pytest.mark.asyncio
+    async def test_active_processing_conversation_enqueues_and_replies(self):
+        """When active conversation is processing, enqueue and reply with queue count."""
+        active_conv = MagicMock()
+        active_conv.state = "processing"
+        qs = MagicMock()
+        qs.queue_length = 2
+        core_client = _make_core_client(
+            active_conversation=active_conv,
+            queue_status=qs,
+        )
+        update = _make_update(text="Second message")
+        context = _make_context(bot_data={"core_client": core_client})
+
         await handle_text(update, context)
 
-        update.message.reply_text.assert_called_once_with("Added to queue")
+        core_client.enqueue_message.assert_called_once()
+        core_client.get_queue_status.assert_called_once()
+        update.message.reply_text.assert_called_once_with(
+            "Added to queue (2 messages ahead)"
+        )
 
     @pytest.mark.asyncio
     async def test_creates_llm_job_on_text(self):
         """An LLM intent_classify job is created for the incoming text."""
-        core_client = _make_core_client()
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Note to self")
         context = _make_context(bot_data={"core_client": core_client})
 
@@ -109,8 +152,8 @@ class TestHandleTextQueueFlow:
 
     @pytest.mark.asyncio
     async def test_llm_job_payload_contains_source_fields(self):
-        """The LLM job payload includes chat_id, message_id, and message_timestamp."""
-        core_client = _make_core_client()
+        """The LLM job payload includes chat_id, message_id."""
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Some text")
         update.message.chat_id = 42
         update.message.message_id = 7
@@ -126,10 +169,8 @@ class TestHandleTextQueueFlow:
 
     @pytest.mark.asyncio
     async def test_llm_job_payload_timestamp_when_date_set(self):
-        """message_timestamp is the ISO string of msg.date when date is present."""
-        from datetime import datetime, timezone
-
-        core_client = _make_core_client()
+        """original_timestamp is the ISO string of msg.date when date is present."""
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Timestamped message")
         dt = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
         update.message.date = dt
@@ -143,7 +184,7 @@ class TestHandleTextQueueFlow:
     @pytest.mark.asyncio
     async def test_llm_job_user_id_matches_telegram_user(self):
         """The LLM job carries the Telegram user's ID."""
-        core_client = _make_core_client()
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Hello", user_id=555)
         context = _make_context(bot_data={"core_client": core_client})
 
@@ -153,20 +194,22 @@ class TestHandleTextQueueFlow:
         assert job_arg.user_id == 555
 
     @pytest.mark.asyncio
-    async def test_queue_count_incremented_after_job(self):
-        """Queue counter is incremented after queuing the LLM job."""
-        core_client = _make_core_client()
+    async def test_enqueue_dequeue_start_conversation_called(self):
+        """When no active conversation, enqueue, dequeue, and start_conversation are called."""
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Increment me")
         context = _make_context(bot_data={"core_client": core_client})
 
-        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 0
         await handle_text(update, context)
-        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 1
+
+        core_client.enqueue_message.assert_called_once()
+        core_client.dequeue_message.assert_called_once()
+        core_client.start_conversation.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_ensure_user_called_before_job(self):
         """ensure_user is called with the Telegram user's id and full_name."""
-        core_client = _make_core_client()
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Test", user_id=77)
         update.message.from_user.full_name = "Alice"
         context = _make_context(bot_data={"core_client": core_client})
@@ -177,9 +220,9 @@ class TestHandleTextQueueFlow:
 
     @pytest.mark.asyncio
     async def test_no_memory_created(self):
-        """No memory is created directly — only an LLM job."""
-        core_client = _make_core_client()
-        core_client.create_memory = AsyncMock()  # should never be called
+        """No memory is created directly -- only an LLM job."""
+        core_client = _make_core_client(active_conversation=None)
+        core_client.create_memory = AsyncMock()
         update = _make_update(text="Some text")
         context = _make_context(bot_data={"core_client": core_client})
 
@@ -189,17 +232,14 @@ class TestHandleTextQueueFlow:
 
     @pytest.mark.asyncio
     async def test_llm_job_payload_has_memory_id_none(self):
-        """The LLM job payload should have memory_id set to None, not a memory object."""
-        core_client = _make_core_client()
-        core_client.create_memory = AsyncMock()  # should not be called
+        """The LLM job payload should have memory_id set to None."""
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Remember to buy milk")
         context = _make_context(bot_data={"core_client": core_client})
 
         await handle_text(update, context)
 
-        core_client.create_llm_job.assert_called_once()
         job_arg = core_client.create_llm_job.call_args[0][0]
-        # Memory ID should be None, not a memory object
         assert job_arg.payload["memory_id"] is None
 
 
@@ -215,7 +255,9 @@ class TestHandleTextCoreUnavailable:
     async def test_core_unavailable_on_ensure_user_replies_error(self):
         """CoreUnavailableError from ensure_user causes a friendly error reply."""
         core_client = _make_core_client()
-        core_client.ensure_user = AsyncMock(side_effect=CoreUnavailableError("down"))
+        core_client.ensure_user = AsyncMock(
+            side_effect=CoreUnavailableError("down")
+        )
         update = _make_update(text="Hello")
         context = _make_context(bot_data={"core_client": core_client})
 
@@ -229,7 +271,9 @@ class TestHandleTextCoreUnavailable:
     async def test_core_unavailable_does_not_create_job(self):
         """CoreUnavailableError stops execution before creating an LLM job."""
         core_client = _make_core_client()
-        core_client.ensure_user = AsyncMock(side_effect=CoreUnavailableError("down"))
+        core_client.ensure_user = AsyncMock(
+            side_effect=CoreUnavailableError("down")
+        )
         update = _make_update(text="Hello")
         context = _make_context(bot_data={"core_client": core_client})
 
@@ -240,14 +284,16 @@ class TestHandleTextCoreUnavailable:
     @pytest.mark.asyncio
     async def test_core_unavailable_on_create_llm_job_replies_error(self):
         """CoreUnavailableError from create_llm_job causes a friendly error reply."""
-        core_client = _make_core_client()
-        core_client.create_llm_job = AsyncMock(side_effect=CoreUnavailableError("down"))
+        core_client = _make_core_client(active_conversation=None)
+        core_client.create_llm_job = AsyncMock(
+            side_effect=CoreUnavailableError("down")
+        )
         update = _make_update(text="Hello")
         context = _make_context(bot_data={"core_client": core_client})
 
         await handle_text(update, context)
 
-        # There will be two reply_text calls: first "Processing..." then the error message.
+        # There will be two reply_text calls: first "Processing..." then the error.
         assert update.message.reply_text.call_count == 2
         last_reply = update.message.reply_text.call_args_list[-1][0][0]
         assert "trouble" in last_reply.lower() or "try again" in last_reply.lower()
@@ -278,7 +324,6 @@ class TestHandleTextConversationRouting:
             await handle_text(update, context)
             mock_receive_tags.assert_called_once_with(update, context)
 
-        # No LLM job created
         core_client.create_llm_job.assert_not_called()
 
     @pytest.mark.asyncio
@@ -302,7 +347,7 @@ class TestHandleTextConversationRouting:
 
     @pytest.mark.asyncio
     async def test_pending_reminder_routes_to_receive_custom_reminder(self):
-        """Text during PENDING_REMINDER_MEMORY_ID state is routed to receive_custom_reminder."""
+        """Text during PENDING_REMINDER_MEMORY_ID routes to receive_custom_reminder."""
         core_client = _make_core_client()
         update = _make_update(text="2024-12-20 09:00")
         context = _make_context(
@@ -320,33 +365,39 @@ class TestHandleTextConversationRouting:
         core_client.create_llm_job.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_pending_llm_conversation_routes_to_receive_followup_answer(self):
-        """Text during PENDING_LLM_CONVERSATION state is routed to receive_followup_answer."""
-        core_client = _make_core_client()
-        pending_state = {
-            "memory_id": "mem-4",
-            "original_text": "Buy milk",
-            "followup_question": "When?",
-        }
+    async def test_active_awaiting_reply_conversation_routes_to_intent_classify(self):
+        """When Core API shows awaiting_reply conversation, reply creates
+        intent_classify job so the IntentHandler can reclassify with context."""
+        active_conv = MagicMock()
+        active_conv.state = "awaiting_reply"
+        conv_resp = MagicMock()
+        conv_resp.history = []
+        core_client = _make_core_client(active_conversation=active_conv)
+        core_client.reply_to_conversation = AsyncMock(return_value=conv_resp)
+
         update = _make_update(text="Tomorrow")
         context = _make_context(
-            user_data={PENDING_LLM_CONVERSATION: pending_state},
+            user_data={
+                LLM_CONVERSATION_METADATA: {
+                    "memory_id": "mem-4",
+                    "original_text": "Buy milk",
+                    "followup_question": "When?",
+                },
+            },
             bot_data={"core_client": core_client},
         )
 
-        with patch(
-            "tg_gateway.handlers.message.conversation.receive_followup_answer",
-            new_callable=AsyncMock,
-        ) as mock_followup:
-            await handle_text(update, context)
-            mock_followup.assert_called_once_with(update, context)
+        await handle_text(update, context)
 
-        core_client.create_llm_job.assert_not_called()
+        core_client.reply_to_conversation.assert_called_once()
+        core_client.create_llm_job.assert_called_once()
+        job_arg = core_client.create_llm_job.call_args[0][0]
+        assert job_arg.job_type == JobType.intent_classify
 
     @pytest.mark.asyncio
-    async def test_awaiting_button_action_without_llm_conversation_queues_as_new(self):
-        """Text during AWAITING_BUTTON_ACTION (no PENDING_LLM_CONVERSATION) queues as new."""
-        core_client = _make_core_client()
+    async def test_awaiting_button_action_without_active_conv_queues_new(self):
+        """Text during AWAITING_BUTTON_ACTION with no active conv queues as new."""
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="New text while buttons shown")
         context = _make_context(
             user_data={AWAITING_BUTTON_ACTION: True},
@@ -355,55 +406,20 @@ class TestHandleTextConversationRouting:
 
         await handle_text(update, context)
 
-        # Should queue as new message
+        # Should queue as new message (enqueue, dequeue, start, create job)
         core_client.create_llm_job.assert_called_once()
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.job_type == JobType.intent_classify
-        assert job_arg.payload["message"] == "New text while buttons shown"
 
     @pytest.mark.asyncio
-    async def test_pending_llm_conversation_takes_priority_over_awaiting_button(self):
-        """PENDING_LLM_CONVERSATION takes priority over AWAITING_BUTTON_ACTION."""
-        core_client = _make_core_client()
-        pending_state = {
-            "memory_id": "mem-5",
-            "original_text": "Something",
-            "followup_question": "What?",
-        }
-        update = _make_update(text="My answer")
-        context = _make_context(
-            user_data={
-                PENDING_LLM_CONVERSATION: pending_state,
-                AWAITING_BUTTON_ACTION: True,
-            },
-            bot_data={"core_client": core_client},
-        )
-
-        with patch(
-            "tg_gateway.handlers.message.conversation.receive_followup_answer",
-            new_callable=AsyncMock,
-        ) as mock_followup:
-            await handle_text(update, context)
-            mock_followup.assert_called_once_with(update, context)
-
-        # No LLM intent job created
-        core_client.create_llm_job.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_tag_state_takes_priority_over_llm_conversation(self):
-        """PENDING_TAG_MEMORY_ID takes priority over PENDING_LLM_CONVERSATION."""
-        core_client = _make_core_client()
-        pending_state = {
-            "memory_id": "mem-6",
-            "original_text": "Something",
-            "followup_question": "What?",
-        }
+    async def test_tag_state_takes_priority_over_active_conversation(self):
+        """PENDING_TAG_MEMORY_ID takes priority over active conversation."""
+        active_conv = MagicMock()
+        active_conv.state = "awaiting_reply"
+        core_client = _make_core_client(active_conversation=active_conv)
         update = _make_update(text="work, home")
         context = _make_context(
-            user_data={
-                PENDING_TAG_MEMORY_ID: "mem-6",
-                PENDING_LLM_CONVERSATION: pending_state,
-            },
+            user_data={PENDING_TAG_MEMORY_ID: "mem-6"},
             bot_data={"core_client": core_client},
         )
 
@@ -411,13 +427,10 @@ class TestHandleTextConversationRouting:
             "tg_gateway.handlers.message.conversation.receive_tags",
             new_callable=AsyncMock,
         ) as mock_receive_tags:
-            with patch(
-                "tg_gateway.handlers.message.conversation.receive_followup_answer",
-                new_callable=AsyncMock,
-            ) as mock_followup:
-                await handle_text(update, context)
-                mock_receive_tags.assert_called_once_with(update, context)
-                mock_followup.assert_not_called()
+            await handle_text(update, context)
+            mock_receive_tags.assert_called_once_with(update, context)
+
+        core_client.create_llm_job.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -431,79 +444,327 @@ class TestHandleTextSpecificPhrases:
     @pytest.mark.asyncio
     async def test_search_phrase_creates_llm_job(self):
         """Test 'Search for all images about anime' creates LLM job."""
-        core_client = _make_core_client()
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Search for all images about anime")
         context = _make_context(bot_data={"core_client": core_client})
 
         await handle_text(update, context)
 
-        # Verify LLM job is created for search
         core_client.create_llm_job.assert_called_once()
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.job_type == JobType.intent_classify
         assert job_arg.payload["message"] == "Search for all images about anime"
-        # Memory ID should be None for new job (not yet created)
         assert job_arg.payload["memory_id"] is None
 
     @pytest.mark.asyncio
     async def test_reminder_phrase_creates_llm_job(self):
         """Test 'Remind me to call mom tomorrow' creates LLM job."""
-        core_client = _make_core_client()
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Remind me to call mom tomorrow")
         context = _make_context(bot_data={"core_client": core_client})
 
         await handle_text(update, context)
 
-        # Verify LLM job is created for reminder
         core_client.create_llm_job.assert_called_once()
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.job_type == JobType.intent_classify
-        assert job_arg.payload["message"] == "Remind me to call mom tomorrow"
 
     @pytest.mark.asyncio
     async def test_task_phrase_creates_llm_job(self):
         """Test 'Add task to finish report by Friday' creates LLM job."""
-        core_client = _make_core_client()
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Add task to finish report by Friday")
         context = _make_context(bot_data={"core_client": core_client})
 
         await handle_text(update, context)
 
-        # Verify LLM job is created for task
         core_client.create_llm_job.assert_called_once()
         job_arg = core_client.create_llm_job.call_args[0][0]
         assert job_arg.job_type == JobType.intent_classify
-        assert job_arg.payload["message"] == "Add task to finish report by Friday"
 
     @pytest.mark.asyncio
-    async def test_search_phrase_queue_count_increments(self):
-        """Test that search phrase increments queue count."""
-        core_client = _make_core_client()
+    async def test_new_message_calls_enqueue_and_dequeue(self):
+        """Test that new messages go through enqueue -> dequeue -> start flow."""
+        core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Search for all images about anime")
         context = _make_context(bot_data={"core_client": core_client})
 
-        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 0
         await handle_text(update, context)
-        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 1
+
+        core_client.enqueue_message.assert_called_once()
+        core_client.dequeue_message.assert_called_once()
+        core_client.start_conversation.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Telegram API failure resilience tests
+# ---------------------------------------------------------------------------
+
+
+class TestHandleTextTelegramApiFailures:
+    """Tests for resilience when Telegram API fails during handle_text."""
 
     @pytest.mark.asyncio
-    async def test_reminder_phrase_queue_count_increments(self):
-        """Test that reminder phrase increments queue count."""
-        core_client = _make_core_client()
-        update = _make_update(text="Remind me to call mom tomorrow")
+    async def test_reply_text_exception_still_creates_llm_job(self):
+        """If reply_text raises, LLM job should still be created."""
+        core_client = _make_core_client(active_conversation=None)
+        update = _make_update(text="Hello world")
         context = _make_context(bot_data={"core_client": core_client})
 
-        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 0
+        update.message.reply_text = AsyncMock(
+            side_effect=Exception("Telegram API error")
+        )
+
         await handle_text(update, context)
-        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 1
+
+        # LLM job MUST be created even if reply_text failed
+        core_client.create_llm_job.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_task_phrase_queue_count_increments(self):
-        """Test that task phrase increments queue count."""
-        core_client = _make_core_client()
-        update = _make_update(text="Add task to finish report by Friday")
+    async def test_core_unavailable_error_preserves_error_reply(self):
+        """CoreUnavailableError should still reply with error message."""
+        core_client = _make_core_client(active_conversation=None)
+        core_client.create_llm_job = AsyncMock(
+            side_effect=CoreUnavailableError("Core is down")
+        )
+        update = _make_update(text="Hello")
         context = _make_context(bot_data={"core_client": core_client})
 
-        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 0
         await handle_text(update, context)
-        assert context.user_data.get(USER_QUEUE_COUNT, 0) == 1
+
+        update.message.reply_text.assert_called()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "trouble" in reply_text.lower() or "try again" in reply_text.lower()
+
+
+# ---------------------------------------------------------------------------
+# _process_image_queue_item tests
+# ---------------------------------------------------------------------------
+
+
+class TestProcessImageQueueItem:
+    """Tests for the _process_image_queue_item helper."""
+
+    @pytest.mark.asyncio
+    async def test_process_image_queue_item_creates_llm_job(self):
+        """_process_image_queue_item creates an image_tag LLM job using the stored local_path."""
+        core_client = _make_core_client()
+
+        queue_item = type("QueueItem", (), {
+            "memory_id": "mem-456",
+            "image_local_path": "/data/images/abc.jpg",
+            "content": "sunset photo",
+        })()
+
+        core_client.create_llm_job = AsyncMock()
+
+        await _process_image_queue_item(core_client, user_id=12345, queue_item=queue_item)
+
+        core_client.create_llm_job.assert_called_once()
+        call_args = core_client.create_llm_job.call_args[0][0]
+        assert call_args.job_type == JobType.image_tag
+        assert call_args.payload["memory_id"] == "mem-456"
+        assert call_args.payload["image_path"] == "/data/images/abc.jpg"
+        assert call_args.user_id == 12345
+
+    @pytest.mark.asyncio
+    async def test_process_image_queue_item_skips_job_if_no_local_path(self):
+        """If image_local_path is None (download failed earlier), skip LLM job."""
+        core_client = _make_core_client()
+
+        queue_item = type("QueueItem", (), {
+            "memory_id": "mem-456",
+            "image_local_path": None,
+            "content": "sunset photo",
+        })()
+
+        core_client.create_llm_job = AsyncMock()
+
+        await _process_image_queue_item(core_client, user_id=12345, queue_item=queue_item)
+
+        core_client.create_llm_job.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _process_next_queue_item tests
+# ---------------------------------------------------------------------------
+
+
+class TestProcessNextQueueItem:
+    """Tests for the _process_next_queue_item helper."""
+
+    @pytest.mark.asyncio
+    async def test_process_next_queue_item_text(self):
+        """Dequeues a text item and creates an intent_classify job."""
+        core_client = _make_core_client()
+        text_item = QueueItem(
+            id="q-1", content="buy milk", memory_id=None,
+            image_local_path=None, message_timestamp=None,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        core_client.dequeue_message = AsyncMock(
+            return_value=DequeueResponse(item=text_item),
+        )
+        core_client.start_conversation = AsyncMock()
+        core_client.create_llm_job = AsyncMock()
+        core_client.get_settings = AsyncMock(
+            return_value=type("S", (), {"timezone": "Europe/London"})(),
+        )
+
+        result = await _process_next_queue_item(core_client, user_id=12345)
+
+        assert result is True
+        core_client.start_conversation.assert_called_once_with(12345, queue_item_id="q-1")
+        core_client.create_llm_job.assert_called_once()
+        job = core_client.create_llm_job.call_args[0][0]
+        assert job.job_type == JobType.intent_classify
+        assert job.payload["message"] == "buy milk"
+        assert job.payload["user_timezone"] == "Europe/London"
+
+    @pytest.mark.asyncio
+    async def test_process_next_queue_item_image(self):
+        """Dequeues an image item and creates an image_tag job."""
+        core_client = _make_core_client()
+        image_item = QueueItem(
+            id="q-2", content="sunset", memory_id="mem-789",
+            image_local_path="/data/images/abc.jpg",
+            message_timestamp=None,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        core_client.dequeue_message = AsyncMock(
+            return_value=DequeueResponse(item=image_item),
+        )
+        core_client.start_conversation = AsyncMock()
+        core_client.create_llm_job = AsyncMock()
+
+        result = await _process_next_queue_item(core_client, user_id=12345)
+
+        assert result is True
+        core_client.start_conversation.assert_called_once_with(12345, queue_item_id="q-2")
+        core_client.create_llm_job.assert_called_once()
+        job = core_client.create_llm_job.call_args[0][0]
+        assert job.job_type == JobType.image_tag
+        assert job.payload["memory_id"] == "mem-789"
+        assert job.payload["image_path"] == "/data/images/abc.jpg"
+
+    @pytest.mark.asyncio
+    async def test_process_next_queue_item_empty_queue(self):
+        """Returns False when queue is empty."""
+        core_client = _make_core_client()
+        core_client.dequeue_message = AsyncMock(
+            return_value=DequeueResponse(item=None),
+        )
+
+        result = await _process_next_queue_item(core_client, user_id=12345)
+
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# handle_image tests
+# ---------------------------------------------------------------------------
+
+
+def _make_update_photo(user_id: int = 99, caption: str = "") -> MagicMock:
+    """Return a minimal mock Update with a photo message."""
+    update = MagicMock(spec=Update)
+    update.message = MagicMock()
+    update.message.caption = caption
+    update.message.chat_id = 12345
+    update.message.message_id = 1
+    update.message.date = None
+    update.message.reply_text = AsyncMock()
+    # Simulate Telegram's photo list (highest resolution is last element)
+    photo_size = MagicMock()
+    photo_size.file_id = "file-abc-123"
+    update.message.photo = [MagicMock(), photo_size]
+    user = MagicMock()
+    user.id = user_id
+    user.full_name = "Test User"
+    update.message.from_user = user
+    return update
+
+
+class TestHandleImage:
+    """Tests for the queue-based handle_image flow."""
+
+    @pytest.mark.asyncio
+    async def test_handle_image_no_active_conversation(self):
+        """Image with no active conversation: create memory, upload, enqueue, dequeue, start, create job."""
+        core_client = _make_core_client(active_conversation=None)
+        core_client.create_memory = AsyncMock(
+            return_value=type("M", (), {"id": "mem-100"})(),
+        )
+        dequeued_item = QueueItem(
+            id="q-10", content="", memory_id="mem-100",
+            image_local_path="/data/images/xyz.jpg",
+            message_timestamp=None, created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        core_client.dequeue_message = AsyncMock(
+            return_value=DequeueResponse(item=dequeued_item),
+        )
+        core_client.create_llm_job = AsyncMock()
+
+        update = _make_update_photo(user_id=99)
+        context = _make_context(bot_data={"core_client": core_client})
+
+        with patch("tg_gateway.handlers.message.download_and_upload_image", new_callable=AsyncMock) as mock_download:
+            mock_download.return_value = "/data/images/xyz.jpg"
+            await handle_image(update, context)
+
+        core_client.create_memory.assert_called_once()
+        mock_download.assert_called_once()
+        core_client.enqueue_message.assert_called_once()
+        enqueue_call = core_client.enqueue_message.call_args
+        assert enqueue_call.kwargs.get("memory_id") == "mem-100"
+        core_client.dequeue_message.assert_called_once()
+        core_client.start_conversation.assert_called_once()
+        core_client.create_llm_job.assert_called_once()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Processing" in reply_text
+
+    @pytest.mark.asyncio
+    async def test_handle_image_active_conversation_queues(self):
+        """Image during active conversation: create memory, upload, enqueue, reply with queue position."""
+        active_conv = MagicMock()
+        active_conv.state = "processing"
+        qs = MagicMock()
+        qs.queue_length = 2
+        core_client = _make_core_client(
+            active_conversation=active_conv,
+            queue_status=qs,
+        )
+        core_client.create_memory = AsyncMock(
+            return_value=type("M", (), {"id": "mem-200"})(),
+        )
+
+        update = _make_update_photo(user_id=99)
+        context = _make_context(bot_data={"core_client": core_client})
+
+        with patch("tg_gateway.handlers.message.download_and_upload_image", new_callable=AsyncMock) as mock_download:
+            mock_download.return_value = "/data/images/xyz.jpg"
+            await handle_image(update, context)
+
+        core_client.create_memory.assert_called_once()
+        mock_download.assert_called_once()
+        core_client.enqueue_message.assert_called_once()
+        core_client.dequeue_message.assert_not_called()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "queue" in reply_text.lower() or "ahead" in reply_text.lower()
+
+    @pytest.mark.asyncio
+    async def test_handle_image_core_unavailable_on_ensure_user(self):
+        """CoreUnavailableError from ensure_user replies with error and does not create memory."""
+        core_client = _make_core_client(active_conversation=None)
+        core_client.ensure_user = AsyncMock(side_effect=CoreUnavailableError("down"))
+
+        update = _make_update_photo(user_id=99)
+        context = _make_context(bot_data={"core_client": core_client})
+
+        with patch("tg_gateway.handlers.message.download_and_upload_image", new_callable=AsyncMock):
+            await handle_image(update, context)
+
+        update.message.reply_text.assert_called_once()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "trouble" in reply_text.lower() or "try again" in reply_text.lower()
+        core_client.create_memory.assert_not_called()

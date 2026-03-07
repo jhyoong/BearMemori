@@ -4,14 +4,18 @@ This module contains the command handlers for the Telegram bot.
 """
 
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from tg_gateway.handlers.conversation import (
+    AWAITING_BUTTON_ACTION,
+    PENDING_LLM_CONVERSATION,
+    PENDING_REMINDER_MEMORY_ID,
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
-    PENDING_REMINDER_MEMORY_ID,
 )
 from tg_gateway.keyboards import search_results_keyboard, task_list_keyboard
 
@@ -30,24 +34,45 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /find <query> - Search memories
 /tasks - List your tasks
 /pinned - Show pinned memories
+/timezone - View or set your timezone
 /cancel - Cancel current action"""
     await update.message.reply_text(help_text)
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Clear all pending conversation state.
+    """Clear all pending conversation state and process the next queued item.
 
-    Clears any pending tag, task, or reminder memory IDs that were set
-    during conversation flows.
+    Clears any pending tag, task, reminder, LLM conversation, and button action
+    state. Cancels the active conversation on Core API and then auto-processes
+    the next item in the user's queue.
 
     Args:
         update: The Telegram update.
         context: The context with user_data containing pending state.
     """
+    from tg_gateway.handlers.message import _process_next_queue_item
+
+    user = update.effective_user
+    core_client = context.bot_data.get("core_client")
+
     # Clear all pending conversation states
     context.user_data.pop(PENDING_TAG_MEMORY_ID, None)
     context.user_data.pop(PENDING_TASK_MEMORY_ID, None)
     context.user_data.pop(PENDING_REMINDER_MEMORY_ID, None)
+    context.user_data.pop(PENDING_LLM_CONVERSATION, None)
+    context.user_data.pop(AWAITING_BUTTON_ACTION, None)
+
+    if core_client:
+        try:
+            await core_client.cancel_conversation(user.id)
+        except Exception:
+            logger.exception("Failed to cancel conversation for user %s", user.id)
+
+        # Process next queue item
+        try:
+            await _process_next_queue_item(core_client, user.id)
+        except Exception:
+            logger.exception("Failed to process next queue item for user %s", user.id)
 
     await update.message.reply_text("Current action cancelled.")
 
@@ -110,7 +135,11 @@ async def find_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if content:
             label = content[:50] + "..." if len(content) > 50 else content
         else:
-            tags = ", ".join(t.tag for t in result.memory.tags) if result.memory.tags else ""
+            tags = (
+                ", ".join(t.tag for t in result.memory.tags)
+                if result.memory.tags
+                else ""
+            )
             label = f"[Image: {tags}]" if tags else "[Image]"
         keyboard_results.append((label, result.memory.id))
 
@@ -222,7 +251,11 @@ async def pinned_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if content:
             label = content[:50] + "..." if len(content) > 50 else content
         else:
-            tags = ", ".join(t.tag for t in result.memory.tags) if result.memory.tags else ""
+            tags = (
+                ", ".join(t.tag for t in result.memory.tags)
+                if result.memory.tags
+                else ""
+            )
             label = f"[Image: {tags}]" if tags else "[Image]"
         keyboard_results.append((label, result.memory.id))
 
@@ -234,3 +267,241 @@ async def pinned_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         "Your pinned memories:",
         reply_markup=keyboard,
     )
+
+
+async def queue_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Display queue statistics for admins.
+
+    Shows LLM job queue stats including pending, processing, and queued counts.
+    This command is admin-only.
+
+    Args:
+        update: The Telegram update.
+        context: The context with bot_data containing core_client.
+    """
+    # Get core_client from bot_data
+    core_client = context.bot_data.get("core_client")
+    if not core_client:
+        await update.message.reply_text("Error: Core client not available.")
+        return
+
+    try:
+        # Call Core API to get queue stats and health data
+        stats = await core_client.get_queue_stats()
+    except Exception:
+        logger.exception("Failed to get queue stats")
+        await update.message.reply_text(
+            "Failed to get queue statistics. Please try again."
+        )
+        return
+
+    # Fetch stream health and LLM health (non-critical, don't fail the command)
+    stream_health = None
+    llm_health = None
+    try:
+        stream_health = await core_client.get_stream_health()
+    except Exception:
+        logger.warning("Failed to get stream health for /queue command")
+    try:
+        llm_health = await core_client.get_llm_health()
+    except Exception:
+        logger.warning("Failed to get LLM health for /queue command")
+
+    # Format the response
+    by_status = stats.get("by_status", {})
+    by_type = stats.get("by_type", {})
+
+    response = """*Queue Statistics*
+Pending: `{total_pending}`
+Processing: `{processing}`
+Confirmed: `{confirmed}`
+Failed: `{failed}`
+Cancelled: `{cancelled}`
+
+*By Type*
+{type_stats}
+
+Oldest queued: {oldest_age} seconds
+""".format(
+        total_pending=by_status.get("queued", 0),
+        processing=by_status.get("processing", 0),
+        confirmed=by_status.get("confirmed", 0),
+        failed=by_status.get("failed", 0),
+        cancelled=by_status.get("cancelled", 0),
+        type_stats="\n".join(f"{k}: {v}" for k, v in sorted(by_type.items())) or "None",
+        oldest_age=stats.get("oldest_queued_age_seconds", "N/A"),
+    )
+
+    # Append stream health info if available
+    if stream_health:
+        streams = stream_health.get("streams", {})
+        if streams:
+            response += "\n*Stream Health*\n"
+            for name, info in streams.items():
+                length = info.get("length", 0)
+                response += f"`{name}`: `{length}` msgs\n"
+
+    # Append LLM health info if available
+    if llm_health:
+        llm_status = llm_health.get("status", "unknown")
+        status_label = "Healthy" if llm_status == "healthy" else "Unhealthy"
+        consecutive = llm_health.get("consecutive_failures", 0)
+        last_check = llm_health.get("last_check", "N/A")
+        response += "\n*LLM Health*\n"
+        response += f"Status: {status_label}\n"
+        response += f"Consecutive failures: `{consecutive}`\n"
+        response += f"Last check: {last_check}\n"
+
+    await update.message.reply_text(response, parse_mode="Markdown")
+
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Display user's pending messages count and LLM health status.
+
+    Shows the user's current queue position and overall LLM system health.
+    Available to all users.
+
+    Args:
+        update: The Telegram update.
+        context: The context with bot_data containing core_client.
+    """
+    # Get core_client from bot_data
+    core_client = context.bot_data.get("core_client")
+    if not core_client:
+        await update.message.reply_text("Error: Core client not available.")
+        return
+
+    # Get user ID
+    user = update.effective_user
+    if not user:
+        await update.message.reply_text("Error: Could not identify user.")
+        return
+
+    try:
+        # Call Core API to get queue stats filtered by this user
+        stats = await core_client.get_queue_stats(user_id=user.id)
+        # Call LLM-specific health endpoint
+        health = await core_client.get_llm_health()
+    except Exception:
+        logger.exception("Failed to get status info for user %s", user.id)
+        await update.message.reply_text(
+            "Failed to get status information. Please try again."
+        )
+        return
+
+    # Get user's pending count from by_status
+    by_status = stats.get("by_status", {})
+    pending_count = by_status.get("queued", 0)
+
+    # Get health status
+    health_status = health.get("status", "unknown")
+    health_msg = "Healthy" if health_status == "healthy" else "Unhealthy"
+    consecutive = health.get("consecutive_failures", 0)
+
+    # Check for pending conversation states
+    pending_conversation_msg = ""
+    pending_state = None
+
+    if PENDING_TAG_MEMORY_ID in context.user_data:
+        pending_state = "waiting for tags"
+    elif PENDING_TASK_MEMORY_ID in context.user_data:
+        pending_state = "waiting for task due date"
+    elif PENDING_REMINDER_MEMORY_ID in context.user_data:
+        pending_state = "waiting for reminder time"
+    elif PENDING_LLM_CONVERSATION in context.user_data:
+        pending_state = "waiting for LLM followup answer"
+
+    if pending_state:
+        pending_conversation_msg = (
+            f"\n\nPending conversation: {pending_state}\nRun /cancel if you're stuck"
+        )
+
+    response = """*Your Status*
+Pending messages: `{pending}`
+
+*LLM System Health*
+{health_status}
+Consecutive failures: `{consecutive}`{pending_conv}""".format(
+        pending=pending_count,
+        health_status=health_msg,
+        consecutive=consecutive,
+        pending_conv=pending_conversation_msg,
+    )
+
+    await update.message.reply_text(response, parse_mode="Markdown")
+
+
+async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """View or set the user's timezone.
+
+    Usage:
+        /timezone          - show current timezone
+        /timezone +8       - set to UTC+8
+        /timezone -5       - set to UTC-5
+        /timezone Asia/Kolkata - set using IANA name
+
+    Args:
+        update: The Telegram update.
+        context: The context with bot_data and args.
+    """
+    from shared_lib.schemas import UserSettingsUpdate
+    from tg_gateway.tz_utils import offset_to_iana
+
+    user = update.effective_user
+    if not user:
+        await update.message.reply_text("Error: Could not identify user.")
+        return
+
+    core_client = context.bot_data.get("core_client")
+    if not core_client:
+        await update.message.reply_text("Error: Core client not available.")
+        return
+
+    args = context.args if context.args else []
+
+    # No argument: show current timezone
+    if not args:
+        try:
+            settings = await core_client.get_settings(user.id)
+            tz_name = settings.timezone
+            now_local = datetime.now(ZoneInfo(tz_name))
+            local_time_str = now_local.strftime("%Y-%m-%d %H:%M")
+            await update.message.reply_text(
+                f"Your timezone is {tz_name}.\nLocal time: {local_time_str}"
+            )
+        except Exception:
+            await update.message.reply_text("Failed to get timezone settings.")
+        return
+
+    arg = args[0]
+
+    # Try as UTC offset first (starts with + or -)
+    if arg[0] in ("+", "-"):
+        try:
+            tz_name = offset_to_iana(arg)
+        except ValueError as e:
+            await update.message.reply_text(str(e))
+            return
+    else:
+        # Try as raw IANA timezone name
+        tz_name = arg
+        try:
+            ZoneInfo(tz_name)
+        except (ZoneInfoNotFoundError, KeyError):
+            await update.message.reply_text(
+                f"Unknown timezone: {tz_name}. "
+                f"Use a UTC offset like +8 or a valid IANA timezone name."
+            )
+            return
+
+    # Save the timezone
+    try:
+        await core_client.update_settings(user.id, UserSettingsUpdate(timezone=tz_name))
+        now_local = datetime.now(ZoneInfo(tz_name))
+        local_time_str = now_local.strftime("%Y-%m-%d %H:%M")
+        await update.message.reply_text(
+            f"Timezone updated to {tz_name}.\nLocal time: {local_time_str}"
+        )
+    except Exception:
+        logger.exception("Failed to update timezone")
+        await update.message.reply_text("Failed to update timezone settings.")
