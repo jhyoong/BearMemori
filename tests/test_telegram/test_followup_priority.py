@@ -156,23 +156,20 @@ class TestFollowupConsumerPriority:
         mock_redis.xgroup_setid = AsyncMock()
 
         # Mock handlers
-        mock_handlers = {}
 
         # Mock core_api
-        mock_core_api = MagicMock()
+        MagicMock()
 
         # Mock retry_tracker
         mock_retry_tracker = MagicMock()
         mock_retry_tracker.is_ready_for_retry = MagicMock(return_value=True)
 
         # Mock config
-        mock_config = MagicMock(spec=LLMWorkerSettings)
+        MagicMock(spec=LLMWorkerSettings)
 
         # Patch time to avoid infinite loop (run one iteration)
         import asyncio
-        import time
 
-        original_time = time.time
         counter = [0]
 
         async def mock_sleep(duration):
@@ -219,8 +216,7 @@ class TestFollowupConsumerPriority:
 
         # Create mock objects
         mock_redis = MagicMock()
-        mock_handlers = {}
-        mock_core_api = MagicMock()
+        MagicMock()
         mock_retry_tracker = MagicMock()
         mock_retry_tracker.is_ready_for_retry = MagicMock(return_value=True)
 
@@ -246,7 +242,7 @@ class TestFollowupConsumerPriority:
         mock_redis.xgroup_setid = AsyncMock()
         mock_redis.xack = AsyncMock()
 
-        mock_config = MagicMock(spec=LLMWorkerSettings)
+        MagicMock(spec=LLMWorkerSettings)
 
         # Get expected stream order - followup should be first
         streams = list(STREAM_HANDLER_MAP.values())

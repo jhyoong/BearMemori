@@ -1,9 +1,7 @@
 """Tests for queue and conversation routers."""
 
-import json
 
 import pytest
-import pytest_asyncio
 
 
 pytestmark = pytest.mark.asyncio
@@ -338,7 +336,7 @@ class TestCancel:
         self, test_app, test_user
     ):
         # Enqueue an item first
-        enq = await test_app.post(
+        await test_app.post(
             f"/queue/{test_user}/enqueue",
             json={
                 "content": "waiting",

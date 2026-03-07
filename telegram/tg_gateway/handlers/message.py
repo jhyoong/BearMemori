@@ -89,16 +89,33 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 return
 
             # User is replying to a followup question
-            conv_resp = await core_client.reply_to_conversation(
+            await core_client.reply_to_conversation(
                 user.id, msg.text
             )
 
-            # Build conversation history from metadata
+            # Build or extend conversation history
             user_answer = msg.text.strip()
+            conversation_history = metadata.get(
+                "conversation_history", []
+            )
+            if not conversation_history:
+                # First round: build from scratch
+                conversation_history = [
+                    {"role": "user", "content": original_text},
+                    {"role": "assistant", "content": followup_question},
+                ]
+            conversation_history.append(
+                {"role": "user", "content": user_answer}
+            )
+
+            # Store updated history for potential next round
+            metadata["conversation_history"] = conversation_history
+            context.user_data[LLM_CONVERSATION_METADATA] = metadata
+
             try:
                 await core_client.create_llm_job(
                     LLMJobCreate(
-                        job_type=JobType.followup,
+                        job_type=JobType.intent_classify,
                         payload={
                             "memory_id": memory_id,
                             "message": original_text,
@@ -115,20 +132,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             "followup_context": {
                                 "followup_question": followup_question,
                                 "user_answer": user_answer,
-                                "conversation_history": [
-                                    {
-                                        "role": "user",
-                                        "content": original_text,
-                                    },
-                                    {
-                                        "role": "assistant",
-                                        "content": followup_question,
-                                    },
-                                    {
-                                        "role": "user",
-                                        "content": user_answer,
-                                    },
-                                ],
+                                "conversation_history": conversation_history,
                             },
                         },
                         user_id=user.id,

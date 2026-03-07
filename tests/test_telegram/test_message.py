@@ -365,8 +365,9 @@ class TestHandleTextConversationRouting:
         core_client.create_llm_job.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_active_awaiting_reply_conversation_routes_to_followup(self):
-        """When Core API shows awaiting_reply conversation, reply creates followup job."""
+    async def test_active_awaiting_reply_conversation_routes_to_intent_classify(self):
+        """When Core API shows awaiting_reply conversation, reply creates
+        intent_classify job so the IntentHandler can reclassify with context."""
         active_conv = MagicMock()
         active_conv.state = "awaiting_reply"
         conv_resp = MagicMock()
@@ -391,7 +392,7 @@ class TestHandleTextConversationRouting:
         core_client.reply_to_conversation.assert_called_once()
         core_client.create_llm_job.assert_called_once()
         job_arg = core_client.create_llm_job.call_args[0][0]
-        assert job_arg.job_type == JobType.followup
+        assert job_arg.job_type == JobType.intent_classify
 
     @pytest.mark.asyncio
     async def test_awaiting_button_action_without_active_conv_queues_new(self):

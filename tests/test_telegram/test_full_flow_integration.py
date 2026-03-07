@@ -190,7 +190,6 @@ class TestFullFlowIntegration:
         from tg_gateway.handlers.message import handle_text
         from tg_gateway.consumer import _handle_intent_result
         from tg_gateway.handlers.conversation import AWAITING_BUTTON_ACTION
-        from shared_lib.enums import JobType
 
         core_client = _make_core_client_for_handle_text()
 

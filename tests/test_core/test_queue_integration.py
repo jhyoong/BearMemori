@@ -114,9 +114,9 @@ class TestFullLifecycleWithFollowup:
         """Enqueue -> dequeue -> start -> follow-up -> user reply -> complete."""
         uid = test_user
 
-        item = await _enqueue(test_app, uid, "remind me tomorrow")
+        await _enqueue(test_app, uid, "remind me tomorrow")
         deq = await _dequeue(test_app, uid)
-        conv = await _start(test_app, uid, deq["item"]["id"])
+        await _start(test_app, uid, deq["item"]["id"])
 
         # LLM asks a follow-up question
         updated = await _update_state(
@@ -156,7 +156,7 @@ class TestQueuedMessagesDuringActiveConversation:
         # Enqueue 3 messages total
         item1 = await _enqueue(test_app, uid, "first")
         item2 = await _enqueue(test_app, uid, "second")
-        item3 = await _enqueue(test_app, uid, "third")
+        await _enqueue(test_app, uid, "third")
 
         # Dequeue and start conversation for first
         deq1 = await _dequeue(test_app, uid)
@@ -183,7 +183,7 @@ class TestCancelPopsNextItem:
         """Cancel with queued items returns next_item."""
         uid = test_user
 
-        item1 = await _enqueue(test_app, uid, "first")
+        await _enqueue(test_app, uid, "first")
         item2 = await _enqueue(test_app, uid, "second")
         item3 = await _enqueue(test_app, uid, "third")
 
@@ -210,7 +210,7 @@ class TestReplyOnlyWorksWhenAwaiting:
         """Reply should fail with 409 unless state is awaiting_reply."""
         uid = test_user
 
-        item = await _enqueue(test_app, uid, "test message")
+        await _enqueue(test_app, uid, "test message")
         deq = await _dequeue(test_app, uid)
         await _start(test_app, uid, deq["item"]["id"])
 
@@ -248,8 +248,8 @@ class TestConversationExpiryDetection:
         uid = test_user
 
         # Enqueue two items
-        item1 = await _enqueue(test_app, uid, "first")
-        item2 = await _enqueue(test_app, uid, "second")
+        await _enqueue(test_app, uid, "first")
+        await _enqueue(test_app, uid, "second")
 
         # Dequeue and start first conversation
         deq = await _dequeue(test_app, uid)
@@ -276,7 +276,7 @@ class TestMultipleFollowupRounds:
         """Two rounds of assistant question + user reply = 4 history entries."""
         uid = test_user
 
-        item = await _enqueue(test_app, uid, "complex task")
+        await _enqueue(test_app, uid, "complex task")
         deq = await _dequeue(test_app, uid)
         await _start(test_app, uid, deq["item"]["id"])
 

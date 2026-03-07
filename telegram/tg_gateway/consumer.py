@@ -164,6 +164,38 @@ async def _dispatch_notification(application: Application, data: dict) -> None:
         question = content.get("question", "")
 
         await bot.send_message(chat_id=user_id, text=question)
+
+        # Update metadata so the next user reply is treated as a followup
+        uid = int(user_id)
+        if uid not in application.user_data:
+            application.user_data[uid] = {}
+        user_data = application.user_data[uid]
+
+        metadata = user_data.get(LLM_CONVERSATION_METADATA, {})
+        if metadata:
+            metadata["followup_question"] = question
+            history = metadata.get("conversation_history", [])
+            history.append({"role": "assistant", "content": question})
+            metadata["conversation_history"] = history
+            user_data[LLM_CONVERSATION_METADATA] = metadata
+
+        # Set conversation state to awaiting_reply so the next user
+        # message is routed as a reply, not a new message
+        core_client = application.bot_data.get("core_client")
+        if core_client:
+            try:
+                await core_client.update_conversation_state(
+                    uid,
+                    "awaiting_reply",
+                    history_entry={"role": "assistant", "content": question},
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to update conversation state for followup result, "
+                    "user %s",
+                    user_id,
+                )
+
         logger.info("Sent llm_followup_result to user %s: %s", user_id, question[:50])
 
     elif message_type == "llm_task_match_result":
@@ -489,6 +521,10 @@ async def _handle_intent_result(
             "source_chat_id": content.get("source_chat_id"),
             "source_message_id": content.get("source_message_id"),
             "followup_question": followup_question,
+            "conversation_history": [
+                {"role": "user", "content": query},
+                {"role": "assistant", "content": followup_question},
+            ],
         }
 
         # Update Core API conversation state
