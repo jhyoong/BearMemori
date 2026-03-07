@@ -145,7 +145,9 @@ async def _dispatch_notification(application: Application, data: dict) -> None:
         if core_client:
             try:
                 await core_client.update_conversation_state(
-                    int(user_id), "awaiting_reply",
+                    int(user_id),
+                    "awaiting_reply",
+                    history_entry={"role": "assistant", "content": text},
                 )
             except Exception:
                 logger.exception(
