@@ -237,7 +237,12 @@ class TestReceiveTags:
 
     @pytest.mark.asyncio
     async def test_clears_conversation_and_processes_next_queue_item_on_success(self):
-        """After tags are added, clear conversation state and process next queue item."""
+        """After tags are added, _clear_conversation_state is called exactly once.
+
+        _clear_conversation_state internally handles next-queue processing, so
+        receive_tags must NOT call _process_next_queue_item directly (that would
+        cause a double dequeue). We only verify _clear_conversation_state is called.
+        """
         core_client = MagicMock()
         core_client.add_tags = AsyncMock()
 
@@ -247,19 +252,15 @@ class TestReceiveTags:
             bot_data={"core_client": core_client},
         )
 
-        # Patch at source module level — receive_tags uses lazy imports so we
-        # patch the functions where they are defined, not on the conversation module.
+        # Patch at source module level — receive_tags uses a lazy import so we
+        # patch where the function is defined.
         with patch(
             "tg_gateway.handlers.callback._clear_conversation_state",
             new_callable=AsyncMock,
-        ) as mock_clear, patch(
-            "tg_gateway.handlers.message._process_next_queue_item",
-            new_callable=AsyncMock,
-        ) as mock_next:
+        ) as mock_clear:
             await receive_tags(update, context)
 
             mock_clear.assert_called_once()
-            mock_next.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

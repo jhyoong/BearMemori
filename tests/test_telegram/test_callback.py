@@ -36,6 +36,7 @@ from tg_gateway.handlers.conversation import (
     AWAITING_BUTTON_ACTION,
     LLM_CONVERSATION_METADATA,
     PENDING_REMINDER_MEMORY_ID,
+    PENDING_TAG_MEMORY_ID,
 )
 
 
@@ -1047,17 +1048,25 @@ class TestExistingHandlersStateClearingAndConfirmation:
         assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
 
     @pytest.mark.asyncio
-    async def test_memory_action_add_tag_confirms_and_clears_state(
+    async def test_memory_action_add_tag_confirms_and_holds_queue(
         self, mock_update, mock_context_with_state, mock_core_client
     ):
-        """Test that add_tag confirms memory and clears conversation state."""
+        """Test that add_tag confirms memory and holds the queue (does NOT clear state).
+
+        The queue must remain held until the user submits tags via receive_tags.
+        _clear_conversation_state must NOT be called here — it will be called
+        by receive_tags after the user types their tags.
+        """
         callback_data = MemoryAction(action="add_tag", memory_id="mem-1")
         await handle_memory_action(
             mock_update, mock_context_with_state, callback_data, mock_core_client
         )
 
         mock_core_client.update_memory.assert_awaited_once()
-        assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
+        # Conversation state keys must NOT be cleared — queue remains held
+        assert AWAITING_BUTTON_ACTION in mock_context_with_state.user_data
+        # PENDING_TAG_MEMORY_ID must be set so receive_tags can pick it up
+        assert mock_context_with_state.user_data[PENDING_TAG_MEMORY_ID] == "mem-1"
 
     @pytest.mark.asyncio
     async def test_memory_action_toggle_pin_clears_state(
