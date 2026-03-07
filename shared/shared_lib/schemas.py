@@ -279,7 +279,7 @@ class QueueItemCreate(BaseModel):
     content: str | None = None
     memory_id: str | None = None
     image_local_path: str | None = None
-    message_timestamp: str
+    message_timestamp: datetime
 
 
 class QueueItem(BaseModel):
@@ -287,8 +287,8 @@ class QueueItem(BaseModel):
     content: str | None = None
     memory_id: str | None = None
     image_local_path: str | None = None
-    message_timestamp: str
-    created_at: str
+    message_timestamp: datetime
+    created_at: datetime
 
 
 # Redis message schemas
