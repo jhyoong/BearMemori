@@ -15,7 +15,7 @@ from tg_gateway.handlers.conversation import (
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
 )
-from tg_gateway.handlers.message import handle_text
+from tg_gateway.handlers.message import _process_image_queue_item, handle_text
 
 
 # ---------------------------------------------------------------------------
@@ -531,58 +531,48 @@ class TestHandleTextTelegramApiFailures:
 
 
 # ---------------------------------------------------------------------------
-# Fixtures for _process_image_queue_item tests
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def mock_core_client():
-    return _make_core_client()
-
-
-# ---------------------------------------------------------------------------
 # _process_image_queue_item tests
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_process_image_queue_item_creates_llm_job(mock_core_client):
-    """_process_image_queue_item creates an image_tag LLM job using the stored local_path."""
-    from tg_gateway.handlers.message import _process_image_queue_item
-    from unittest.mock import AsyncMock
+class TestProcessImageQueueItem:
+    """Tests for the _process_image_queue_item helper."""
 
-    queue_item = type("QueueItem", (), {
-        "memory_id": "mem-456",
-        "image_local_path": "/data/images/abc.jpg",
-        "content": "sunset photo",
-    })()
+    @pytest.mark.asyncio
+    async def test_process_image_queue_item_creates_llm_job(self):
+        """_process_image_queue_item creates an image_tag LLM job using the stored local_path."""
+        core_client = _make_core_client()
 
-    mock_core_client.create_llm_job = AsyncMock()
+        queue_item = type("QueueItem", (), {
+            "memory_id": "mem-456",
+            "image_local_path": "/data/images/abc.jpg",
+            "content": "sunset photo",
+        })()
 
-    await _process_image_queue_item(mock_core_client, user_id=12345, queue_item=queue_item)
+        core_client.create_llm_job = AsyncMock()
 
-    mock_core_client.create_llm_job.assert_called_once()
-    call_args = mock_core_client.create_llm_job.call_args[0][0]
-    assert call_args.job_type == JobType.image_tag
-    assert call_args.payload["memory_id"] == "mem-456"
-    assert call_args.payload["image_path"] == "/data/images/abc.jpg"
-    assert call_args.user_id == 12345
+        await _process_image_queue_item(core_client, user_id=12345, queue_item=queue_item)
 
+        core_client.create_llm_job.assert_called_once()
+        call_args = core_client.create_llm_job.call_args[0][0]
+        assert call_args.job_type == JobType.image_tag
+        assert call_args.payload["memory_id"] == "mem-456"
+        assert call_args.payload["image_path"] == "/data/images/abc.jpg"
+        assert call_args.user_id == 12345
 
-@pytest.mark.asyncio
-async def test_process_image_queue_item_skips_job_if_no_local_path(mock_core_client):
-    """If image_local_path is None (download failed earlier), skip LLM job."""
-    from tg_gateway.handlers.message import _process_image_queue_item
-    from unittest.mock import AsyncMock
+    @pytest.mark.asyncio
+    async def test_process_image_queue_item_skips_job_if_no_local_path(self):
+        """If image_local_path is None (download failed earlier), skip LLM job."""
+        core_client = _make_core_client()
 
-    queue_item = type("QueueItem", (), {
-        "memory_id": "mem-456",
-        "image_local_path": None,
-        "content": "sunset photo",
-    })()
+        queue_item = type("QueueItem", (), {
+            "memory_id": "mem-456",
+            "image_local_path": None,
+            "content": "sunset photo",
+        })()
 
-    mock_core_client.create_llm_job = AsyncMock()
+        core_client.create_llm_job = AsyncMock()
 
-    await _process_image_queue_item(mock_core_client, user_id=12345, queue_item=queue_item)
+        await _process_image_queue_item(core_client, user_id=12345, queue_item=queue_item)
 
-    mock_core_client.create_llm_job.assert_not_called()
+        core_client.create_llm_job.assert_not_called()

@@ -10,9 +10,9 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from shared_lib.enums import JobType, MediaType
-from shared_lib.schemas import LLMJobCreate, MemoryCreate
+from shared_lib.schemas import LLMJobCreate, MemoryCreate, QueueItem
 
-from tg_gateway.core_client import CoreUnavailableError
+from tg_gateway.core_client import CoreClient, CoreUnavailableError
 from tg_gateway.keyboards import memory_actions_keyboard
 from tg_gateway.handlers import conversation
 from tg_gateway.handlers.conversation import (
@@ -312,7 +312,7 @@ async def handle_unauthorized(
 
 
 async def _process_image_queue_item(
-    core_client, user_id: int, queue_item,
+    core_client: CoreClient, user_id: int, queue_item: QueueItem,
 ) -> None:
     """Create an image_tag LLM job for a dequeued image item.
 
@@ -327,14 +327,16 @@ async def _process_image_queue_item(
         return
 
     try:
-        await core_client.create_llm_job(LLMJobCreate(
-            job_type=JobType.image_tag,
-            payload={
-                "memory_id": queue_item.memory_id,
-                "image_path": queue_item.image_local_path,
-            },
-            user_id=user_id,
-        ))
+        await core_client.create_llm_job(
+            LLMJobCreate(
+                job_type=JobType.image_tag,
+                payload={
+                    "memory_id": queue_item.memory_id,
+                    "image_path": queue_item.image_local_path,
+                },
+                user_id=user_id,
+            )
+        )
     except Exception:
         logger.exception("Failed to queue image tag job for memory %s", queue_item.memory_id)
 
