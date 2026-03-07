@@ -311,6 +311,34 @@ async def handle_unauthorized(
         )
 
 
+async def _process_image_queue_item(
+    core_client, user_id: int, queue_item,
+) -> None:
+    """Create an image_tag LLM job for a dequeued image item.
+
+    The image has already been downloaded and uploaded to Core at receipt time.
+    The queue_item contains memory_id and image_local_path from that upload.
+    """
+    if not queue_item.image_local_path:
+        logger.warning(
+            "Skipping image tag job for memory %s: no local path (download failed at receipt)",
+            queue_item.memory_id,
+        )
+        return
+
+    try:
+        await core_client.create_llm_job(LLMJobCreate(
+            job_type=JobType.image_tag,
+            payload={
+                "memory_id": queue_item.memory_id,
+                "image_path": queue_item.image_local_path,
+            },
+            user_id=user_id,
+        ))
+    except Exception:
+        logger.exception("Failed to queue image tag job for memory %s", queue_item.memory_id)
+
+
 # Export handler functions for registration in main.py
 text_message_handler = handle_text
 photo_message_handler = handle_image
