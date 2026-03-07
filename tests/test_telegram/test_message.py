@@ -169,8 +169,6 @@ class TestHandleTextQueueFlow:
     @pytest.mark.asyncio
     async def test_llm_job_payload_timestamp_when_date_set(self):
         """original_timestamp is the ISO string of msg.date when date is present."""
-        from datetime import datetime, timezone
-
         core_client = _make_core_client(active_conversation=None)
         update = _make_update(text="Timestamped message")
         dt = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
