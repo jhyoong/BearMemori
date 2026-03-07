@@ -702,17 +702,21 @@ class TestDispatchNewCallbackTypes:
             mock_handler.assert_called_once()
 
 
+def _make_clear_conversation_context(user_data=None):
+    """Create a mock context with bot_data containing a mock core_client."""
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.user_data = user_data or {}
+    mock_core_client = MagicMock()
+    mock_core_client.update_conversation_state = AsyncMock()
+    context.bot_data = {"core_client": mock_core_client}
+    return context
+
+
 class TestClearConversationState:
     """Tests for _clear_conversation_state helper."""
 
     def _make_context(self, user_data=None):
-        """Create a mock context with bot_data containing a mock core_client."""
-        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        context.user_data = user_data or {}
-        mock_core_client = MagicMock()
-        mock_core_client.update_conversation_state = AsyncMock()
-        context.bot_data = {"core_client": mock_core_client}
-        return context
+        return _make_clear_conversation_context(user_data)
 
     @pytest.mark.asyncio
     async def test_clears_awaiting_button_action(self):
@@ -755,13 +759,7 @@ class TestClearConversationStateProcessesNext:
     """Tests that _clear_conversation_state auto-processes the next queue item."""
 
     def _make_context(self, user_data=None):
-        """Create a mock context with bot_data containing a mock core_client."""
-        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-        context.user_data = user_data or {}
-        mock_core_client = MagicMock()
-        mock_core_client.update_conversation_state = AsyncMock()
-        context.bot_data = {"core_client": mock_core_client}
-        return context
+        return _make_clear_conversation_context(user_data)
 
     @pytest.mark.asyncio
     async def test_clears_state_and_processes_next_item(self):
