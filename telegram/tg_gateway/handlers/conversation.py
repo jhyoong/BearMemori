@@ -106,6 +106,15 @@ async def receive_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Failed to add tags. Please try again.")
         # Re-set the pending state so user can retry
         context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
+        return
+
+    # Release the queue now that the tag-edit flow is complete.
+    # Lazy imports avoid circular dependencies between handler modules.
+    from tg_gateway.handlers.callback import _clear_conversation_state
+    from tg_gateway.handlers.message import _process_next_queue_item
+
+    await _clear_conversation_state(context, user_id=update.effective_user.id)
+    await _process_next_queue_item(core_client, update.effective_user.id)
 
 
 async def receive_custom_date(

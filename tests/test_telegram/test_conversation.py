@@ -1,7 +1,7 @@
 """Tests for conversation handlers in tg_gateway/handlers/conversation.py."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -122,6 +122,24 @@ class TestStateKeyConstants:
 class TestReceiveTags:
     """Tests for receive_tags handler."""
 
+    @pytest.fixture(autouse=True)
+    def patch_queue_calls(self):
+        """Patch the downstream queue-release calls added in Task 8.
+
+        receive_tags now calls _clear_conversation_state and
+        _process_next_queue_item on success. Tests that don't care about
+        those calls get them patched out automatically so they don't need to
+        set up full mock infrastructure for those functions.
+        """
+        with patch(
+            "tg_gateway.handlers.callback._clear_conversation_state",
+            new_callable=AsyncMock,
+        ), patch(
+            "tg_gateway.handlers.message._process_next_queue_item",
+            new_callable=AsyncMock,
+        ):
+            yield
+
     @pytest.mark.asyncio
     async def test_adds_tags_to_memory(self):
         """Happy path: tags are parsed and added via core_client."""
@@ -216,6 +234,32 @@ class TestReceiveTags:
 
         assert context.user_data.get(PENDING_TAG_MEMORY_ID) == "mem-4"
         update.message.reply_text.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_clears_conversation_and_processes_next_queue_item_on_success(self):
+        """After tags are added, clear conversation state and process next queue item."""
+        core_client = MagicMock()
+        core_client.add_tags = AsyncMock()
+
+        update = _make_update(text="sunset, beach", user_id=99)
+        context = _make_context(
+            user_data={PENDING_TAG_MEMORY_ID: "mem-100"},
+            bot_data={"core_client": core_client},
+        )
+
+        # Patch at source module level — receive_tags uses lazy imports so we
+        # patch the functions where they are defined, not on the conversation module.
+        with patch(
+            "tg_gateway.handlers.callback._clear_conversation_state",
+            new_callable=AsyncMock,
+        ) as mock_clear, patch(
+            "tg_gateway.handlers.message._process_next_queue_item",
+            new_callable=AsyncMock,
+        ) as mock_next:
+            await receive_tags(update, context)
+
+            mock_clear.assert_called_once()
+            mock_next.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

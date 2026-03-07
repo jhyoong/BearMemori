@@ -679,11 +679,12 @@ async def handle_tag_confirm(
         await _edit_message(callback_query, f"Tags confirmed: {tags_str}")
 
     elif action == "edit":
-        # Confirm the memory and set conversation state key for message handler
+        # Confirm the memory and set conversation state key for message handler.
+        # Do NOT call _clear_conversation_state here — the queue must remain held
+        # until the user submits their tags via receive_tags.
         await core_client.update_memory(
             memory_id, MemoryUpdate(status=MemoryStatus.confirmed)
         )
-        await _clear_conversation_state(context, update.effective_user.id)
         context.user_data[PENDING_TAG_MEMORY_ID] = memory_id
         # Prompt user for comma-separated tag input
         await _edit_message(

@@ -1083,18 +1083,83 @@ class TestExistingHandlersStateClearingAndConfirmation:
         assert LLM_CONVERSATION_METADATA not in mock_context_with_state.user_data
 
     @pytest.mark.asyncio
-    async def test_tag_confirm_edit_confirms_memory_and_clears_state(
+    async def test_tag_confirm_edit_confirms_memory_and_sets_pending_tag(
         self, mock_update, mock_context_with_state, mock_core_client
     ):
-        """Test that tag edit confirms memory and clears conversation state."""
+        """Test that tag edit confirms memory and sets PENDING_TAG_MEMORY_ID.
+
+        Unlike confirm_all, the edit action does NOT clear conversation state
+        immediately. The queue stays held until the user submits tags via
+        receive_tags.
+        """
+        from tg_gateway.handlers.conversation import PENDING_TAG_MEMORY_ID
+
         callback_data = TagConfirm(memory_id="mem-1", action="edit")
         await handle_tag_confirm(
             mock_update, mock_context_with_state, callback_data, mock_core_client
         )
 
         mock_core_client.update_memory.assert_awaited_once()
-        assert AWAITING_BUTTON_ACTION not in mock_context_with_state.user_data
-        assert LLM_CONVERSATION_METADATA not in mock_context_with_state.user_data
+        assert mock_context_with_state.user_data.get(PENDING_TAG_MEMORY_ID) == "mem-1"
+
+
+class TestTagEditHoldsQueue:
+    """Tests that the 'edit' path in handle_tag_confirm holds the queue.
+
+    When a user clicks 'Edit Tags', the queue must remain active until the
+    user submits their tags via receive_tags. _clear_conversation_state must
+    NOT be called during handle_tag_confirm for the edit action.
+    """
+
+    @pytest.fixture
+    def mock_update(self):
+        update = MagicMock(spec=Update)
+        update.callback_query = MagicMock()
+        update.callback_query.edit_message_text = AsyncMock()
+        update.callback_query.edit_message_caption = AsyncMock()
+        update.callback_query.message = MagicMock()
+        update.callback_query.message.photo = None
+        update.effective_user = MagicMock()
+        update.effective_user.id = 12345
+        return update
+
+    @pytest.fixture
+    def mock_context(self):
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = {}
+        mock_cc = MagicMock()
+        mock_cc.update_conversation_state = AsyncMock()
+        context.bot_data = {"core_client": mock_cc}
+        return context
+
+    @pytest.fixture
+    def mock_core_client(self):
+        client = MagicMock()
+        client.update_memory = AsyncMock()
+        return client
+
+    @pytest.mark.asyncio
+    async def test_edit_does_not_call_clear_conversation_state(
+        self, mock_update, mock_context, mock_core_client
+    ):
+        """Clicking 'Edit Tags' must NOT call _clear_conversation_state.
+
+        The queue must remain held until the user types their tags.
+        """
+        from tg_gateway.handlers.conversation import PENDING_TAG_MEMORY_ID
+
+        with patch(
+            "tg_gateway.handlers.callback._clear_conversation_state",
+            new_callable=AsyncMock,
+        ) as mock_clear:
+            callback_data = TagConfirm(memory_id="mem-100", action="edit")
+            await handle_tag_confirm(
+                mock_update, mock_context, callback_data, mock_core_client
+            )
+
+            mock_clear.assert_not_called()
+
+        assert mock_context.user_data.get(PENDING_TAG_MEMORY_ID) == "mem-100"
 
 
 class TestTogglePinAutoSavesTags:
