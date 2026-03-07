@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from httpx import AsyncClient, ConnectError, TimeoutException
 
 from shared_lib.schemas import (
@@ -512,7 +513,7 @@ class CoreClient:
         content: str | None = None,
         memory_id: str | None = None,
         image_local_path: str | None = None,
-        message_timestamp: str = "",
+        message_timestamp: datetime | None = None,
     ) -> QueueItem:
         """Enqueue a message for processing."""
         body = QueueItemCreate(

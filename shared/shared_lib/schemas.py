@@ -279,7 +279,7 @@ class QueueItemCreate(BaseModel):
     content: str | None = None
     memory_id: str | None = None
     image_local_path: str | None = None
-    message_timestamp: datetime
+    message_timestamp: datetime | None = None
 
 
 class QueueItem(BaseModel):
@@ -287,7 +287,7 @@ class QueueItem(BaseModel):
     content: str | None = None
     memory_id: str | None = None
     image_local_path: str | None = None
-    message_timestamp: datetime
+    message_timestamp: datetime | None = None
     created_at: datetime
 
 

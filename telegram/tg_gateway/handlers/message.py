@@ -153,9 +153,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         if active_conv and active_conv.state == "processing":
             # Already processing a message -- enqueue this one
-            ts = msg.date.isoformat() if msg.date else ""
             await core_client.enqueue_message(
-                user.id, content=msg.text, message_timestamp=ts
+                user.id, content=msg.text, message_timestamp=msg.date
             )
             queue_status = await core_client.get_queue_status(user.id)
             ahead = queue_status.queue_length
@@ -171,9 +170,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
 
         # No active conversation -- enqueue, dequeue, start, create LLM job
-        ts = msg.date.isoformat() if msg.date else ""
         await core_client.enqueue_message(
-            user.id, content=msg.text, message_timestamp=ts
+            user.id, content=msg.text, message_timestamp=msg.date
         )
         dequeue_resp = await core_client.dequeue_message(user.id)
         item = dequeue_resp.item
