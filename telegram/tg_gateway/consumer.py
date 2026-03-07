@@ -132,10 +132,27 @@ async def _dispatch_notification(application: Application, data: dict) -> None:
         description = content.get("description", "")
 
         tags_str = ", ".join(tags)
-        text = f"Tag suggestions for your image:\nDescription: {description}\nSuggested tags: {tags_str}"
+        text = (
+            f"Tag suggestions for your image:\n"
+            f"Description: {description}\n"
+            f"Suggested tags: {tags_str}"
+        )
         keyboard = tag_suggestion_keyboard(memory_id)
-
         await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+
+        # Set conversation to awaiting_reply so queue stays blocked
+        core_client = application.bot_data.get("core_client")
+        if core_client:
+            try:
+                await core_client.update_conversation_state(
+                    int(user_id), "awaiting_reply",
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to update conversation state for image tag result, user %s",
+                    user_id,
+                )
+
         logger.info("Sent llm_image_tag_result to user %s: %s", user_id, text[:50])
 
     elif message_type == "llm_intent_result":

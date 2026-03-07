@@ -877,3 +877,34 @@ class TestConsumerSpecificPhrases:
         # This test verifies the current behavior
         # Note: In the actual implementation, queue decrement may happen elsewhere
         # This test documents the expected behavior
+
+
+# ---------------------------------------------------------------------------
+# llm_image_tag_result conversation state
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_image_tag_result_sets_conversation_awaiting_reply():
+    """llm_image_tag_result handler sets conversation state to awaiting_reply."""
+    app = _make_application()
+    mock_core_client = MagicMock()
+    mock_core_client.update_conversation_state = AsyncMock()
+    app.bot_data["core_client"] = mock_core_client
+
+    notification = {
+        "user_id": "12345",
+        "message_type": "llm_image_tag_result",
+        "content": {
+            "memory_id": "mem-100",
+            "tags": ["sunset", "beach"],
+            "description": "A sunset at the beach",
+        },
+    }
+
+    await _dispatch_notification(app, notification)
+
+    mock_core_client.update_conversation_state.assert_called_once()
+    call_args = mock_core_client.update_conversation_state.call_args
+    assert call_args[0][0] == 12345  # user_id as int
+    assert call_args[0][1] == "awaiting_reply"
