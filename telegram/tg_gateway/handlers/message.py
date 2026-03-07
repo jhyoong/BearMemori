@@ -341,6 +341,45 @@ async def _process_image_queue_item(
         logger.exception("Failed to queue image tag job for memory %s", queue_item.memory_id)
 
 
+async def _process_next_queue_item(
+    core_client: CoreClient, user_id: int,
+) -> bool:
+    """Dequeue and process the next queue item. Returns True if an item was processed."""
+    dequeue_resp = await core_client.dequeue_message(user_id)
+    if not dequeue_resp.item:
+        return False
+
+    item = dequeue_resp.item
+    await core_client.start_conversation(user_id, item.id)
+
+    if item.memory_id:
+        # Image item — create image_tag LLM job
+        await _process_image_queue_item(core_client, user_id, item)
+    else:
+        # Text item — create intent_classify LLM job
+        try:
+            settings = await core_client.get_settings(user_id)
+            user_tz = settings.timezone
+        except Exception:
+            user_tz = "UTC"
+        await core_client.create_llm_job(
+            LLMJobCreate(
+                job_type=JobType.intent_classify,
+                payload={
+                    "message": item.content,
+                    "memory_id": None,
+                    "original_timestamp": (
+                        item.message_timestamp.isoformat() if item.message_timestamp else None
+                    ),
+                    "user_timezone": user_tz,
+                },
+                user_id=user_id,
+            )
+        )
+
+    return True
+
+
 # Export handler functions for registration in main.py
 text_message_handler = handle_text
 photo_message_handler = handle_image
