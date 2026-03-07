@@ -274,6 +274,23 @@ class LLMJobResponse(BaseModel):
     updated_at: datetime
 
 
+# Queue schemas
+class QueueItemCreate(BaseModel):
+    content: str | None = None
+    memory_id: str | None = None
+    image_local_path: str | None = None
+    message_timestamp: str
+
+
+class QueueItem(BaseModel):
+    id: str
+    content: str | None = None
+    memory_id: str | None = None
+    image_local_path: str | None = None
+    message_timestamp: str
+    created_at: str
+
+
 # Redis message schemas
 class TelegramOutboundMessage(BaseModel):
     chat_id: int
