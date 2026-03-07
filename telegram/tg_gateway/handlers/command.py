@@ -11,10 +11,11 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from tg_gateway.handlers.conversation import (
+    AWAITING_BUTTON_ACTION,
+    PENDING_LLM_CONVERSATION,
+    PENDING_REMINDER_MEMORY_ID,
     PENDING_TAG_MEMORY_ID,
     PENDING_TASK_MEMORY_ID,
-    PENDING_REMINDER_MEMORY_ID,
-    PENDING_LLM_CONVERSATION,
 )
 from tg_gateway.keyboards import search_results_keyboard, task_list_keyboard
 
@@ -39,38 +40,39 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Clear all pending conversation state.
+    """Clear all pending conversation state and process the next queued item.
 
-    Clears any pending tag, task, or reminder memory IDs that were set
-    during conversation flows.
+    Clears any pending tag, task, reminder, LLM conversation, and button action
+    state. Cancels the active conversation on Core API and then auto-processes
+    the next item in the user's queue.
 
     Args:
         update: The Telegram update.
         context: The context with user_data containing pending state.
     """
+    from tg_gateway.handlers.message import _process_next_queue_item
+
+    user = update.effective_user
+    core_client = context.bot_data.get("core_client")
+
     # Clear all pending conversation states
     context.user_data.pop(PENDING_TAG_MEMORY_ID, None)
     context.user_data.pop(PENDING_TASK_MEMORY_ID, None)
     context.user_data.pop(PENDING_REMINDER_MEMORY_ID, None)
     context.user_data.pop(PENDING_LLM_CONVERSATION, None)
+    context.user_data.pop(AWAITING_BUTTON_ACTION, None)
 
-    # Cancel the active conversation via Core API so the next queued item can proceed
-    user = update.effective_user
-    core_client = context.bot_data.get("core_client")
-    if core_client and user:
+    if core_client:
         try:
-            result = await core_client.cancel_conversation(user.id)
-            next_item = result.get("next_item")
-            if next_item:
-                logger.info(
-                    "Cancel for user %s returned next_item: %s",
-                    user.id,
-                    next_item,
-                )
+            await core_client.cancel_conversation(user.id)
         except Exception:
-            logger.exception(
-                "Failed to cancel conversation for user %s", user.id
-            )
+            logger.exception("Failed to cancel conversation for user %s", user.id)
+
+        # Process next queue item
+        try:
+            await _process_next_queue_item(core_client, user.id)
+        except Exception:
+            logger.exception("Failed to process next queue item for user %s", user.id)
 
     await update.message.reply_text("Current action cancelled.")
 

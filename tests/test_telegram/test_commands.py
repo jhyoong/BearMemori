@@ -805,3 +805,39 @@ class TestCancelCommand:
         update.message.reply_text.assert_awaited_once()
         reply = update.message.reply_text.call_args[0][0]
         assert "cancelled" in reply.lower()
+
+    @pytest.mark.asyncio
+    async def test_cancel_processes_next_queue_item(self):
+        """After /cancel, the next queue item should be auto-processed."""
+        from unittest.mock import patch
+        from tg_gateway.handlers.command import cancel_command
+
+        update = _make_update(text="/cancel")
+        core_client = AsyncMock()
+        core_client.cancel_conversation = AsyncMock(return_value={})
+        context = _make_context(
+            user_data={},
+            bot_data={"core_client": core_client},
+        )
+
+        with patch(
+            "tg_gateway.handlers.message._process_next_queue_item",
+            new_callable=AsyncMock,
+        ) as mock_next:
+            await cancel_command(update, context)
+            mock_next.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cancel_clears_awaiting_button_action(self):
+        """Test /cancel also clears AWAITING_BUTTON_ACTION state."""
+        from tg_gateway.handlers.command import cancel_command
+        from tg_gateway.handlers.conversation import AWAITING_BUTTON_ACTION
+
+        update = _make_update(text="/cancel")
+        context = _make_context(
+            user_data={AWAITING_BUTTON_ACTION: {"memory_id": "mem_123"}}
+        )
+
+        await cancel_command(update, context)
+
+        assert AWAITING_BUTTON_ACTION not in context.user_data
