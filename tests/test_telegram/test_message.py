@@ -21,6 +21,7 @@ from tg_gateway.handlers.conversation import (
 from tg_gateway.handlers.message import (
     _process_image_queue_item,
     _process_next_queue_item,
+    handle_image,
     handle_text,
 )
 
@@ -656,3 +657,96 @@ class TestProcessNextQueueItem:
         result = await _process_next_queue_item(core_client, user_id=12345)
 
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# handle_image tests
+# ---------------------------------------------------------------------------
+
+
+def _make_update_photo(user_id: int = 99, caption: str = "") -> MagicMock:
+    """Return a minimal mock Update with a photo message."""
+    update = MagicMock(spec=Update)
+    update.message = MagicMock()
+    update.message.caption = caption
+    update.message.chat_id = 12345
+    update.message.message_id = 1
+    update.message.date = None
+    update.message.reply_text = AsyncMock()
+    # Simulate Telegram's photo list (highest resolution is last element)
+    photo_size = MagicMock()
+    photo_size.file_id = "file-abc-123"
+    update.message.photo = [MagicMock(), photo_size]
+    user = MagicMock()
+    user.id = user_id
+    user.full_name = "Test User"
+    update.message.from_user = user
+    return update
+
+
+class TestHandleImage:
+    """Tests for the queue-based handle_image flow."""
+
+    @pytest.mark.asyncio
+    async def test_handle_image_no_active_conversation(self):
+        """Image with no active conversation: create memory, upload, enqueue, dequeue, start, create job."""
+        core_client = _make_core_client(active_conversation=None)
+        core_client.create_memory = AsyncMock(
+            return_value=type("M", (), {"id": "mem-100"})(),
+        )
+        dequeued_item = QueueItem(
+            id="q-10", content="", memory_id="mem-100",
+            image_local_path="/data/images/xyz.jpg",
+            message_timestamp=None, created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        core_client.dequeue_message = AsyncMock(
+            return_value=DequeueResponse(item=dequeued_item),
+        )
+        core_client.create_llm_job = AsyncMock()
+
+        update = _make_update_photo(user_id=99)
+        context = _make_context(bot_data={"core_client": core_client})
+
+        with patch("tg_gateway.handlers.message.download_and_upload_image", new_callable=AsyncMock) as mock_download:
+            mock_download.return_value = "/data/images/xyz.jpg"
+            await handle_image(update, context)
+
+        core_client.create_memory.assert_called_once()
+        mock_download.assert_called_once()
+        core_client.enqueue_message.assert_called_once()
+        enqueue_call = core_client.enqueue_message.call_args
+        assert enqueue_call.kwargs.get("memory_id") == "mem-100"
+        core_client.dequeue_message.assert_called_once()
+        core_client.start_conversation.assert_called_once()
+        core_client.create_llm_job.assert_called_once()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "Processing" in reply_text
+
+    @pytest.mark.asyncio
+    async def test_handle_image_active_conversation_queues(self):
+        """Image during active conversation: create memory, upload, enqueue, reply with queue position."""
+        active_conv = MagicMock()
+        active_conv.state = "processing"
+        qs = MagicMock()
+        qs.queue_length = 2
+        core_client = _make_core_client(
+            active_conversation=active_conv,
+            queue_status=qs,
+        )
+        core_client.create_memory = AsyncMock(
+            return_value=type("M", (), {"id": "mem-200"})(),
+        )
+
+        update = _make_update_photo(user_id=99)
+        context = _make_context(bot_data={"core_client": core_client})
+
+        with patch("tg_gateway.handlers.message.download_and_upload_image", new_callable=AsyncMock) as mock_download:
+            mock_download.return_value = "/data/images/xyz.jpg"
+            await handle_image(update, context)
+
+        core_client.create_memory.assert_called_once()
+        mock_download.assert_called_once()
+        core_client.enqueue_message.assert_called_once()
+        core_client.dequeue_message.assert_not_called()
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "queue" in reply_text.lower() or "ahead" in reply_text.lower()

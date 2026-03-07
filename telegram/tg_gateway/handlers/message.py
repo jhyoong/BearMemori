@@ -13,7 +13,6 @@ from shared_lib.enums import JobType, MediaType
 from shared_lib.schemas import LLMJobCreate, MemoryCreate, QueueItem
 
 from tg_gateway.core_client import CoreClient, CoreUnavailableError
-from tg_gateway.keyboards import memory_actions_keyboard
 from tg_gateway.handlers import conversation
 from tg_gateway.handlers.conversation import (
     LLM_CONVERSATION_METADATA,
@@ -224,11 +223,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle incoming image/photo messages.
+    """Handle an incoming image message.
 
-    Images are stored as pending memories with a 7-day retention window.
-    The handler downloads the image, uploads it to Core, and
-    publishes an LLM tagging job if Redis is available.
+    Always downloads and uploads the image immediately to prevent loss.
+    Then enqueues and either processes immediately or waits for the active
+    conversation to finish.
 
     Args:
         update: The Telegram update.
@@ -236,56 +235,65 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """
     user = update.message.from_user
     msg = update.message
-
-    # Get the highest resolution photo
     photo = msg.photo[-1]
     caption = msg.caption or ""
-
-    # Create memory in Core
-    core_client = context.bot_data["core_client"]
+    core_client: CoreClient = context.bot_data["core_client"]
 
     try:
         await core_client.ensure_user(user.id, user.full_name)
-        memory_data = MemoryCreate(
-            owner_user_id=user.id,
-            content=caption,
-            media_type=MediaType.image,
-            media_file_id=photo.file_id,
-            source_chat_id=msg.chat_id,
-            source_message_id=msg.message_id,
-        )
-        memory = await core_client.create_memory(memory_data)
     except CoreUnavailableError:
         await msg.reply_text(
             "I'm having trouble right now, please try again in a moment."
         )
         return
 
-    # Download and upload image (non-fatal)
-    local_path = None
+    # 1. Create memory immediately
     try:
-        local_path = await download_and_upload_image(
-            context.bot, core_client, memory.id, photo.file_id
+        memory = await core_client.create_memory(
+            MemoryCreate(
+                owner_user_id=user.id,
+                content=caption,
+                media_type=MediaType.image,
+                media_file_id=photo.file_id,
+                source_chat_id=msg.chat_id,
+                source_message_id=msg.message_id,
+            )
         )
     except Exception:
-        logger.exception(f"Failed to download/upload image for memory {memory.id}")
+        logger.exception("Failed to create memory for image from user %s", user.id)
+        await msg.reply_text("Something went wrong saving your image. Please try again.")
+        return
 
-    # Queue LLM tagging job via core (non-fatal); requires image_path from upload
-    if local_path:
-        try:
-            await core_client.create_llm_job(
-                LLMJobCreate(
-                    job_type=JobType.image_tag,
-                    payload={"memory_id": memory.id, "image_path": local_path},
-                    user_id=user.id,
-                )
+    # 2. Download from Telegram and upload to Core immediately (non-fatal)
+    local_path = await download_and_upload_image(
+        context.bot, core_client, memory.id, photo.file_id,
+    )
+
+    # 3. Enqueue with memory_id and local_path
+    await core_client.enqueue_message(
+        user_id=user.id,
+        content=caption,
+        memory_id=memory.id,
+        image_local_path=local_path,
+        message_timestamp=msg.date,
+    )
+
+    # 4. Check for active conversation
+    active_conv = await core_client.get_active_conversation(user.id)
+
+    if active_conv and active_conv.state in ("processing", "awaiting_reply"):
+        status = await core_client.get_queue_status(user.id)
+        ahead = status.queue_length
+        word = "message" if ahead == 1 else "messages"
+        await msg.reply_text(f"Added to queue ({ahead} {word} ahead)")
+    else:
+        dequeue_resp = await core_client.dequeue_message(user.id)
+        if dequeue_resp.item:
+            await core_client.start_conversation(user.id, queue_item_id=dequeue_resp.item.id)
+            await _process_image_queue_item(
+                core_client, user.id, dequeue_resp.item,
             )
-        except Exception:
-            logger.exception(f"Failed to queue LLM tagging job for memory {memory.id}")
-
-    # Build keyboard and reply; tag actions appear after LLM suggests tags
-    keyboard = memory_actions_keyboard(memory.id, is_image=False)
-    await msg.reply_text("Saved as pending!", reply_markup=keyboard)
+        await msg.reply_text("Processing your image...")
 
 
 async def handle_unauthorized(
