@@ -510,13 +510,15 @@ class CoreClient:
         self,
         user_id: int,
         content: str | None = None,
-        image_file_id: str | None = None,
+        memory_id: str | None = None,
+        image_local_path: str | None = None,
         message_timestamp: str = "",
     ) -> QueueItem:
         """Enqueue a message for processing."""
         body = QueueItemCreate(
             content=content,
-            image_file_id=image_file_id,
+            memory_id=memory_id,
+            image_local_path=image_local_path,
             message_timestamp=message_timestamp,
         )
         try:
