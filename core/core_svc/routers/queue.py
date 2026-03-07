@@ -99,7 +99,7 @@ def _conv_hash_to_response(
 # Queue endpoints
 # ---------------------------------------------------------------------------
 
-@router.post("/{user_id}/enqueue")
+@router.post("/{user_id}/enqueue", status_code=status.HTTP_201_CREATED)
 async def enqueue(
     user_id: int,
     body: QueueItemCreate,
@@ -111,7 +111,8 @@ async def enqueue(
     item = QueueItem(
         id=str(uuid.uuid4()),
         content=body.content,
-        image_file_id=body.image_file_id,
+        memory_id=body.memory_id,
+        image_local_path=body.image_local_path,
         message_timestamp=body.message_timestamp,
         created_at=now,
     )

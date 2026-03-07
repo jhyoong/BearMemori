@@ -306,21 +306,7 @@ class ReminderNotification(BaseModel):
     fire_at: datetime
 
 
-# Queue and conversation schemas
-
-
-class QueueItemCreate(BaseModel):
-    content: str | None = None
-    image_file_id: str | None = None
-    message_timestamp: str
-
-
-class QueueItem(BaseModel):
-    id: str
-    content: str | None = None
-    image_file_id: str | None = None
-    message_timestamp: str
-    created_at: str
+# Conversation schemas
 
 
 class QueueStatus(BaseModel):

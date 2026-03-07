@@ -25,10 +25,11 @@ class TestEnqueue:
                 "message_timestamp": "2026-03-06T12:00:00Z",
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         data = resp.json()
         assert data["content"] == "hello"
-        assert data["image_file_id"] is None
+        assert data["memory_id"] is None
+        assert data["image_local_path"] is None
         assert "id" in data
         assert "created_at" in data
 
@@ -36,13 +37,15 @@ class TestEnqueue:
         resp = await test_app.post(
             f"/queue/{test_user}/enqueue",
             json={
-                "image_file_id": "file_abc123",
+                "memory_id": "mem-abc",
+                "image_local_path": "/data/images/abc.jpg",
                 "message_timestamp": "2026-03-06T12:00:00Z",
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         data = resp.json()
-        assert data["image_file_id"] == "file_abc123"
+        assert data["memory_id"] == "mem-abc"
+        assert data["image_local_path"] == "/data/images/abc.jpg"
         assert data["content"] is None
 
     async def test_enqueue_multiple_fifo(self, test_app, test_user):
@@ -356,3 +359,55 @@ class TestCancel:
         assert data["state"] == "cancelled"
         assert data["next_item"] is not None
         assert data["next_item"]["content"] == "waiting"
+
+
+# ---------------------------------------------------------------------------
+# New image field tests (Task 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_enqueue_dequeue_image_item(test_app, test_user):
+    """Enqueue an image item with memory_id and image_local_path, then dequeue it."""
+    user_id = test_user
+
+    resp = await test_app.post(
+        f"/queue/{user_id}/enqueue",
+        json={
+            "content": "sunset photo",
+            "memory_id": "mem-123",
+            "image_local_path": "/data/images/abc.jpg",
+            "message_timestamp": "2026-03-07T10:00:00Z",
+        },
+    )
+    assert resp.status_code == 201
+    item = resp.json()
+    assert item["memory_id"] == "mem-123"
+    assert item["image_local_path"] == "/data/images/abc.jpg"
+    assert item["content"] == "sunset photo"
+
+    resp = await test_app.delete(f"/queue/{user_id}/dequeue")
+    assert resp.status_code == 200
+    data = resp.json()
+    dequeued = data["item"]
+    assert dequeued["memory_id"] == "mem-123"
+    assert dequeued["image_local_path"] == "/data/images/abc.jpg"
+    assert dequeued["content"] == "sunset photo"
+
+
+@pytest.mark.asyncio
+async def test_enqueue_text_item_has_null_image_fields(test_app, test_user):
+    """Text items have null memory_id and image_local_path."""
+    user_id = test_user
+
+    resp = await test_app.post(
+        f"/queue/{user_id}/enqueue",
+        json={
+            "content": "remind me to buy milk",
+            "message_timestamp": "2026-03-07T10:00:00Z",
+        },
+    )
+    assert resp.status_code == 201
+    item = resp.json()
+    assert item["memory_id"] is None
+    assert item["image_local_path"] is None

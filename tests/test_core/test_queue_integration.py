@@ -19,7 +19,7 @@ async def _enqueue(client, user_id: int, content: str = "hello") -> dict:
         f"{QUEUE_PREFIX}/{user_id}/enqueue",
         json={"content": content, "message_timestamp": "2026-03-07T12:00:00Z"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 201
     return resp.json()
 
 

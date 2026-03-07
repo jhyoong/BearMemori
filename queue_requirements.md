@@ -43,11 +43,16 @@
 1. User sends 3 messages in a row
 2. The first message is ambiguous, LLM follows up with a message.
 3. User responds to the follow up, LLM processes this follow up message (skips the queue).
-4. LLM responds with a reminder set with time.
-5. User accepts and confirms.
-6. Memory saved, LLM now starts processing the second message.
-7. Second message is ambiguous, LLM follows up with a message.
-8. User responds to the follow up, LLM processes this follow up message (skips the queue).
-9. LLM responds with a task set with deadline.
-10. User accepts and confirms.
-11. Memory saved, LLM now starts processing the third message.
+4. The message is still ambiguous, so the LLM follows up again with a message.
+5. User responds to the follow up again with more clarity, LLM processes this follow up message (skips the queue).
+6. LLM responds with a reminder set with time.
+7. User accepts and confirms.
+8. Memory saved, LLM now starts processing the second message.
+9. Second message is ambiguous, LLM follows up with a message.
+10. User responds to the follow up, LLM processes this follow up message (skips the queue).
+11. LLM responds with a task set with deadline.
+12. User accepts and confirms.
+13. Memory saved, LLM now starts processing the third message.
+14. The message is ambiguous, LLM follows up with a message.
+15. User responds to the follow up, LLM processes this follow up message (skips the queue).
+16. User sends the cancel command. This conversation is cancelled.
