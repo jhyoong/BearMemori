@@ -6,7 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from datetime import datetime, timezone
+
 from shared_lib.enums import JobType
+from shared_lib.schemas import DequeueResponse, QueueItem
 from tg_gateway.core_client import CoreUnavailableError
 from tg_gateway.handlers.conversation import (
     AWAITING_BUTTON_ACTION,
@@ -593,9 +596,6 @@ class TestProcessNextQueueItem:
     @pytest.mark.asyncio
     async def test_process_next_queue_item_text(self):
         """Dequeues a text item and creates an intent_classify job."""
-        from datetime import datetime, timezone
-        from shared_lib.schemas import DequeueResponse, QueueItem
-
         core_client = _make_core_client()
         text_item = QueueItem(
             id="q-1", content="buy milk", memory_id=None,
@@ -614,7 +614,7 @@ class TestProcessNextQueueItem:
         result = await _process_next_queue_item(core_client, user_id=12345)
 
         assert result is True
-        core_client.start_conversation.assert_called_once_with(12345, "q-1")
+        core_client.start_conversation.assert_called_once_with(12345, queue_item_id="q-1")
         core_client.create_llm_job.assert_called_once()
         job = core_client.create_llm_job.call_args[0][0]
         assert job.job_type == JobType.intent_classify
@@ -624,9 +624,6 @@ class TestProcessNextQueueItem:
     @pytest.mark.asyncio
     async def test_process_next_queue_item_image(self):
         """Dequeues an image item and creates an image_tag job."""
-        from datetime import datetime, timezone
-        from shared_lib.schemas import DequeueResponse, QueueItem
-
         core_client = _make_core_client()
         image_item = QueueItem(
             id="q-2", content="sunset", memory_id="mem-789",
@@ -643,7 +640,7 @@ class TestProcessNextQueueItem:
         result = await _process_next_queue_item(core_client, user_id=12345)
 
         assert result is True
-        core_client.start_conversation.assert_called_once_with(12345, "q-2")
+        core_client.start_conversation.assert_called_once_with(12345, queue_item_id="q-2")
         core_client.create_llm_job.assert_called_once()
         job = core_client.create_llm_job.call_args[0][0]
         assert job.job_type == JobType.image_tag
@@ -653,8 +650,6 @@ class TestProcessNextQueueItem:
     @pytest.mark.asyncio
     async def test_process_next_queue_item_empty_queue(self):
         """Returns False when queue is empty."""
-        from shared_lib.schemas import DequeueResponse
-
         core_client = _make_core_client()
         core_client.dequeue_message = AsyncMock(
             return_value=DequeueResponse(item=None),

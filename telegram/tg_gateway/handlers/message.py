@@ -350,7 +350,7 @@ async def _process_next_queue_item(
         return False
 
     item = dequeue_resp.item
-    await core_client.start_conversation(user_id, item.id)
+    await core_client.start_conversation(user_id, queue_item_id=item.id)
 
     if item.memory_id:
         # Image item — create image_tag LLM job
