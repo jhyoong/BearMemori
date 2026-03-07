@@ -751,6 +751,32 @@ class TestClearConversationState:
         assert AWAITING_BUTTON_ACTION not in context.user_data
 
 
+class TestClearConversationStateProcessesNext:
+    """Tests that _clear_conversation_state auto-processes the next queue item."""
+
+    def _make_context(self, user_data=None):
+        """Create a mock context with bot_data containing a mock core_client."""
+        context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+        context.user_data = user_data or {}
+        mock_core_client = MagicMock()
+        mock_core_client.update_conversation_state = AsyncMock()
+        context.bot_data = {"core_client": mock_core_client}
+        return context
+
+    @pytest.mark.asyncio
+    async def test_clears_state_and_processes_next_item(self):
+        """After clearing conversation state, the next queue item should be auto-processed."""
+        context = self._make_context()
+        core_client = context.bot_data["core_client"]
+
+        with patch(
+            "tg_gateway.handlers.message._process_next_queue_item",
+            new_callable=AsyncMock,
+        ) as mock_next:
+            await _clear_conversation_state(context, user_id=12345)
+            mock_next.assert_called_once_with(core_client, 12345)
+
+
 class TestHandleIntentConfirm:
     """Tests for handle_intent_confirm handler."""
 

@@ -59,7 +59,8 @@ async def _clear_conversation_state(
     """Clear pending conversation state and complete the conversation via Core API.
 
     Called by button handlers that conclude a conversation flow so that
-    subsequent messages from the user are not misrouted.
+    subsequent messages from the user are not misrouted. After completing
+    the conversation, auto-processes the next item in the user's queue.
 
     Args:
         context: The Telegram context with user_data.
@@ -68,19 +69,25 @@ async def _clear_conversation_state(
     context.user_data.pop(AWAITING_BUTTON_ACTION, None)
     context.user_data.pop(LLM_CONVERSATION_METADATA, None)
 
-    # Complete the conversation via Core API
-    if user_id is not None:
-        core_client = context.bot_data.get("core_client")
-        if core_client:
-            try:
-                await core_client.update_conversation_state(
-                    user_id, "completed"
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to complete conversation for user %s",
-                    user_id,
-                )
+    core_client = context.bot_data.get("core_client")
+    if core_client and user_id is not None:
+        try:
+            await core_client.update_conversation_state(user_id, "completed")
+        except Exception:
+            logger.exception(
+                "Failed to complete conversation for user %s",
+                user_id,
+            )
+
+        # Auto-process next queue item
+        try:
+            from tg_gateway.handlers.message import _process_next_queue_item
+            await _process_next_queue_item(core_client, user_id)
+        except Exception:
+            logger.exception(
+                "Failed to process next queue item for user %s",
+                user_id,
+            )
 
 
 def _is_photo_message(callback_query) -> bool:
