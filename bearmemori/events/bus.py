@@ -17,7 +17,11 @@ class EventBus:
 
     async def emit(self, event: Event) -> None:
         handlers = self._handlers.get(type(event), [])
-        tasks = [handler(event) for handler in handlers]
+        tasks = []
+        for handler in handlers:
+            result = handler(event)
+            if asyncio.iscoroutine(result):
+                tasks.append(result)
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for result in results:
