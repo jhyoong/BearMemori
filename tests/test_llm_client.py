@@ -1,0 +1,75 @@
+import json
+import pytest
+from unittest.mock import AsyncMock, patch
+from bearmemori.llm.client import LLMClient, ClassificationResult, ExtractionResult
+
+
+@pytest.fixture
+def client():
+    return LLMClient(base_url="http://localhost:11434/v1", model="llama3", api_key="not-needed")
+
+
+@pytest.mark.asyncio
+async def test_classify_input_returns_store(client):
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(message=AsyncMock(content=json.dumps({
+            "action": "store",
+            "memory_type": "preference",
+            "confidence": 0.9,
+        })))
+    ]
+
+    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
+        result = await client.classify_input("I prefer dark mode")
+
+    assert result.action == "store"
+    assert result.memory_type == "preference"
+
+
+@pytest.mark.asyncio
+async def test_classify_input_returns_followup(client):
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(message=AsyncMock(content=json.dumps({
+            "action": "followup",
+            "question": "What kind of dark mode?",
+        })))
+    ]
+
+    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
+        result = await client.classify_input("I changed something")
+
+    assert result.action == "followup"
+    assert result.question == "What kind of dark mode?"
+
+
+@pytest.mark.asyncio
+async def test_extract_memory(client):
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(message=AsyncMock(content=json.dumps({
+            "content": "User prefers dark mode in all applications",
+            "memory_type": "preference",
+            "tags": ["ui", "dark-mode", "preference"],
+        })))
+    ]
+
+    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
+        result = await client.extract_memory("I prefer dark mode", context=None)
+
+    assert result.content == "User prefers dark mode in all applications"
+    assert "dark-mode" in result.tags
+
+
+@pytest.mark.asyncio
+async def test_generate_followup(client):
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(message=AsyncMock(content="Could you tell me more about what changed?"))
+    ]
+
+    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
+        result = await client.generate_followup("something changed", context=None)
+
+    assert "changed" in result
