@@ -1,49 +1,16 @@
-from datetime import datetime
-
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
-class MemoryResponse(BaseModel):
-    id: str
-    content: str
-    raw_input: str
-    memory_type: str
-    tags: list[str]
-    created_at: datetime
-    updated_at: datetime
-    source: str
-    metadata: dict
+class TriageRequest(BaseModel):
+    conversation: list[dict] = Field(min_length=1)
+    memory_hint: dict | None = None
 
 
-class MemoryCreate(BaseModel):
-    content: str
-    raw_input: str = ""
-    memory_type: str
-    tags: list[str] = []
-    source: str = "api"
-    metadata: dict = {}
-
-
-class MemoryUpdate(BaseModel):
-    content: str | None = None
-    memory_type: str | None = None
-    tags: list[str] | None = None
-    metadata: dict | None = None
+class ConfirmRequest(BaseModel):
+    pending_id: str
 
 
 class SearchRequest(BaseModel):
     query: str
-    mode: str = "keyword"  # "keyword", "semantic", "hybrid"
-    limit: int = 20
-
-
-class ReminderResponse(BaseModel):
-    id: str
-    content: str
-    memory_type: str
-    tags: list[str]
-    remind_at: datetime | None
-    recurring_minutes: int | None
-    created_at: datetime
-    source: str
-    metadata: dict
+    category: str | None = None
+    top_k: int = 5
