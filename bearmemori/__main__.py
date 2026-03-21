@@ -44,6 +44,7 @@ async def main() -> None:
 
     # Start processing loop
     asyncio.create_task(processing_loop(application))
+    asyncio.create_task(application.scheduler.run())
 
     # Start API server
     config = uvicorn.Config(api, host="0.0.0.0", port=8000, log_level="info")

@@ -4,8 +4,9 @@ from bearmemori.config import Settings
 from bearmemori.core.followup import FollowUpManager
 from bearmemori.core.processor import Processor
 from bearmemori.core.queue import QueueManager
+from bearmemori.core.scheduler import ReminderScheduler
 from bearmemori.events.bus import EventBus
-from bearmemori.events.domain import FollowUpRequired, InputReceived, SendMessage
+from bearmemori.events.domain import FollowUpRequired, InputReceived, ReminderDue, SendMessage
 from bearmemori.interfaces.telegram import TelegramInterface
 from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
@@ -23,6 +24,7 @@ class Application:
         followup_manager: FollowUpManager,
         telegram: TelegramInterface,
         settings: Settings,
+        scheduler: ReminderScheduler,
     ) -> None:
         self.bus = bus
         self.db = db
@@ -31,6 +33,7 @@ class Application:
         self.followup_manager = followup_manager
         self.telegram = telegram
         self.settings = settings
+        self.scheduler = scheduler
 
 
 def create_application(settings: Settings) -> Application:
@@ -47,12 +50,22 @@ def create_application(settings: Settings) -> Application:
     queue_manager = QueueManager(bus, max_size=settings.queue_max_size)
     processor = Processor(bus=bus, llm=llm, db=db, embedding_model=settings.embedding_model)
     followup_manager = FollowUpManager(bus)
-    telegram = TelegramInterface(bus=bus, token=settings.telegram_bot_token)
+    telegram = TelegramInterface(
+        bus=bus,
+        token=settings.telegram_bot_token,
+        allowed_user_id=settings.telegram_allowed_user_id,
+    )
+    scheduler = ReminderScheduler(
+        bus=bus,
+        db=db,
+        poll_interval_seconds=settings.reminder_poll_interval_seconds,
+    )
 
     # Wire events
     bus.on(InputReceived, queue_manager.handle_input)
     bus.on(FollowUpRequired, followup_manager.handle_followup_required)
     bus.on(SendMessage, telegram.handle_send_message)
+    bus.on(ReminderDue, telegram.handle_reminder_due)
 
     return Application(
         bus=bus,
@@ -62,4 +75,5 @@ def create_application(settings: Settings) -> Application:
         followup_manager=followup_manager,
         telegram=telegram,
         settings=settings,
+        scheduler=scheduler,
     )
