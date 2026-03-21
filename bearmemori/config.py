@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "llama3"
     llm_api_key: str = "not-needed"
-    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model: str = "all-mpnet-base-v2"
     database_path: str = "bearmemori.db"
     chroma_persist_dir: str = "chroma_data"
     pending_ttl_seconds: int = 86400

@@ -5,7 +5,7 @@ from bearmemori.storage.models import MemoryRecord
 
 
 class VectorStore:
-    def __init__(self, persist_dir: str | None = None, embedding_model: str = "all-MiniLM-L6-v2"):
+    def __init__(self, persist_dir: str | None = None, embedding_model: str = "all-mpnet-base-v2"):
         self._persist_dir = persist_dir
         self._embedding_model = embedding_model
         self._collection = None

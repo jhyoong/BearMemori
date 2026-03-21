@@ -60,10 +60,11 @@ async def main() -> None:
         await telegram_app.updater.start_polling()
         logger.info("BearMemori is running on port %d", settings.api_port)
 
-        await server.serve()
-
-        await telegram_app.updater.stop()
-        await telegram_app.stop()
+        try:
+            await server.serve()
+        finally:
+            await telegram_app.updater.stop()
+            await telegram_app.stop()
 
 
 if __name__ == "__main__":
