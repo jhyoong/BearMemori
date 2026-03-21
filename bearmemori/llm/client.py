@@ -18,6 +18,8 @@ class ExtractionResult(BaseModel):
     content: str
     memory_type: str
     tags: list[str]
+    remind_at: str | None = None
+    recurring_minutes: int | None = None
 
 
 CLASSIFY_SYSTEM_PROMPT = (
@@ -27,7 +29,7 @@ CLASSIFY_SYSTEM_PROMPT = (
     "\n"
     "Respond with JSON only:\n"
     '- For store: {"action": "store", "memory_type": "<type>", "confidence": <0-1>}\n'
-    "  Types: preference, event, fact, note, person, location, task\n"
+    "  Types: preference, event, fact, note, person, location, task, reminder\n"
     '- For followup: {"action": "followup", "question": "<your clarifying question>"}'
 )
 
@@ -37,8 +39,14 @@ EXTRACT_SYSTEM_PROMPT = (
     "\n"
     "Respond with JSON only:\n"
     '{"content": "<clear summary of the memory>", "memory_type": "<type>", '
-    '"tags": ["tag1", "tag2"]}\n'
-    "Types: preference, event, fact, note, person, location, task"
+    '"tags": ["tag1", "tag2"], "remind_at": "<ISO datetime or null>", '
+    '"recurring_minutes": <minutes between recurrences or null>}\n'
+    "Types: preference, event, fact, note, person, location, task, reminder\n"
+    "\n"
+    "For reminders:\n"
+    "- Set remind_at to the ISO 8601 datetime when the reminder should fire\n"
+    "- Set recurring_minutes if the user wants a repeating reminder (e.g., every 8 hours = 480)\n"
+    "- For non-reminder types, set both remind_at and recurring_minutes to null"
 )
 
 FOLLOWUP_SYSTEM_PROMPT = (

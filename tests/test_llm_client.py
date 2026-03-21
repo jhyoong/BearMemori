@@ -75,3 +75,61 @@ async def test_generate_followup(client):
         result = await client.generate_followup("something changed", context=None)
 
     assert "changed" in result
+
+
+@pytest.mark.asyncio
+async def test_classify_reminder(client):
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(message=AsyncMock(content=json.dumps({
+            "action": "store",
+            "memory_type": "reminder",
+            "confidence": 0.95,
+        })))
+    ]
+
+    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
+        result = await client.classify_input("remind me to take meds at 8pm")
+
+    assert result.action == "store"
+    assert result.memory_type == "reminder"
+
+
+@pytest.mark.asyncio
+async def test_extract_reminder(client):
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(message=AsyncMock(content=json.dumps({
+            "content": "Take meds",
+            "memory_type": "reminder",
+            "tags": ["health"],
+            "remind_at": "2026-03-21T20:00:00",
+            "recurring_minutes": None,
+        })))
+    ]
+
+    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
+        result = await client.extract_memory("remind me to take meds at 8pm", None)
+
+    assert result.memory_type == "reminder"
+    assert result.remind_at == "2026-03-21T20:00:00"
+    assert result.recurring_minutes is None
+
+
+@pytest.mark.asyncio
+async def test_extract_recurring_reminder(client):
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(message=AsyncMock(content=json.dumps({
+            "content": "Take meds",
+            "memory_type": "reminder",
+            "tags": ["health"],
+            "remind_at": "2026-03-21T20:00:00",
+            "recurring_minutes": 480,
+        })))
+    ]
+
+    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
+        result = await client.extract_memory("remind me every 8 hours to take meds", None)
+
+    assert result.recurring_minutes == 480

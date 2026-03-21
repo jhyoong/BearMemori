@@ -1,6 +1,7 @@
 import logging
 import struct
 import uuid
+from datetime import datetime
 
 from bearmemori.core.models import QueueItem
 from bearmemori.events.bus import EventBus
@@ -49,6 +50,10 @@ class Processor:
         embedding = await self._llm.get_embedding(extraction.content, self._embedding_model)
         embedding_bytes = struct.pack(f"{len(embedding)}f", *embedding)
 
+        remind_at = None
+        if extraction.remind_at:
+            remind_at = datetime.fromisoformat(extraction.remind_at)
+
         memory = Memory(
             id=str(uuid.uuid4()),
             content=extraction.content,
@@ -57,6 +62,9 @@ class Processor:
             tags=extraction.tags,
             embedding=embedding_bytes,
             source="telegram",
+            metadata={"source_chat_id": item.source_chat_id},
+            remind_at=remind_at,
+            recurring_minutes=extraction.recurring_minutes,
         )
         self._db.create(memory)
 
