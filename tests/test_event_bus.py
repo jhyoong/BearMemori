@@ -63,3 +63,24 @@ async def test_emit_does_not_call_unrelated_handlers():
 async def test_emit_with_no_handlers_does_nothing():
     bus = EventBus()
     await bus.emit(FakeEvent(data="no one listening"))
+
+
+from bearmemori.events.domain import ReminderDue
+
+
+@pytest.mark.asyncio
+async def test_reminder_due_event():
+    bus = EventBus()
+    received = []
+    bus.on(ReminderDue, lambda e: received.append(e))
+
+    await bus.emit(ReminderDue(
+        memory_id="rem-1",
+        content="Take meds",
+        source_chat_id="42",
+        remind_at_iso="2026-03-21T10:00:00",
+    ))
+
+    assert len(received) == 1
+    assert received[0].memory_id == "rem-1"
+    assert received[0].content == "Take meds"

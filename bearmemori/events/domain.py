@@ -40,3 +40,10 @@ class MemoryDeleted(Event):
 class SendMessage(Event):
     chat_id: str
     text: str
+
+
+class ReminderDue(Event):
+    memory_id: str
+    content: str
+    source_chat_id: str
+    remind_at_iso: str

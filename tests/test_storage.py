@@ -124,6 +124,48 @@ def test_create_memory_without_reminder_fields(db):
     assert result.recurring_minutes is None
 
 
+def test_get_due_reminders(db):
+    from datetime import datetime, timedelta
+
+    past = datetime.now() - timedelta(hours=1)
+    future = datetime.now() + timedelta(hours=1)
+
+    db.create(_make_memory(id="due-1", memory_type="reminder", remind_at=past))
+    db.create(_make_memory(id="not-due", memory_type="reminder", remind_at=future))
+    db.create(_make_memory(id="normal", memory_type="preference"))
+
+    results = db.get_due_reminders()
+    assert len(results) == 1
+    assert results[0].id == "due-1"
+
+
+def test_get_due_reminders_empty(db):
+    from datetime import datetime, timedelta
+
+    future = datetime.now() + timedelta(hours=1)
+    db.create(_make_memory(id="not-due", memory_type="reminder", remind_at=future))
+
+    results = db.get_due_reminders()
+    assert len(results) == 0
+
+
+def test_get_active_reminders(db):
+    from datetime import datetime, timedelta
+
+    past = datetime.now() - timedelta(hours=1)
+    future = datetime.now() + timedelta(hours=1)
+
+    db.create(_make_memory(id="active-1", memory_type="reminder", remind_at=future))
+    db.create(_make_memory(id="active-2", memory_type="reminder", remind_at=past))
+    db.create(_make_memory(id="fired", memory_type="reminder"))  # remind_at is None = already fired
+    db.create(_make_memory(id="normal", memory_type="preference"))
+
+    results = db.get_active_reminders()
+    assert len(results) == 2
+    ids = {r.id for r in results}
+    assert ids == {"active-1", "active-2"}
+
+
 def test_search_semantic(db):
     emb1 = _make_embedding([1.0, 0.0, 0.0])
     emb2 = _make_embedding([0.0, 1.0, 0.0])

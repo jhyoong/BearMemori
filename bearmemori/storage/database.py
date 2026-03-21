@@ -186,3 +186,17 @@ class MemoryDatabase:
         params.extend([limit, offset])
         rows = self._conn.execute(query, params).fetchall()
         return [self._row_to_memory(row) for row in rows]
+
+    def get_due_reminders(self) -> list[Memory]:
+        now = datetime.now().isoformat()
+        rows = self._conn.execute(
+            "SELECT * FROM memories WHERE remind_at IS NOT NULL AND remind_at <= ?",
+            (now,),
+        ).fetchall()
+        return [self._row_to_memory(row) for row in rows]
+
+    def get_active_reminders(self) -> list[Memory]:
+        rows = self._conn.execute(
+            "SELECT * FROM memories WHERE remind_at IS NOT NULL ORDER BY remind_at ASC"
+        ).fetchall()
+        return [self._row_to_memory(row) for row in rows]
