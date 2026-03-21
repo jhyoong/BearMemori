@@ -87,7 +87,11 @@ async def test_process_item_stores_reminder(processor, bus, mock_llm, mock_db):
     )
     mock_llm.get_embedding.return_value = [0.1, 0.2, 0.3]
 
-    item = QueueItem(input_type="text", content="remind me every 8 hours to take meds", source_chat_id="123")
+    item = QueueItem(
+        input_type="text",
+        content="remind me every 8 hours to take meds",
+        source_chat_id="123",
+    )
     await processor.process_item(item)
 
     mock_db.create.assert_called_once()

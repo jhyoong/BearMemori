@@ -1,6 +1,7 @@
 import pytest
 
 from bearmemori.events.bus import EventBus
+from bearmemori.events.domain import ReminderDue
 from bearmemori.events.types import Event
 
 
@@ -63,9 +64,6 @@ async def test_emit_does_not_call_unrelated_handlers():
 async def test_emit_with_no_handlers_does_nothing():
     bus = EventBus()
     await bus.emit(FakeEvent(data="no one listening"))
-
-
-from bearmemori.events.domain import ReminderDue
 
 
 @pytest.mark.asyncio
