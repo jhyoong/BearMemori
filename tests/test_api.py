@@ -1,159 +1,182 @@
-from datetime import datetime, timedelta
-
 import pytest
+from unittest.mock import patch
+from datetime import datetime, timezone, timedelta
+
 from fastapi.testclient import TestClient
 
 from bearmemori.api.routes import create_app
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import Memory
+from bearmemori.storage.models import (
+    MemoryRecord,
+    MemoryCategory,
+    MemoryDraft,
+    EventFields,
+)
+from bearmemori.storage.pending_store import PendingStore
+from bearmemori.storage.vector_store import VectorStore
+from bearmemori.core.triage import TriageResult
 
 
 @pytest.fixture
 def db(tmp_path):
-    db_path = str(tmp_path / "test.db")
-    database = MemoryDatabase(db_path)
-    database.initialize()
-    return database
+    d = MemoryDatabase(str(tmp_path / "test.db"))
+    d.initialize()
+    return d
 
 
 @pytest.fixture
-def client(db):
-    app = create_app(db)
+def vector_store(tmp_path):
+    vs = VectorStore(persist_dir=str(tmp_path / "chroma"))
+    vs.init()
+    return vs
+
+
+@pytest.fixture
+def pending_store():
+    return PendingStore()
+
+
+@pytest.fixture
+def client(db, vector_store, pending_store):
+    app = create_app(
+        db=db,
+        vector_store=vector_store,
+        pending_store=pending_store,
+        llm_base_url="http://localhost:11434/v1",
+        llm_api_key="test",
+        llm_model="test",
+    )
     return TestClient(app)
 
 
-@pytest.fixture
-def seeded_db(db):
-    db.create(Memory(
-        id="mem-1",
-        content="User prefers dark mode",
-        raw_input="I like dark mode",
-        memory_type="preference",
-        tags=["ui", "preference"],
-        source="telegram",
-    ))
-    db.create(Memory(
-        id="mem-2",
-        content="Meeting with John on Friday",
-        raw_input="meeting john friday",
-        memory_type="event",
-        tags=["meeting", "john"],
-        source="telegram",
-    ))
-    return db
+def _seed_memory(db, vector_store, **overrides):
+    defaults = dict(
+        id="mem_test1",
+        category=MemoryCategory.PROFILE,
+        title="Coffee preference",
+        content="User likes black coffee",
+        created_at=datetime.now(timezone.utc),
+        tags=["coffee"],
+    )
+    defaults.update(overrides)
+    record = MemoryRecord(**defaults)
+    db.create(record)
+    vector_store.add(record)
+    return record
 
 
-def test_get_memory(client, seeded_db):
-    response = client.get("/memories/mem-1")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["content"] == "User prefers dark mode"
+def test_health(client):
+    r = client.get("/health")
+    assert r.status_code == 200
 
 
-def test_get_memory_not_found(client):
-    response = client.get("/memories/nope")
-    assert response.status_code == 404
+def test_list_memories(client, db, vector_store):
+    _seed_memory(db, vector_store)
+    r = client.get("/memory/list")
+    assert r.status_code == 200
+    assert len(r.json()["memories"]) == 1
 
 
-def test_list_memories(client, seeded_db):
-    response = client.get("/memories")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
+def test_list_by_category(client, db, vector_store):
+    _seed_memory(db, vector_store, id="mem_1", category=MemoryCategory.PROFILE)
+    _seed_memory(db, vector_store, id="mem_2", category=MemoryCategory.EVENT)
+    r = client.get("/memory/list?category=profile")
+    assert len(r.json()["memories"]) == 1
 
 
-def test_list_memories_filter_by_type(client, seeded_db):
-    response = client.get("/memories?memory_type=preference")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["memory_type"] == "preference"
+def test_get_memory(client, db, vector_store):
+    _seed_memory(db, vector_store)
+    r = client.get("/memory/mem_test1")
+    assert r.status_code == 200
+    assert r.json()["title"] == "Coffee preference"
 
 
-def test_create_memory(client):
-    response = client.post("/memories", json={
-        "content": "Likes coffee",
-        "memory_type": "preference",
-        "tags": ["food"],
-    })
-    assert response.status_code == 201
-    data = response.json()
-    assert data["content"] == "Likes coffee"
-    assert data["id"]
+def test_get_nonexistent(client):
+    r = client.get("/memory/nonexistent")
+    assert r.status_code == 404
 
 
-def test_update_memory(client, seeded_db):
-    response = client.put("/memories/mem-1", json={
-        "content": "User prefers light mode",
-    })
-    assert response.status_code == 200
-    data = response.json()
-    assert data["content"] == "User prefers light mode"
+def test_delete_memory(client, db, vector_store):
+    _seed_memory(db, vector_store)
+    r = client.delete("/memory/mem_test1")
+    assert r.status_code == 200
+    assert r.json()["status"] == "deleted"
 
 
-def test_delete_memory(client, seeded_db):
-    response = client.delete("/memories/mem-1")
-    assert response.status_code == 204
-    assert client.get("/memories/mem-1").status_code == 404
+def test_search(client, db, vector_store):
+    _seed_memory(db, vector_store)
+    r = client.post("/memory/search", json={"query": "coffee", "top_k": 5})
+    assert r.status_code == 200
+    assert "results" in r.json()
 
 
-def test_search_keyword(client, seeded_db):
-    response = client.post("/memories/search", json={
-        "query": "dark mode",
-        "mode": "keyword",
-    })
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) >= 1
+def test_pending_confirm_flow(client):
+    draft = {
+        "category": "profile",
+        "title": "Likes tea",
+        "content": "User likes green tea",
+        "tags": ["tea"],
+    }
+    r = client.post("/memory/pending", json=draft)
+    assert r.status_code == 200
+    pending_id = r.json()["pending_id"]
+
+    r = client.post("/memory/confirm", json={"pending_id": pending_id})
+    assert r.status_code == 200
+    assert r.json()["status"] == "confirmed"
+
+    record_id = r.json()["record_id"]
+    r = client.get(f"/memory/{record_id}")
+    assert r.status_code == 200
 
 
-@pytest.fixture
-def seeded_reminders(db):
-    future = datetime.now() + timedelta(hours=2)
-    past = datetime.now() - timedelta(minutes=10)
+def test_dismiss_pending(client):
+    draft = {"category": "general", "title": "Test", "content": "Test"}
+    r = client.post("/memory/pending", json=draft)
+    pending_id = r.json()["pending_id"]
 
-    db.create(Memory(
-        id="rem-1",
-        content="Take meds",
-        raw_input="remind me to take meds",
-        memory_type="reminder",
-        tags=["health"],
-        source="telegram",
-        remind_at=future,
-        recurring_minutes=480,
-    ))
-    db.create(Memory(
-        id="rem-2",
-        content="Call dentist",
-        raw_input="remind me to call dentist",
-        memory_type="reminder",
-        tags=["health"],
-        source="telegram",
-        remind_at=past,
-    ))
-    db.create(Memory(
-        id="mem-normal",
-        content="Likes dark mode",
-        raw_input="I like dark mode",
-        memory_type="preference",
-        tags=["ui"],
-        source="telegram",
-    ))
-    return db
+    r = client.delete(f"/memory/pending/{pending_id}")
+    assert r.status_code == 200
+    assert r.json()["status"] == "dismissed"
 
 
-def test_list_active_reminders(client, seeded_reminders):
-    response = client.get("/reminders")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
-    ids = {r["id"] for r in data}
-    assert ids == {"rem-1", "rem-2"}
+def test_triage_endpoint(client):
+    draft = MemoryDraft(
+        category=MemoryCategory.PROFILE,
+        title="Coffee",
+        content="Likes coffee",
+    )
+    with patch("bearmemori.api.routes.run_triage") as mock_triage:
+        mock_triage.return_value = TriageResult(
+            should_save=True,
+            draft=draft,
+        )
+        r = client.post(
+            "/memory/triage",
+            json={"conversation": [{"role": "user", "content": "I love coffee"}]},
+        )
+    assert r.status_code == 200
+    assert r.json()["should_save"] is True
+    assert "pending_id" in r.json()
 
 
-def test_list_due_reminders(client, seeded_reminders):
-    response = client.get("/reminders/due")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["id"] == "rem-2"
+def test_retrieve(client, db, vector_store):
+    _seed_memory(db, vector_store)
+    r = client.get("/memory/retrieve?query_context=coffee")
+    assert r.status_code == 200
+    assert "context_block" in r.json()
+
+
+def test_upcoming_events(client, db, vector_store):
+    future = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    _seed_memory(
+        db, vector_store,
+        id="mem_event",
+        category=MemoryCategory.EVENT,
+        title="Meeting",
+        content="Team meeting",
+        event_fields=EventFields(datetime=future, status="pending"),
+    )
+    r = client.get("/memory/events/upcoming")
+    assert r.status_code == 200
+    assert len(r.json()["events"]) == 1
