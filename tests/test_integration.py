@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -5,11 +6,13 @@ import pytest
 from bearmemori.core.followup import FollowUpManager
 from bearmemori.core.processor import Processor
 from bearmemori.core.queue import QueueManager
+from bearmemori.core.scheduler import ReminderScheduler
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import (
     FollowUpRequired,
     InputReceived,
     MemoryStored,
+    ReminderDue,
     SendMessage,
 )
 from bearmemori.llm.client import ClassificationResult, ExtractionResult
@@ -124,3 +127,51 @@ async def test_followup_flow(wired_system, mock_llm, db):
 
     memories = db.list_memories()
     assert len(memories) == 1
+
+
+@pytest.mark.asyncio
+async def test_reminder_store_and_fire_flow(wired_system, mock_llm, db):
+    bus = wired_system["bus"]
+    queue = wired_system["queue"]
+    processor = wired_system["processor"]
+
+    remind_time = datetime.now() - timedelta(minutes=1)  # already due
+
+    mock_llm.classify_input.return_value = ClassificationResult(
+        action="store", memory_type="reminder", confidence=0.95
+    )
+    mock_llm.extract_memory.return_value = ExtractionResult(
+        content="Take meds",
+        memory_type="reminder",
+        tags=["health"],
+        remind_at=remind_time.isoformat(),
+        recurring_minutes=None,
+    )
+    mock_llm.get_embedding.return_value = [0.1, 0.2, 0.3]
+
+    # Send input through the pipeline
+    await bus.emit(
+        InputReceived(input_type="text", content="remind me to take meds", source_chat_id="42")
+    )
+    item = await queue.get_next()
+    await processor.process_item(item)
+
+    # Verify reminder stored
+    memories = db.list_memories(memory_type="reminder")
+    assert len(memories) == 1
+    assert memories[0].remind_at is not None
+
+    # Fire the scheduler
+    scheduler = ReminderScheduler(bus=bus, db=db, poll_interval_seconds=60)
+
+    fired = []
+    bus.on(ReminderDue, lambda e: fired.append(e))
+
+    await scheduler.check_reminders()
+
+    assert len(fired) == 1
+    assert fired[0].content == "Take meds"
+
+    # One-off reminder should now have remind_at = None
+    updated = db.get(memories[0].id)
+    assert updated.remind_at is None
