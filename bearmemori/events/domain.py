@@ -25,7 +25,7 @@ class FollowUpRequired(Event):
 class MemoryStored(Event):
     memory_id: str
     content: str
-    memory_type: str
+    category: str
     source_chat_id: str
 
 
