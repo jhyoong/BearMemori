@@ -98,6 +98,32 @@ def _make_embedding(values: list[float]) -> bytes:
     return struct.pack(f"{len(values)}f", *values)
 
 
+def test_create_memory_with_reminder_fields(db):
+    from datetime import datetime, timedelta
+
+    remind_time = datetime.now() + timedelta(hours=1)
+    memory = _make_memory(
+        id="reminder-1",
+        memory_type="reminder",
+        remind_at=remind_time,
+        recurring_minutes=480,
+    )
+    db.create(memory)
+    result = db.get("reminder-1")
+    assert result is not None
+    assert result.remind_at == remind_time
+    assert result.recurring_minutes == 480
+
+
+def test_create_memory_without_reminder_fields(db):
+    memory = _make_memory(id="normal-1")
+    db.create(memory)
+    result = db.get("normal-1")
+    assert result is not None
+    assert result.remind_at is None
+    assert result.recurring_minutes is None
+
+
 def test_search_semantic(db):
     emb1 = _make_embedding([1.0, 0.0, 0.0])
     emb2 = _make_embedding([0.0, 1.0, 0.0])

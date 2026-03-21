@@ -28,7 +28,9 @@ class MemoryDatabase:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 source TEXT NOT NULL DEFAULT 'unknown',
-                metadata TEXT NOT NULL DEFAULT '{}'
+                metadata TEXT NOT NULL DEFAULT '{}',
+                remind_at TEXT,
+                recurring_minutes INTEGER
             )
         """)
         self._conn.execute("""
@@ -69,13 +71,15 @@ class MemoryDatabase:
             updated_at=datetime.fromisoformat(row["updated_at"]),
             source=row["source"],
             metadata=json.loads(row["metadata"]),
+            remind_at=datetime.fromisoformat(row["remind_at"]) if row["remind_at"] else None,
+            recurring_minutes=row["recurring_minutes"],
         )
 
     def create(self, memory: Memory) -> None:
         self._conn.execute(
             """INSERT INTO memories (id, content, raw_input, memory_type, tags, embedding,
-               created_at, updated_at, source, metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               created_at, updated_at, source, metadata, remind_at, recurring_minutes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 memory.id,
                 memory.content,
@@ -87,6 +91,8 @@ class MemoryDatabase:
                 memory.updated_at.isoformat(),
                 memory.source,
                 json.dumps(memory.metadata),
+                memory.remind_at.isoformat() if memory.remind_at else None,
+                memory.recurring_minutes,
             ),
         )
         self._conn.commit()
@@ -101,7 +107,7 @@ class MemoryDatabase:
         memory.updated_at = datetime.now()
         self._conn.execute(
             """UPDATE memories SET content=?, raw_input=?, memory_type=?, tags=?,
-               embedding=?, updated_at=?, source=?, metadata=?
+               embedding=?, updated_at=?, source=?, metadata=?, remind_at=?, recurring_minutes=?
                WHERE id=?""",
             (
                 memory.content,
@@ -112,6 +118,8 @@ class MemoryDatabase:
                 memory.updated_at.isoformat(),
                 memory.source,
                 json.dumps(memory.metadata),
+                memory.remind_at.isoformat() if memory.remind_at else None,
+                memory.recurring_minutes,
                 memory.id,
             ),
         )
