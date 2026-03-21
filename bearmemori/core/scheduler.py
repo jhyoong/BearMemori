@@ -1,10 +1,10 @@
 import asyncio
 import logging
-from datetime import timedelta
 
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import ReminderDue
 from bearmemori.storage.database import MemoryDatabase
+from bearmemori.storage.models import EventFields
 
 logger = logging.getLogger(__name__)
 
@@ -16,25 +16,34 @@ class ReminderScheduler:
         self._poll_interval = poll_interval_seconds
 
     async def check_reminders(self) -> None:
-        due = self._db.get_due_reminders()
-        for memory in due:
-            source_chat_id = memory.metadata.get("source_chat_id", "")
+        due = self._db.get_due_events()
+        for record in due:
+            source_chat_id = ""
+            if record.source:
+                source_chat_id = record.source.chat_id
+            elif record.metadata.get("source_chat_id"):
+                source_chat_id = record.metadata["source_chat_id"]
+
+            remind_at_iso = record.event_fields.datetime if record.event_fields else ""
+
             await self._bus.emit(
                 ReminderDue(
-                    memory_id=memory.id,
-                    content=memory.content,
+                    memory_id=record.id,
+                    content=record.content,
                     source_chat_id=source_chat_id,
-                    remind_at_iso=memory.remind_at.isoformat(),
+                    remind_at_iso=remind_at_iso,
                 )
             )
 
-            if memory.recurring_minutes:
-                memory.remind_at = memory.remind_at + timedelta(minutes=memory.recurring_minutes)
-            else:
-                memory.remind_at = None
-
-            self._db.update(memory)
-            logger.info("Fired reminder %s: %s", memory.id, memory.content[:80])
+            # Mark as done
+            if record.event_fields:
+                record.event_fields = EventFields(
+                    datetime=record.event_fields.datetime,
+                    status="done",
+                    recurrence=record.event_fields.recurrence,
+                )
+            self._db.update(record)
+            logger.info("Fired reminder %s: %s", record.id, record.content[:80])
 
     async def run(self) -> None:
         logger.info("Reminder scheduler started (poll every %ds)", self._poll_interval)

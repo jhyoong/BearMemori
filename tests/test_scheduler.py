@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -6,23 +6,28 @@ import pytest
 from bearmemori.core.scheduler import ReminderScheduler
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import ReminderDue
-from bearmemori.storage.models import Memory
+from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord, MemorySource
 
 
-def _make_reminder(**overrides) -> Memory:
+def _make_record(**overrides) -> MemoryRecord:
     defaults = {
         "id": "rem-1",
+        "category": MemoryCategory.REMINDER,
+        "title": "Reminder",
         "content": "Take meds",
+        "created_at": datetime.now(timezone.utc),
         "raw_input": "remind me to take meds",
-        "memory_type": "reminder",
+        "event_fields": EventFields(
+            datetime="2026-03-21T10:00:00",
+            status="pending",
+            recurrence=None,
+        ),
         "tags": ["health"],
-        "source": "telegram",
-        "remind_at": datetime.now() - timedelta(minutes=5),
-        "recurring_minutes": None,
-        "metadata": {"source_chat_id": "42"},
+        "source": MemorySource(platform="telegram", chat_id="42"),
+        "metadata": {},
     }
     defaults.update(overrides)
-    return Memory(**defaults)
+    return MemoryRecord(**defaults)
 
 
 @pytest.fixture
@@ -42,8 +47,8 @@ def scheduler(bus, mock_db):
 
 @pytest.mark.asyncio
 async def test_check_fires_due_reminder(scheduler, bus, mock_db):
-    reminder = _make_reminder()
-    mock_db.get_due_reminders.return_value = [reminder]
+    record = _make_record()
+    mock_db.get_due_events.return_value = [record]
 
     fired = []
     bus.on(ReminderDue, lambda e: fired.append(e))
@@ -54,41 +59,61 @@ async def test_check_fires_due_reminder(scheduler, bus, mock_db):
     assert fired[0].memory_id == "rem-1"
     assert fired[0].content == "Take meds"
     assert fired[0].source_chat_id == "42"
+    assert fired[0].remind_at_iso == "2026-03-21T10:00:00"
 
 
 @pytest.mark.asyncio
-async def test_check_nulls_oneoff_reminder(scheduler, mock_db):
-    reminder = _make_reminder(recurring_minutes=None)
-    mock_db.get_due_reminders.return_value = [reminder]
+async def test_check_marks_event_done(scheduler, mock_db):
+    record = _make_record()
+    mock_db.get_due_events.return_value = [record]
 
     await scheduler.check_reminders()
 
     mock_db.update.assert_called_once()
     updated = mock_db.update.call_args[0][0]
-    assert updated.remind_at is None
+    assert updated.event_fields.status == "done"
 
 
 @pytest.mark.asyncio
-async def test_check_advances_recurring_reminder(scheduler, mock_db):
-    original_time = datetime.now() - timedelta(minutes=5)
-    reminder = _make_reminder(
-        remind_at=original_time,
-        recurring_minutes=480,
+async def test_check_preserves_recurrence_when_marking_done(scheduler, mock_db):
+    record = _make_record(
+        event_fields=EventFields(
+            datetime="2026-03-21T10:00:00",
+            status="pending",
+            recurrence="daily",
+        )
     )
-    mock_db.get_due_reminders.return_value = [reminder]
+    mock_db.get_due_events.return_value = [record]
 
     await scheduler.check_reminders()
 
     mock_db.update.assert_called_once()
     updated = mock_db.update.call_args[0][0]
-    expected_next = original_time + timedelta(minutes=480)
-    assert updated.remind_at == expected_next
-    assert updated.recurring_minutes == 480
+    assert updated.event_fields.status == "done"
+    assert updated.event_fields.recurrence == "daily"
+    assert updated.event_fields.datetime == "2026-03-21T10:00:00"
 
 
 @pytest.mark.asyncio
-async def test_check_no_due_reminders(scheduler, bus, mock_db):
-    mock_db.get_due_reminders.return_value = []
+async def test_check_source_chat_id_from_metadata(scheduler, bus, mock_db):
+    record = _make_record(
+        source=None,
+        metadata={"source_chat_id": "99"},
+    )
+    mock_db.get_due_events.return_value = [record]
+
+    fired = []
+    bus.on(ReminderDue, lambda e: fired.append(e))
+
+    await scheduler.check_reminders()
+
+    assert len(fired) == 1
+    assert fired[0].source_chat_id == "99"
+
+
+@pytest.mark.asyncio
+async def test_check_no_due_events(scheduler, bus, mock_db):
+    mock_db.get_due_events.return_value = []
 
     fired = []
     bus.on(ReminderDue, lambda e: fired.append(e))
