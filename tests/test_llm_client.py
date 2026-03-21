@@ -17,7 +17,7 @@ async def test_classify_input_returns_store(client):
     mock_response.choices = [
         AsyncMock(message=AsyncMock(content=json.dumps({
             "action": "store",
-            "memory_type": "preference",
+            "category": "profile",
             "confidence": 0.9,
         })))
     ]
@@ -26,7 +26,7 @@ async def test_classify_input_returns_store(client):
         result = await client.classify_input("I prefer dark mode")
 
     assert result.action == "store"
-    assert result.memory_type == "preference"
+    assert result.category == "profile"
 
 
 @pytest.mark.asyncio
@@ -52,8 +52,10 @@ async def test_extract_memory(client):
     mock_response.choices = [
         AsyncMock(message=AsyncMock(content=json.dumps({
             "content": "User prefers dark mode in all applications",
-            "memory_type": "preference",
+            "category": "profile",
+            "title": "Dark mode preference",
             "tags": ["ui", "dark-mode", "preference"],
+            "event_fields": None,
         })))
     ]
 
@@ -61,6 +63,8 @@ async def test_extract_memory(client):
         result = await client.extract_memory("I prefer dark mode", context=None)
 
     assert result.content == "User prefers dark mode in all applications"
+    assert result.category == "profile"
+    assert result.title == "Dark mode preference"
     assert "dark-mode" in result.tags
 
 
@@ -83,7 +87,7 @@ async def test_classify_reminder(client):
     mock_response.choices = [
         AsyncMock(message=AsyncMock(content=json.dumps({
             "action": "store",
-            "memory_type": "reminder",
+            "category": "reminder",
             "confidence": 0.95,
         })))
     ]
@@ -92,7 +96,7 @@ async def test_classify_reminder(client):
         result = await client.classify_input("remind me to take meds at 8pm")
 
     assert result.action == "store"
-    assert result.memory_type == "reminder"
+    assert result.category == "reminder"
 
 
 @pytest.mark.asyncio
@@ -101,19 +105,23 @@ async def test_extract_reminder(client):
     mock_response.choices = [
         AsyncMock(message=AsyncMock(content=json.dumps({
             "content": "Take meds",
-            "memory_type": "reminder",
+            "category": "reminder",
+            "title": "Take meds at 8pm",
             "tags": ["health"],
-            "remind_at": "2026-03-21T20:00:00",
-            "recurring_minutes": None,
+            "event_fields": {
+                "datetime": "2026-03-21T20:00:00",
+                "status": "pending",
+                "recurrence": None,
+            },
         })))
     ]
 
     with patch.object(client._client.chat.completions, "create", return_value=mock_response):
         result = await client.extract_memory("remind me to take meds at 8pm", None)
 
-    assert result.memory_type == "reminder"
-    assert result.remind_at == "2026-03-21T20:00:00"
-    assert result.recurring_minutes is None
+    assert result.category == "reminder"
+    assert result.event_fields["datetime"] == "2026-03-21T20:00:00"
+    assert result.event_fields["recurrence"] is None
 
 
 @pytest.mark.asyncio
@@ -121,15 +129,20 @@ async def test_extract_recurring_reminder(client):
     mock_response = AsyncMock()
     mock_response.choices = [
         AsyncMock(message=AsyncMock(content=json.dumps({
-            "content": "Take meds",
-            "memory_type": "reminder",
+            "content": "Take meds every 8 hours",
+            "category": "reminder",
+            "title": "Take meds every 8 hours",
             "tags": ["health"],
-            "remind_at": "2026-03-21T20:00:00",
-            "recurring_minutes": 480,
+            "event_fields": {
+                "datetime": "2026-03-21T20:00:00",
+                "status": "pending",
+                "recurrence": "every 8 hours",
+            },
         })))
     ]
 
     with patch.object(client._client.chat.completions, "create", return_value=mock_response):
         result = await client.extract_memory("remind me every 8 hours to take meds", None)
 
-    assert result.recurring_minutes == 480
+    assert result.category == "reminder"
+    assert result.event_fields["recurrence"] == "every 8 hours"

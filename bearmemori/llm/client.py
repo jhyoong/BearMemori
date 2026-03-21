@@ -9,17 +9,17 @@ logger = logging.getLogger(__name__)
 
 class ClassificationResult(BaseModel):
     action: str  # "store" or "followup"
-    memory_type: str | None = None
+    category: str | None = None
     confidence: float | None = None
     question: str | None = None
 
 
 class ExtractionResult(BaseModel):
     content: str
-    memory_type: str
+    category: str
+    title: str
     tags: list[str]
-    remind_at: str | None = None
-    recurring_minutes: int | None = None
+    event_fields: dict | None = None
 
 
 CLASSIFY_SYSTEM_PROMPT = (
@@ -28,8 +28,8 @@ CLASSIFY_SYSTEM_PROMPT = (
     '2. "followup" - the input is unclear and needs more context\n'
     "\n"
     "Respond with JSON only:\n"
-    '- For store: {"action": "store", "memory_type": "<type>", "confidence": <0-1>}\n'
-    "  Types: preference, event, fact, note, person, location, task, reminder\n"
+    '- For store: {"action": "store", "category": "<category>", "confidence": <0-1>}\n'
+    "  Categories: profile, general, event, location, task, reminder\n"
     '- For followup: {"action": "followup", "question": "<your clarifying question>"}'
 )
 
@@ -38,15 +38,14 @@ EXTRACT_SYSTEM_PROMPT = (
     "If follow-up context is provided, use the full conversation to understand the memory.\n"
     "\n"
     "Respond with JSON only:\n"
-    '{"content": "<clear summary of the memory>", "memory_type": "<type>", '
-    '"tags": ["tag1", "tag2"], "remind_at": "<ISO datetime or null>", '
-    '"recurring_minutes": <minutes between recurrences or null>}\n'
-    "Types: preference, event, fact, note, person, location, task, reminder\n"
+    '{"content": "<clear summary of the memory>", "category": "<category>", '
+    '"title": "<short descriptive title>", "tags": ["tag1", "tag2"], '
+    '"event_fields": null}\n'
+    "Categories: profile, general, event, location, task, reminder\n"
     "\n"
-    "For reminders:\n"
-    "- Set remind_at to the ISO 8601 datetime when the reminder should fire\n"
-    "- Set recurring_minutes if the user wants a repeating reminder (e.g., every 8 hours = 480)\n"
-    "- For non-reminder types, set both remind_at and recurring_minutes to null"
+    "For events, tasks, and reminders, set event_fields to:\n"
+    '{"datetime": "<ISO 8601 datetime>", "status": "pending", "recurrence": null}\n'
+    "For non-event categories, set event_fields to null"
 )
 
 FOLLOWUP_SYSTEM_PROMPT = (
@@ -84,9 +83,6 @@ class _ClientWrapper:
     def __init__(self, base_url: str, api_key: str) -> None:
         self._openai = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self.chat = _ChatWrapper(self._openai.chat)
-
-    async def create_embedding(self, model: str, input: str):
-        return await self._openai.embeddings.create(model=model, input=input)
 
 
 class LLMClient:
@@ -132,7 +128,3 @@ class LLMClient:
             temperature=0.7,
         )
         return response.choices[0].message.content
-
-    async def get_embedding(self, text: str, model: str) -> list[float]:
-        response = await self._client.create_embedding(model=model, input=text)
-        return response.data[0].embedding

@@ -1,4 +1,3 @@
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -8,6 +7,7 @@ from bearmemori.core.processor import Processor
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import FollowUpRequired, MemoryStored
 from bearmemori.llm.client import ClassificationResult, ExtractionResult
+from bearmemori.storage.models import MemoryCategory, MemoryRecord
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def mock_db():
 
 @pytest.fixture
 def processor(bus, mock_llm, mock_db):
-    return Processor(bus=bus, llm=mock_llm, db=mock_db, embedding_model="nomic-embed-text")
+    return Processor(bus=bus, llm=mock_llm, db=mock_db)
 
 
 @pytest.mark.asyncio
@@ -38,19 +38,26 @@ async def test_process_item_stores_memory(processor, bus, mock_llm, mock_db):
     bus.on(MemoryStored, lambda e: stored_events.append(e))
 
     mock_llm.classify_input.return_value = ClassificationResult(
-        action="store", memory_type="preference", confidence=0.9
+        action="store", category="profile", confidence=0.9
     )
     mock_llm.extract_memory.return_value = ExtractionResult(
-        content="User likes dark mode", memory_type="preference", tags=["ui"]
+        content="User likes dark mode",
+        category="profile",
+        title="Dark mode preference",
+        tags=["ui"],
     )
-    mock_llm.get_embedding.return_value = [0.1, 0.2, 0.3]
 
     item = QueueItem(input_type="text", content="I like dark mode", source_chat_id="123")
     await processor.process_item(item)
 
     mock_db.create.assert_called_once()
+    created_record = mock_db.create.call_args[0][0]
+    assert isinstance(created_record, MemoryRecord)
+    assert created_record.category == MemoryCategory.PROFILE
+    assert created_record.title == "Dark mode preference"
     assert len(stored_events) == 1
     assert stored_events[0].source_chat_id == "123"
+    assert stored_events[0].category == "profile"
 
 
 @pytest.mark.asyncio
@@ -76,16 +83,19 @@ async def test_process_item_stores_reminder(processor, bus, mock_llm, mock_db):
     bus.on(MemoryStored, lambda e: stored_events.append(e))
 
     mock_llm.classify_input.return_value = ClassificationResult(
-        action="store", memory_type="reminder", confidence=0.95
+        action="store", category="reminder", confidence=0.95
     )
     mock_llm.extract_memory.return_value = ExtractionResult(
-        content="Take meds",
-        memory_type="reminder",
+        content="Take meds every 8 hours",
+        category="reminder",
+        title="Take meds every 8 hours",
         tags=["health"],
-        remind_at="2026-03-21T20:00:00",
-        recurring_minutes=480,
+        event_fields={
+            "datetime": "2026-03-21T20:00:00",
+            "status": "pending",
+            "recurrence": "every 8 hours",
+        },
     )
-    mock_llm.get_embedding.return_value = [0.1, 0.2, 0.3]
 
     item = QueueItem(
         input_type="text",
@@ -95,8 +105,12 @@ async def test_process_item_stores_reminder(processor, bus, mock_llm, mock_db):
     await processor.process_item(item)
 
     mock_db.create.assert_called_once()
-    created_memory = mock_db.create.call_args[0][0]
-    assert created_memory.memory_type == "reminder"
-    assert created_memory.remind_at == datetime.fromisoformat("2026-03-21T20:00:00")
-    assert created_memory.recurring_minutes == 480
-    assert created_memory.metadata["source_chat_id"] == "123"
+    created_record = mock_db.create.call_args[0][0]
+    assert isinstance(created_record, MemoryRecord)
+    assert created_record.category == MemoryCategory.REMINDER
+    assert created_record.title == "Take meds every 8 hours"
+    assert created_record.event_fields.datetime == "2026-03-21T20:00:00"
+    assert created_record.event_fields.recurrence == "every 8 hours"
+    assert created_record.source.chat_id == "123"
+    assert len(stored_events) == 1
+    assert stored_events[0].category == "reminder"

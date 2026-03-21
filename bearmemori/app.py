@@ -63,7 +63,7 @@ def create_application(settings: Settings) -> Application:
     )
 
     queue_manager = QueueManager(bus, max_size=settings.queue_max_size)
-    processor = Processor(bus=bus, llm=llm, db=db, embedding_model=settings.embedding_model)
+    processor = Processor(bus=bus, llm=llm, db=db)
     followup_manager = FollowUpManager(bus)
     telegram = TelegramInterface(
         bus=bus,
