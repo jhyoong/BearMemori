@@ -38,23 +38,27 @@ async def main() -> None:
     settings = Settings()
     application = create_application(settings)
 
-    api = create_api(application.db)
+    api = create_api(
+        db=application.db,
+        vector_store=application.vector_store,
+        pending_store=application.pending_store,
+        llm_base_url=settings.llm_base_url,
+        llm_api_key=settings.llm_api_key,
+        llm_model=settings.llm_model,
+    )
 
     telegram_app = application.telegram.build()
 
-    # Start processing loop
     asyncio.create_task(processing_loop(application))
     asyncio.create_task(application.scheduler.run())
 
-    # Start API server
-    config = uvicorn.Config(api, host="0.0.0.0", port=8000, log_level="info")
+    config = uvicorn.Config(api, host="0.0.0.0", port=settings.api_port, log_level="info")
     server = uvicorn.Server(config)
 
-    # Run telegram and API concurrently
     async with telegram_app:
         await telegram_app.start()
         await telegram_app.updater.start_polling()
-        logger.info("BearMemori is running")
+        logger.info("BearMemori is running on port %d", settings.api_port)
 
         await server.serve()
 

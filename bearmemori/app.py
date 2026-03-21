@@ -10,6 +10,8 @@ from bearmemori.events.domain import FollowUpRequired, InputReceived, ReminderDu
 from bearmemori.interfaces.telegram import TelegramInterface
 from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
+from bearmemori.storage.pending_store import PendingStore
+from bearmemori.storage.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,8 @@ class Application:
         self,
         bus: EventBus,
         db: MemoryDatabase,
+        vector_store: VectorStore,
+        pending_store: PendingStore,
         queue_manager: QueueManager,
         processor: Processor,
         followup_manager: FollowUpManager,
@@ -28,6 +32,8 @@ class Application:
     ) -> None:
         self.bus = bus
         self.db = db
+        self.vector_store = vector_store
+        self.pending_store = pending_store
         self.queue_manager = queue_manager
         self.processor = processor
         self.followup_manager = followup_manager
@@ -42,9 +48,18 @@ def create_application(settings: Settings) -> Application:
     db = MemoryDatabase(settings.database_path)
     db.initialize()
 
+    vector_store = VectorStore(
+        persist_dir=settings.chroma_persist_dir,
+        embedding_model=settings.embedding_model,
+    )
+    vector_store.init()
+
+    pending_store = PendingStore(default_ttl=settings.pending_ttl_seconds)
+
     llm = LLMClient(
         base_url=settings.llm_base_url,
         model=settings.llm_model,
+        api_key=settings.llm_api_key,
     )
 
     queue_manager = QueueManager(bus, max_size=settings.queue_max_size)
@@ -61,7 +76,6 @@ def create_application(settings: Settings) -> Application:
         poll_interval_seconds=settings.reminder_poll_interval_seconds,
     )
 
-    # Wire events
     bus.on(InputReceived, queue_manager.handle_input)
     bus.on(FollowUpRequired, followup_manager.handle_followup_required)
     bus.on(SendMessage, telegram.handle_send_message)
@@ -70,6 +84,8 @@ def create_application(settings: Settings) -> Application:
     return Application(
         bus=bus,
         db=db,
+        vector_store=vector_store,
+        pending_store=pending_store,
         queue_manager=queue_manager,
         processor=processor,
         followup_manager=followup_manager,

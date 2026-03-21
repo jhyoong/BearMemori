@@ -8,7 +8,7 @@ from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import FollowUpRequired, MemoryStored
 from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import Memory
+from bearmemori.storage.models import MemoryRecord
 
 logger = logging.getLogger(__name__)
 

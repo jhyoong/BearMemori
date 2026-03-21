@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from bearmemori.app import create_application
@@ -17,7 +19,10 @@ def settings():
 
 def test_create_application(settings, tmp_path):
     settings.database_path = str(tmp_path / "test.db")
-    app = create_application(settings)
+    with patch("bearmemori.app.VectorStore") as mock_vs_cls:
+        mock_vs = MagicMock()
+        mock_vs_cls.return_value = mock_vs
+        app = create_application(settings)
     assert app.bus is not None
     assert app.db is not None
     assert app.processor is not None
@@ -27,5 +32,18 @@ def test_create_application(settings, tmp_path):
 
 def test_application_has_scheduler(settings, tmp_path):
     settings.database_path = str(tmp_path / "test.db")
-    app = create_application(settings)
+    with patch("bearmemori.app.VectorStore") as mock_vs_cls:
+        mock_vs = MagicMock()
+        mock_vs_cls.return_value = mock_vs
+        app = create_application(settings)
     assert app.scheduler is not None
+
+
+def test_application_has_vector_store_and_pending_store(settings, tmp_path):
+    settings.database_path = str(tmp_path / "test.db")
+    with patch("bearmemori.app.VectorStore") as mock_vs_cls:
+        mock_vs = MagicMock()
+        mock_vs_cls.return_value = mock_vs
+        app = create_application(settings)
+    assert app.vector_store is not None
+    assert app.pending_store is not None
