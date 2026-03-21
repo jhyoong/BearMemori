@@ -1,7 +1,9 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
-from bearmemori.core.processor import Processor
+
+import pytest
+
 from bearmemori.core.models import QueueItem
+from bearmemori.core.processor import Processor
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import FollowUpRequired, MemoryStored
 from bearmemori.llm.client import ClassificationResult, ExtractionResult

@@ -1,9 +1,11 @@
-import pytest
 from datetime import datetime, timedelta
-from bearmemori.core.queue import QueueManager
+
+import pytest
+
 from bearmemori.core.models import QueueItem
+from bearmemori.core.queue import QueueManager
 from bearmemori.events.bus import EventBus
-from bearmemori.events.domain import InputReceived, InputQueued
+from bearmemori.events.domain import InputQueued, InputReceived
 
 
 @pytest.fixture
@@ -30,8 +32,12 @@ async def test_handle_input_queues_item(queue, bus):
 
 @pytest.mark.asyncio
 async def test_get_next_returns_highest_priority(queue):
-    await queue.enqueue(QueueItem(priority=10, input_type="text", content="low", source_chat_id="1"))
-    await queue.enqueue(QueueItem(priority=0, input_type="text", content="high", source_chat_id="2"))
+    await queue.enqueue(
+        QueueItem(priority=10, input_type="text", content="low", source_chat_id="1")
+    )
+    await queue.enqueue(
+        QueueItem(priority=0, input_type="text", content="high", source_chat_id="2")
+    )
 
     item = await queue.get_next()
     assert item.content == "high"
@@ -55,10 +61,14 @@ async def test_queue_fifo_within_same_priority(queue):
     t1 = datetime.now()
     t2 = t1 + timedelta(seconds=1)
     await queue.enqueue(
-        QueueItem(priority=10, input_type="text", content="first", source_chat_id="1", created_at=t1)
+        QueueItem(
+            priority=10, input_type="text", content="first", source_chat_id="1", created_at=t1
+        )
     )
     await queue.enqueue(
-        QueueItem(priority=10, input_type="text", content="second", source_chat_id="1", created_at=t2)
+        QueueItem(
+            priority=10, input_type="text", content="second", source_chat_id="1", created_at=t2
+        )
     )
 
     item = await queue.get_next()

@@ -1,4 +1,5 @@
 import pytest
+
 from bearmemori.app import create_application
 from bearmemori.config import Settings
 

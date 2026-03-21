@@ -1,7 +1,9 @@
 import json
-import pytest
 from unittest.mock import AsyncMock, patch
-from bearmemori.llm.client import LLMClient, ClassificationResult, ExtractionResult
+
+import pytest
+
+from bearmemori.llm.client import LLMClient
 
 
 @pytest.fixture

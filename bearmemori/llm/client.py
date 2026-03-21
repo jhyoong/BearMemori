@@ -20,25 +20,33 @@ class ExtractionResult(BaseModel):
     tags: list[str]
 
 
-CLASSIFY_SYSTEM_PROMPT = """You are a memory classification assistant. Given user input, decide whether to:
-1. "store" - the input contains clear information worth remembering
-2. "followup" - the input is unclear and needs more context
+CLASSIFY_SYSTEM_PROMPT = (
+    "You are a memory classification assistant. Given user input, decide whether to:\n"
+    '1. "store" - the input contains clear information worth remembering\n'
+    '2. "followup" - the input is unclear and needs more context\n'
+    "\n"
+    "Respond with JSON only:\n"
+    '- For store: {"action": "store", "memory_type": "<type>", "confidence": <0-1>}\n'
+    "  Types: preference, event, fact, note, person, location, task\n"
+    '- For followup: {"action": "followup", "question": "<your clarifying question>"}'
+)
 
-Respond with JSON only:
-- For store: {"action": "store", "memory_type": "<type>", "confidence": <0-1>}
-  Types: preference, event, fact, note, person, location, task
-- For followup: {"action": "followup", "question": "<your clarifying question>"}"""
+EXTRACT_SYSTEM_PROMPT = (
+    "You are a memory extraction assistant. Extract structured memory data from the user input.\n"
+    "If follow-up context is provided, use the full conversation to understand the memory.\n"
+    "\n"
+    "Respond with JSON only:\n"
+    '{"content": "<clear summary of the memory>", "memory_type": "<type>", '
+    '"tags": ["tag1", "tag2"]}\n'
+    "Types: preference, event, fact, note, person, location, task"
+)
 
-EXTRACT_SYSTEM_PROMPT = """You are a memory extraction assistant. Extract structured memory data from the user input.
-If follow-up context is provided, use the full conversation to understand the memory.
-
-Respond with JSON only:
-{"content": "<clear summary of the memory>", "memory_type": "<type>", "tags": ["tag1", "tag2"]}
-Types: preference, event, fact, note, person, location, task"""
-
-FOLLOWUP_SYSTEM_PROMPT = """You are a helpful assistant gathering information for a personal memory store.
-Ask a single, clear clarifying question to better understand what the user wants to remember.
-Keep your question short and direct."""
+FOLLOWUP_SYSTEM_PROMPT = (
+    "You are a helpful assistant gathering information for a personal memory store.\n"
+    "Ask a single, clear clarifying question to better understand "
+    "what the user wants to remember.\n"
+    "Keep your question short and direct."
+)
 
 
 class _AsyncCompletionsWrapper:

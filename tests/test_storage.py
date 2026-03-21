@@ -1,6 +1,5 @@
 import struct
 
-import numpy as np
 import pytest
 
 from bearmemori.storage.database import MemoryDatabase

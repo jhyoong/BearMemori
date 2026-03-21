@@ -1,5 +1,6 @@
 import asyncio
 import logging
+
 import uvicorn
 
 from bearmemori.api.routes import create_app as create_api

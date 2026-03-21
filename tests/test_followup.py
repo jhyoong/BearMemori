@@ -1,4 +1,5 @@
 import pytest
+
 from bearmemori.core.followup import FollowUpManager
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import FollowUpRequired, InputReceived, SendMessage

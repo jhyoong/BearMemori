@@ -1,8 +1,10 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
-from bearmemori.interfaces.telegram import TelegramInterface
+
+import pytest
+
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import InputReceived, SendMessage
+from bearmemori.interfaces.telegram import TelegramInterface
 
 
 @pytest.fixture
