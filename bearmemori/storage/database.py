@@ -1,11 +1,13 @@
 import json
 import sqlite3
-import struct
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
-import numpy as np
-
-from bearmemori.storage.models import Memory
+from bearmemori.storage.models import (
+    MemoryRecord,
+    MemoryCategory,
+    EventFields,
+    MemorySource,
+)
 
 
 class MemoryDatabase:
@@ -20,116 +22,143 @@ class MemoryDatabase:
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS memories (
                 id TEXT PRIMARY KEY,
+                category TEXT NOT NULL,
+                title TEXT NOT NULL,
                 content TEXT NOT NULL,
-                raw_input TEXT NOT NULL,
-                memory_type TEXT NOT NULL,
-                tags TEXT NOT NULL DEFAULT '[]',
-                embedding BLOB,
+                raw_input TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                source TEXT NOT NULL DEFAULT 'unknown',
-                metadata TEXT NOT NULL DEFAULT '{}',
-                remind_at TEXT,
-                recurring_minutes INTEGER
+                tags TEXT NOT NULL DEFAULT '[]',
+                source TEXT,
+                event_datetime TEXT,
+                event_status TEXT,
+                event_recurrence TEXT,
+                metadata TEXT NOT NULL DEFAULT '{}'
             )
         """)
         self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_memories_category
+            ON memories (category)
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_memories_event_datetime
+            ON memories (event_datetime)
+            WHERE event_datetime IS NOT NULL
+        """)
+        self._conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
-            USING fts5(content, tags, content=memories, content_rowid=rowid)
+            USING fts5(title, content, tags, content=memories, content_rowid=rowid)
         """)
         self._conn.execute("""
             CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-                INSERT INTO memories_fts(rowid, content, tags)
-                VALUES (new.rowid, new.content, new.tags);
+                INSERT INTO memories_fts(rowid, title, content, tags)
+                VALUES (new.rowid, new.title, new.content, new.tags);
             END
         """)
         self._conn.execute("""
             CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, rowid, content, tags)
-                VALUES ('delete', old.rowid, old.content, old.tags);
+                INSERT INTO memories_fts(memories_fts, rowid, title, content, tags)
+                VALUES ('delete', old.rowid, old.title, old.content, old.tags);
             END
         """)
         self._conn.execute("""
             CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, rowid, content, tags)
-                VALUES ('delete', old.rowid, old.content, old.tags);
-                INSERT INTO memories_fts(rowid, content, tags)
-                VALUES (new.rowid, new.content, new.tags);
+                INSERT INTO memories_fts(memories_fts, rowid, title, content, tags)
+                VALUES ('delete', old.rowid, old.title, old.content, old.tags);
+                INSERT INTO memories_fts(rowid, title, content, tags)
+                VALUES (new.rowid, new.title, new.content, new.tags);
             END
         """)
         self._conn.commit()
 
-    def _row_to_memory(self, row: sqlite3.Row) -> Memory:
-        return Memory(
+    def _row_to_record(self, row: sqlite3.Row) -> MemoryRecord:
+        event_fields = None
+        if row["event_datetime"] is not None:
+            event_fields = EventFields(
+                datetime=row["event_datetime"],
+                status=row["event_status"] or "pending",
+                recurrence=row["event_recurrence"],
+            )
+
+        source = None
+        if row["source"] is not None:
+            source = MemorySource.model_validate_json(row["source"])
+
+        return MemoryRecord(
             id=row["id"],
+            category=MemoryCategory(row["category"]),
+            title=row["title"],
             content=row["content"],
             raw_input=row["raw_input"],
-            memory_type=row["memory_type"],
-            tags=json.loads(row["tags"]),
-            embedding=row["embedding"],
             created_at=datetime.fromisoformat(row["created_at"]),
-            updated_at=datetime.fromisoformat(row["updated_at"]),
-            source=row["source"],
+            event_fields=event_fields,
+            tags=json.loads(row["tags"]),
+            source=source,
             metadata=json.loads(row["metadata"]),
-            remind_at=datetime.fromisoformat(row["remind_at"]) if row["remind_at"] else None,
-            recurring_minutes=row["recurring_minutes"],
         )
 
-    def create(self, memory: Memory) -> None:
+    def create(self, record: MemoryRecord) -> None:
+        event_dt = None
+        event_status = None
+        event_recurrence = None
+        if record.event_fields:
+            event_dt = record.event_fields.datetime
+            event_status = record.event_fields.status
+            event_recurrence = record.event_fields.recurrence
+
+        source_json = record.source.model_dump_json() if record.source else None
+        now = datetime.now(timezone.utc).isoformat()
+
         self._conn.execute(
-            """INSERT INTO memories (id, content, raw_input, memory_type, tags, embedding,
-               created_at, updated_at, source, metadata, remind_at, recurring_minutes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO memories
+               (id, category, title, content, raw_input, created_at, updated_at,
+                tags, source, event_datetime, event_status, event_recurrence, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                memory.id,
-                memory.content,
-                memory.raw_input,
-                memory.memory_type,
-                json.dumps(memory.tags),
-                memory.embedding,
-                memory.created_at.isoformat(),
-                memory.updated_at.isoformat(),
-                memory.source,
-                json.dumps(memory.metadata),
-                memory.remind_at.isoformat() if memory.remind_at else None,
-                memory.recurring_minutes,
+                record.id,
+                record.category.value,
+                record.title,
+                record.content,
+                record.raw_input,
+                record.created_at.isoformat(),
+                now,
+                json.dumps(record.tags),
+                source_json,
+                event_dt,
+                event_status,
+                event_recurrence,
+                json.dumps(record.metadata),
             ),
         )
         self._conn.commit()
 
-    def get(self, memory_id: str) -> Memory | None:
+    def get(self, record_id: str) -> MemoryRecord | None:
         row = self._conn.execute(
-            "SELECT * FROM memories WHERE id = ?", (memory_id,)
+            "SELECT * FROM memories WHERE id = ?", (record_id,)
         ).fetchone()
-        return self._row_to_memory(row) if row else None
+        return self._row_to_record(row) if row else None
 
-    def update(self, memory: Memory) -> None:
-        memory.updated_at = datetime.now()
-        self._conn.execute(
-            """UPDATE memories SET content=?, raw_input=?, memory_type=?, tags=?,
-               embedding=?, updated_at=?, source=?, metadata=?, remind_at=?, recurring_minutes=?
-               WHERE id=?""",
-            (
-                memory.content,
-                memory.raw_input,
-                memory.memory_type,
-                json.dumps(memory.tags),
-                memory.embedding,
-                memory.updated_at.isoformat(),
-                memory.source,
-                json.dumps(memory.metadata),
-                memory.remind_at.isoformat() if memory.remind_at else None,
-                memory.recurring_minutes,
-                memory.id,
-            ),
+    def delete(self, record_id: str) -> bool:
+        cursor = self._conn.execute(
+            "DELETE FROM memories WHERE id = ?", (record_id,)
         )
         self._conn.commit()
+        return cursor.rowcount > 0
 
-    def delete(self, memory_id: str) -> None:
-        self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
-        self._conn.commit()
+    def list_all(self) -> list[MemoryRecord]:
+        rows = self._conn.execute(
+            "SELECT * FROM memories ORDER BY created_at DESC"
+        ).fetchall()
+        return [self._row_to_record(r) for r in rows]
 
-    def search_keyword(self, query: str, limit: int = 20) -> list[Memory]:
+    def list_by_category(self, category: MemoryCategory) -> list[MemoryRecord]:
+        rows = self._conn.execute(
+            "SELECT * FROM memories WHERE category = ? ORDER BY created_at DESC",
+            (category.value,),
+        ).fetchall()
+        return [self._row_to_record(r) for r in rows]
+
+    def search_keyword(self, query: str, limit: int = 20) -> list[MemoryRecord]:
         rows = self._conn.execute(
             """SELECT memories.* FROM memories_fts
                JOIN memories ON memories.rowid = memories_fts.rowid
@@ -138,65 +167,66 @@ class MemoryDatabase:
                LIMIT ?""",
             (query, limit),
         ).fetchall()
-        return [self._row_to_memory(row) for row in rows]
+        return [self._row_to_record(r) for r in rows]
 
-    def search_semantic(self, query_embedding: bytes, limit: int = 20) -> list[Memory]:
-        rows = self._conn.execute("SELECT * FROM memories WHERE embedding IS NOT NULL").fetchall()
-        if not rows:
-            return []
-
-        query_vec = np.array(struct.unpack(f"{len(query_embedding) // 4}f", query_embedding))
-        query_norm = np.linalg.norm(query_vec)
-        if query_norm == 0:
-            return []
-
-        scored = []
-        for row in rows:
-            emb = row["embedding"]
-            vec = np.array(struct.unpack(f"{len(emb) // 4}f", emb))
-            norm = np.linalg.norm(vec)
-            if norm == 0:
-                continue
-            similarity = np.dot(query_vec, vec) / (query_norm * norm)
-            scored.append((similarity, row))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [self._row_to_memory(row) for _, row in scored[:limit]]
-
-    def list_memories(
-        self,
-        memory_type: str | None = None,
-        tag: str | None = None,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[Memory]:
-        query = "SELECT * FROM memories WHERE 1=1"
-        params: list = []
-        if memory_type:
-            query += " AND memory_type = ?"
-            params.append(memory_type)
-        if tag:
-            query += " AND json_each.value = ?"
-            query = query.replace(
-                "FROM memories",
-                "FROM memories, json_each(memories.tags)",
-            )
-            params.append(tag)
-        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-        rows = self._conn.execute(query, params).fetchall()
-        return [self._row_to_memory(row) for row in rows]
-
-    def get_due_reminders(self) -> list[Memory]:
-        now = datetime.now().isoformat()
+    def get_upcoming_events(self, days: int = 7) -> list[MemoryRecord]:
+        now = datetime.now(timezone.utc).isoformat()
+        future = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
         rows = self._conn.execute(
-            "SELECT * FROM memories WHERE remind_at IS NOT NULL AND remind_at <= ?",
+            """SELECT * FROM memories
+               WHERE category IN ('event', 'reminder', 'task')
+                 AND event_datetime IS NOT NULL
+                 AND event_datetime >= ?
+                 AND event_datetime <= ?
+                 AND (event_status IS NULL OR event_status = 'pending')
+               ORDER BY event_datetime ASC""",
+            (now, future),
+        ).fetchall()
+        return [self._row_to_record(r) for r in rows]
+
+    def get_due_events(self) -> list[MemoryRecord]:
+        now = datetime.now(timezone.utc).isoformat()
+        rows = self._conn.execute(
+            """SELECT * FROM memories
+               WHERE category IN ('event', 'reminder', 'task')
+                 AND event_datetime IS NOT NULL
+                 AND event_datetime <= ?
+                 AND (event_status IS NULL OR event_status = 'pending')
+               ORDER BY event_datetime ASC""",
             (now,),
         ).fetchall()
-        return [self._row_to_memory(row) for row in rows]
+        return [self._row_to_record(r) for r in rows]
 
-    def get_active_reminders(self) -> list[Memory]:
-        rows = self._conn.execute(
-            "SELECT * FROM memories WHERE remind_at IS NOT NULL ORDER BY remind_at ASC"
-        ).fetchall()
-        return [self._row_to_memory(row) for row in rows]
+    def update(self, record: MemoryRecord) -> None:
+        event_dt = None
+        event_status = None
+        event_recurrence = None
+        if record.event_fields:
+            event_dt = record.event_fields.datetime
+            event_status = record.event_fields.status
+            event_recurrence = record.event_fields.recurrence
+
+        source_json = record.source.model_dump_json() if record.source else None
+        now = datetime.now(timezone.utc).isoformat()
+
+        self._conn.execute(
+            """UPDATE memories SET category=?, title=?, content=?, raw_input=?,
+               updated_at=?, tags=?, source=?, event_datetime=?, event_status=?,
+               event_recurrence=?, metadata=?
+               WHERE id=?""",
+            (
+                record.category.value,
+                record.title,
+                record.content,
+                record.raw_input,
+                now,
+                json.dumps(record.tags),
+                source_json,
+                event_dt,
+                event_status,
+                event_recurrence,
+                json.dumps(record.metadata),
+                record.id,
+            ),
+        )
+        self._conn.commit()

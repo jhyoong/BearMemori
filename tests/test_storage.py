@@ -1,183 +1,124 @@
-import struct
-
 import pytest
+from datetime import datetime, timezone, timedelta
 
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import Memory
+from bearmemori.storage.models import (
+    MemoryRecord,
+    MemoryCategory,
+    EventFields,
+    MemorySource,
+)
 
 
 @pytest.fixture
 def db(tmp_path):
-    db_path = str(tmp_path / "test.db")
-    database = MemoryDatabase(db_path)
-    database.initialize()
-    return database
+    d = MemoryDatabase(str(tmp_path / "test.db"))
+    d.initialize()
+    return d
 
 
-def _make_memory(**overrides) -> Memory:
-    defaults = {
-        "id": "test-id-1",
-        "content": "User prefers dark mode",
-        "raw_input": "I like dark mode",
-        "memory_type": "preference",
-        "tags": ["ui", "preference"],
-        "source": "telegram",
-    }
+def _make_record(**overrides) -> MemoryRecord:
+    defaults = dict(
+        id="mem_test1",
+        category=MemoryCategory.PROFILE,
+        title="Test memory",
+        content="Test content",
+        created_at=datetime.now(timezone.utc),
+        tags=["test"],
+    )
     defaults.update(overrides)
-    return Memory(**defaults)
+    return MemoryRecord(**defaults)
 
 
-def test_create_and_get_memory(db):
-    memory = _make_memory()
-    db.create(memory)
-    result = db.get("test-id-1")
+def test_create_and_get(db):
+    record = _make_record()
+    db.create(record)
+    result = db.get("mem_test1")
     assert result is not None
-    assert result.content == "User prefers dark mode"
-    assert result.tags == ["ui", "preference"]
+    assert result.id == "mem_test1"
+    assert result.category == MemoryCategory.PROFILE
+    assert result.title == "Test memory"
 
 
-def test_get_nonexistent_returns_none(db):
-    assert db.get("nope") is None
+def test_get_nonexistent(db):
+    assert db.get("nonexistent") is None
 
 
-def test_update_memory(db):
-    memory = _make_memory()
-    db.create(memory)
-    memory.content = "User prefers light mode"
-    memory.tags = ["ui", "preference", "updated"]
-    db.update(memory)
-    result = db.get("test-id-1")
-    assert result.content == "User prefers light mode"
-    assert "updated" in result.tags
+def test_delete(db):
+    db.create(_make_record())
+    assert db.delete("mem_test1") is True
+    assert db.get("mem_test1") is None
 
 
-def test_delete_memory(db):
-    db.create(_make_memory())
-    db.delete("test-id-1")
-    assert db.get("test-id-1") is None
+def test_delete_nonexistent(db):
+    assert db.delete("nonexistent") is False
 
 
-def test_list_memories(db):
-    db.create(_make_memory(id="1", memory_type="preference"))
-    db.create(_make_memory(id="2", memory_type="event"))
-    db.create(_make_memory(id="3", memory_type="preference"))
-
-    all_memories = db.list_memories()
-    assert len(all_memories) == 3
-
-    prefs = db.list_memories(memory_type="preference")
-    assert len(prefs) == 2
+def test_list_all(db):
+    db.create(_make_record(id="mem_1"))
+    db.create(_make_record(id="mem_2", category=MemoryCategory.GENERAL))
+    result = db.list_all()
+    assert len(result) == 2
 
 
-def test_list_memories_by_tag(db):
-    db.create(_make_memory(id="1", tags=["food", "preference"]))
-    db.create(_make_memory(id="2", tags=["music"]))
+def test_list_by_category(db):
+    db.create(_make_record(id="mem_1", category=MemoryCategory.PROFILE))
+    db.create(_make_record(id="mem_2", category=MemoryCategory.EVENT))
+    result = db.list_by_category(MemoryCategory.PROFILE)
+    assert len(result) == 1
+    assert result[0].id == "mem_1"
 
-    results = db.list_memories(tag="food")
+
+def test_event_fields_roundtrip(db):
+    record = _make_record(
+        category=MemoryCategory.EVENT,
+        event_fields=EventFields(
+            datetime="2026-03-25T14:00:00",
+            status="pending",
+            recurrence="weekly",
+        ),
+    )
+    db.create(record)
+    result = db.get("mem_test1")
+    assert result.event_fields is not None
+    assert result.event_fields.datetime == "2026-03-25T14:00:00"
+    assert result.event_fields.recurrence == "weekly"
+
+
+def test_source_roundtrip(db):
+    record = _make_record(
+        source=MemorySource(platform="telegram", chat_id="123", message_ids=["msg1"]),
+    )
+    db.create(record)
+    result = db.get("mem_test1")
+    assert result.source is not None
+    assert result.source.platform == "telegram"
+    assert result.source.chat_id == "123"
+
+
+def test_upcoming_events(db):
+    now = datetime.now(timezone.utc)
+    future = (now + timedelta(days=2)).isoformat()
+    past = (now - timedelta(days=2)).isoformat()
+
+    db.create(_make_record(
+        id="mem_future",
+        category=MemoryCategory.EVENT,
+        event_fields=EventFields(datetime=future, status="pending"),
+    ))
+    db.create(_make_record(
+        id="mem_past",
+        category=MemoryCategory.EVENT,
+        event_fields=EventFields(datetime=past, status="pending"),
+    ))
+    results = db.get_upcoming_events(days=7)
     assert len(results) == 1
-    assert results[0].id == "1"
+    assert results[0].id == "mem_future"
 
 
 def test_keyword_search(db):
-    db.create(_make_memory(id="1", content="User likes pizza for dinner"))
-    db.create(_make_memory(id="2", content="User prefers dark mode in editors"))
-    db.create(_make_memory(id="3", content="Meeting with John on Friday"))
-
-    results = db.search_keyword("pizza")
-    assert len(results) == 1
-    assert results[0].id == "1"
-
-
-def test_keyword_search_no_results(db):
-    db.create(_make_memory(id="1", content="User likes pizza"))
-    results = db.search_keyword("sushi")
-    assert len(results) == 0
-
-
-def _make_embedding(values: list[float]) -> bytes:
-    return struct.pack(f"{len(values)}f", *values)
-
-
-def test_create_memory_with_reminder_fields(db):
-    from datetime import datetime, timedelta
-
-    remind_time = datetime.now() + timedelta(hours=1)
-    memory = _make_memory(
-        id="reminder-1",
-        memory_type="reminder",
-        remind_at=remind_time,
-        recurring_minutes=480,
-    )
-    db.create(memory)
-    result = db.get("reminder-1")
-    assert result is not None
-    assert result.remind_at == remind_time
-    assert result.recurring_minutes == 480
-
-
-def test_create_memory_without_reminder_fields(db):
-    memory = _make_memory(id="normal-1")
-    db.create(memory)
-    result = db.get("normal-1")
-    assert result is not None
-    assert result.remind_at is None
-    assert result.recurring_minutes is None
-
-
-def test_get_due_reminders(db):
-    from datetime import datetime, timedelta
-
-    past = datetime.now() - timedelta(hours=1)
-    future = datetime.now() + timedelta(hours=1)
-
-    db.create(_make_memory(id="due-1", memory_type="reminder", remind_at=past))
-    db.create(_make_memory(id="not-due", memory_type="reminder", remind_at=future))
-    db.create(_make_memory(id="normal", memory_type="preference"))
-
-    results = db.get_due_reminders()
-    assert len(results) == 1
-    assert results[0].id == "due-1"
-
-
-def test_get_due_reminders_empty(db):
-    from datetime import datetime, timedelta
-
-    future = datetime.now() + timedelta(hours=1)
-    db.create(_make_memory(id="not-due", memory_type="reminder", remind_at=future))
-
-    results = db.get_due_reminders()
-    assert len(results) == 0
-
-
-def test_get_active_reminders(db):
-    from datetime import datetime, timedelta
-
-    past = datetime.now() - timedelta(hours=1)
-    future = datetime.now() + timedelta(hours=1)
-
-    db.create(_make_memory(id="active-1", memory_type="reminder", remind_at=future))
-    db.create(_make_memory(id="active-2", memory_type="reminder", remind_at=past))
-    db.create(_make_memory(id="fired", memory_type="reminder"))  # remind_at is None = already fired
-    db.create(_make_memory(id="normal", memory_type="preference"))
-
-    results = db.get_active_reminders()
-    assert len(results) == 2
-    ids = {r.id for r in results}
-    assert ids == {"active-1", "active-2"}
-
-
-def test_search_semantic(db):
-    emb1 = _make_embedding([1.0, 0.0, 0.0])
-    emb2 = _make_embedding([0.0, 1.0, 0.0])
-    emb3 = _make_embedding([0.9, 0.1, 0.0])
-
-    db.create(_make_memory(id="1", content="pizza", embedding=emb1))
-    db.create(_make_memory(id="2", content="music", embedding=emb2))
-    db.create(_make_memory(id="3", content="pasta", embedding=emb3))
-
-    query_emb = _make_embedding([1.0, 0.0, 0.0])
-    results = db.search_semantic(query_emb, limit=2)
-
-    assert len(results) == 2
-    assert results[0].id == "1"  # exact match first
-    assert results[1].id == "3"  # close second
+    db.create(_make_record(id="mem_1", title="Coffee preference", content="Likes black coffee"))
+    db.create(_make_record(id="mem_2", title="Tea preference", content="Likes green tea"))
+    results = db.search_keyword("coffee")
+    assert len(results) >= 1
+    assert any(r.id == "mem_1" for r in results)
