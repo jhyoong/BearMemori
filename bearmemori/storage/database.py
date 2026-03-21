@@ -118,6 +118,17 @@ class MemoryDatabase:
         self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
         self._conn.commit()
 
+    def search_keyword(self, query: str, limit: int = 20) -> list[Memory]:
+        rows = self._conn.execute(
+            """SELECT memories.* FROM memories_fts
+               JOIN memories ON memories.rowid = memories_fts.rowid
+               WHERE memories_fts MATCH ?
+               ORDER BY rank
+               LIMIT ?""",
+            (query, limit),
+        ).fetchall()
+        return [self._row_to_memory(row) for row in rows]
+
     def list_memories(
         self,
         memory_type: str | None = None,

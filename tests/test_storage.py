@@ -73,3 +73,19 @@ def test_list_memories_by_tag(db):
     results = db.list_memories(tag="food")
     assert len(results) == 1
     assert results[0].id == "1"
+
+
+def test_keyword_search(db):
+    db.create(_make_memory(id="1", content="User likes pizza for dinner"))
+    db.create(_make_memory(id="2", content="User prefers dark mode in editors"))
+    db.create(_make_memory(id="3", content="Meeting with John on Friday"))
+
+    results = db.search_keyword("pizza")
+    assert len(results) == 1
+    assert results[0].id == "1"
+
+
+def test_keyword_search_no_results(db):
+    db.create(_make_memory(id="1", content="User likes pizza"))
+    results = db.search_keyword("sushi")
+    assert len(results) == 0
