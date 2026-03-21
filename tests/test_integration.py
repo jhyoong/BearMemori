@@ -1,177 +1,133 @@
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock
-
 import pytest
+from unittest.mock import patch
+from datetime import datetime, timezone, timedelta
 
-from bearmemori.core.followup import FollowUpManager
-from bearmemori.core.processor import Processor
-from bearmemori.core.queue import QueueManager
-from bearmemori.core.scheduler import ReminderScheduler
-from bearmemori.events.bus import EventBus
-from bearmemori.events.domain import (
-    FollowUpRequired,
-    InputReceived,
-    MemoryStored,
-    ReminderDue,
-    SendMessage,
-)
-from bearmemori.llm.client import ClassificationResult, ExtractionResult
+from fastapi.testclient import TestClient
+
+from bearmemori.api.routes import create_app
 from bearmemori.storage.database import MemoryDatabase
+from bearmemori.storage.models import MemoryCategory, MemoryDraft, EventFields
+from bearmemori.storage.pending_store import PendingStore
+from bearmemori.storage.vector_store import VectorStore
+from bearmemori.core.triage import TriageResult
 
 
 @pytest.fixture
-def db(tmp_path):
-    database = MemoryDatabase(str(tmp_path / "test.db"))
-    database.initialize()
-    return database
-
-
-@pytest.fixture
-def mock_llm():
-    return AsyncMock()
-
-
-@pytest.fixture
-def wired_system(db, mock_llm):
-    bus = EventBus()
-    queue = QueueManager(bus, max_size=100)
-    processor = Processor(bus=bus, llm=mock_llm, db=db, embedding_model="test")
-    followup = FollowUpManager(bus)
-
-    bus.on(InputReceived, queue.handle_input)
-    bus.on(FollowUpRequired, followup.handle_followup_required)
-
-    return {"bus": bus, "queue": queue, "processor": processor, "followup": followup}
-
-
-@pytest.mark.asyncio
-async def test_full_store_flow(wired_system, mock_llm, db):
-    bus = wired_system["bus"]
-    queue = wired_system["queue"]
-    processor = wired_system["processor"]
-
-    stored = []
-    bus.on(MemoryStored, lambda e: stored.append(e))
-
-    mock_llm.classify_input.return_value = ClassificationResult(
-        action="store", memory_type="preference", confidence=0.95
+def full_stack(tmp_path):
+    db = MemoryDatabase(str(tmp_path / "test.db"))
+    db.initialize()
+    vs = VectorStore(persist_dir=str(tmp_path / "chroma"))
+    vs.init()
+    ps = PendingStore()
+    app = create_app(
+        db=db, vector_store=vs, pending_store=ps,
+        llm_base_url="http://test", llm_api_key="test", llm_model="test",
     )
-    mock_llm.extract_memory.return_value = ExtractionResult(
-        content="User likes dark mode", memory_type="preference", tags=["ui"]
+    return TestClient(app), db, vs, ps
+
+
+def test_triage_confirm_retrieve_flow(full_stack):
+    client, db, vs, ps = full_stack
+
+    # 1. Triage proposes a memory
+    draft = MemoryDraft(
+        category=MemoryCategory.PROFILE,
+        title="Coffee preference",
+        content="User likes black coffee",
+        tags=["coffee"],
     )
-    mock_llm.get_embedding.return_value = [0.1, 0.2, 0.3]
+    with patch("bearmemori.api.routes.run_triage") as mock:
+        mock.return_value = TriageResult(should_save=True, draft=draft)
+        r = client.post("/memory/triage", json={
+            "conversation": [{"role": "user", "content": "I love black coffee"}],
+        })
+    assert r.json()["should_save"] is True
+    pending_id = r.json()["pending_id"]
 
-    # Simulate input
-    await bus.emit(
-        InputReceived(input_type="text", content="I like dark mode", source_chat_id="42")
-    )
+    # 2. Confirm the pending memory
+    r = client.post("/memory/confirm", json={"pending_id": pending_id})
+    assert r.json()["status"] == "confirmed"
+    record_id = r.json()["record_id"]
 
-    # Process the queued item
-    item = await queue.get_next()
-    await processor.process_item(item)
+    # 3. Retrieve context
+    r = client.get("/memory/retrieve", params={"query_context": "coffee"})
+    assert "coffee" in r.json()["context_block"].lower()
 
-    assert len(stored) == 1
-    assert stored[0].content == "User likes dark mode"
+    # 4. Search
+    r = client.post("/memory/search", json={"query": "coffee"})
+    assert len(r.json()["results"]) >= 1
 
-    # Verify it's in the database
-    memories = db.list_memories()
-    assert len(memories) == 1
-    assert memories[0].content == "User likes dark mode"
+    # 5. Get by ID
+    r = client.get(f"/memory/{record_id}")
+    assert r.json()["title"] == "Coffee preference"
 
+    # 6. List
+    r = client.get("/memory/list")
+    assert len(r.json()["memories"]) == 1
 
-@pytest.mark.asyncio
-async def test_followup_flow(wired_system, mock_llm, db):
-    bus = wired_system["bus"]
-    queue = wired_system["queue"]
-    processor = wired_system["processor"]
-    followup = wired_system["followup"]
-
-    sent = []
-    bus.on(SendMessage, lambda e: sent.append(e))
-
-    # First input: LLM needs clarification
-    mock_llm.classify_input.return_value = ClassificationResult(
-        action="followup", question="What changed?"
-    )
-    mock_llm.generate_followup.return_value = "Can you be more specific about what changed?"
-
-    await bus.emit(
-        InputReceived(input_type="text", content="something changed", source_chat_id="42")
-    )
-    item = await queue.get_next()
-    await processor.process_item(item)
-
-    assert len(sent) == 1
-    assert followup.has_active_followup("42")
-
-    # Second input: follow-up response
-    mock_llm.classify_input.return_value = ClassificationResult(
-        action="store", memory_type="fact", confidence=0.9
-    )
-    mock_llm.extract_memory.return_value = ExtractionResult(
-        content="Theme changed to dark mode", memory_type="fact", tags=["ui"]
-    )
-    mock_llm.get_embedding.return_value = [0.1, 0.2]
-
-    # Simulate follow-up input
-    followup_event = InputReceived(
-        input_type="text", content="the theme changed to dark mode", source_chat_id="42"
-    )
-    checked = followup.check_followup(followup_event)
-    assert checked is not None
-    assert checked.context is not None
-
-    await bus.emit(checked)
-    item = await queue.get_next()
-    await processor.process_item(item)
-
-    memories = db.list_memories()
-    assert len(memories) == 1
+    # 7. Delete
+    r = client.delete(f"/memory/{record_id}")
+    assert r.json()["status"] == "deleted"
+    r = client.get(f"/memory/{record_id}")
+    assert r.status_code == 404
 
 
-@pytest.mark.asyncio
-async def test_reminder_store_and_fire_flow(wired_system, mock_llm, db):
-    bus = wired_system["bus"]
-    queue = wired_system["queue"]
-    processor = wired_system["processor"]
+def test_triage_no_save_flow(full_stack):
+    client, db, vs, ps = full_stack
 
-    remind_time = datetime.now() - timedelta(minutes=1)  # already due
+    with patch("bearmemori.api.routes.run_triage") as mock:
+        mock.return_value = TriageResult(should_save=False)
+        r = client.post("/memory/triage", json={
+            "conversation": [{"role": "user", "content": "Hello there"}],
+        })
+    assert r.json()["should_save"] is False
+    assert "pending_id" not in r.json()
 
-    mock_llm.classify_input.return_value = ClassificationResult(
-        action="store", memory_type="reminder", confidence=0.95
-    )
-    mock_llm.extract_memory.return_value = ExtractionResult(
-        content="Take meds",
-        memory_type="reminder",
+
+def test_pending_dismiss_flow(full_stack):
+    client, db, vs, ps = full_stack
+
+    # Create pending directly
+    r = client.post("/memory/pending", json={
+        "category": "general",
+        "title": "Test info",
+        "content": "Some test information",
+    })
+    pending_id = r.json()["pending_id"]
+
+    # Dismiss it
+    r = client.delete(f"/memory/pending/{pending_id}")
+    assert r.json()["status"] == "dismissed"
+
+    # Confirm should fail now
+    r = client.post("/memory/confirm", json={"pending_id": pending_id})
+    assert r.status_code == 404
+
+
+def test_event_with_upcoming(full_stack):
+    client, db, vs, ps = full_stack
+
+    future = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    draft = MemoryDraft(
+        category=MemoryCategory.EVENT,
+        title="Dentist appointment",
+        content="Dentist at 2pm",
+        event_fields=EventFields(datetime=future, status="pending"),
         tags=["health"],
-        remind_at=remind_time.isoformat(),
-        recurring_minutes=None,
     )
-    mock_llm.get_embedding.return_value = [0.1, 0.2, 0.3]
+    with patch("bearmemori.api.routes.run_triage") as mock:
+        mock.return_value = TriageResult(should_save=True, draft=draft)
+        r = client.post("/memory/triage", json={
+            "conversation": [{"role": "user", "content": "I have a dentist appointment"}],
+        })
+    pending_id = r.json()["pending_id"]
+    client.post("/memory/confirm", json={"pending_id": pending_id})
 
-    # Send input through the pipeline
-    await bus.emit(
-        InputReceived(input_type="text", content="remind me to take meds", source_chat_id="42")
-    )
-    item = await queue.get_next()
-    await processor.process_item(item)
+    # Check upcoming events
+    r = client.get("/memory/events/upcoming")
+    assert len(r.json()["events"]) == 1
+    assert r.json()["events"][0]["title"] == "Dentist appointment"
 
-    # Verify reminder stored
-    memories = db.list_memories(memory_type="reminder")
-    assert len(memories) == 1
-    assert memories[0].remind_at is not None
-
-    # Fire the scheduler
-    scheduler = ReminderScheduler(bus=bus, db=db, poll_interval_seconds=60)
-
-    fired = []
-    bus.on(ReminderDue, lambda e: fired.append(e))
-
-    await scheduler.check_reminders()
-
-    assert len(fired) == 1
-    assert fired[0].content == "Take meds"
-
-    # One-off reminder should now have remind_at = None
-    updated = db.get(memories[0].id)
-    assert updated.remind_at is None
+    # Check retrieve includes events
+    r = client.get("/memory/retrieve", params={"query_context": "dentist"})
+    assert "Upcoming Events" in r.json()["context_block"]
