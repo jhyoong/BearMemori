@@ -1,6 +1,9 @@
 import json
 import sqlite3
+import struct
 from datetime import datetime
+
+import numpy as np
 
 from bearmemori.storage.models import Memory
 
@@ -128,6 +131,29 @@ class MemoryDatabase:
             (query, limit),
         ).fetchall()
         return [self._row_to_memory(row) for row in rows]
+
+    def search_semantic(self, query_embedding: bytes, limit: int = 20) -> list[Memory]:
+        rows = self._conn.execute("SELECT * FROM memories WHERE embedding IS NOT NULL").fetchall()
+        if not rows:
+            return []
+
+        query_vec = np.array(struct.unpack(f"{len(query_embedding) // 4}f", query_embedding))
+        query_norm = np.linalg.norm(query_vec)
+        if query_norm == 0:
+            return []
+
+        scored = []
+        for row in rows:
+            emb = row["embedding"]
+            vec = np.array(struct.unpack(f"{len(emb) // 4}f", emb))
+            norm = np.linalg.norm(vec)
+            if norm == 0:
+                continue
+            similarity = np.dot(query_vec, vec) / (query_norm * norm)
+            scored.append((similarity, row))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [self._row_to_memory(row) for _, row in scored[:limit]]
 
     def list_memories(
         self,

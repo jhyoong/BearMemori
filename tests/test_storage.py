@@ -1,4 +1,8 @@
+import struct
+
+import numpy as np
 import pytest
+
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import Memory
 
@@ -89,3 +93,24 @@ def test_keyword_search_no_results(db):
     db.create(_make_memory(id="1", content="User likes pizza"))
     results = db.search_keyword("sushi")
     assert len(results) == 0
+
+
+def _make_embedding(values: list[float]) -> bytes:
+    return struct.pack(f"{len(values)}f", *values)
+
+
+def test_search_semantic(db):
+    emb1 = _make_embedding([1.0, 0.0, 0.0])
+    emb2 = _make_embedding([0.0, 1.0, 0.0])
+    emb3 = _make_embedding([0.9, 0.1, 0.0])
+
+    db.create(_make_memory(id="1", content="pizza", embedding=emb1))
+    db.create(_make_memory(id="2", content="music", embedding=emb2))
+    db.create(_make_memory(id="3", content="pasta", embedding=emb3))
+
+    query_emb = _make_embedding([1.0, 0.0, 0.0])
+    results = db.search_semantic(query_emb, limit=2)
+
+    assert len(results) == 2
+    assert results[0].id == "1"  # exact match first
+    assert results[1].id == "3"  # close second
