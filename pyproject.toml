@@ -1,0 +1,21 @@
+[project]
+name = "bearmemori"
+version = "0.3.0"
+description = "Personal memory store with LLM processing"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "python-telegram-bot>=21",
+    "openai>=1.60",
+    "pydantic-settings>=2.7",
+    "numpy>=2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.25",
+    "httpx>=0.28",
+    "ruff>=0.9",
+]
