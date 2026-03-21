@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import FastAPI, HTTPException
 
-from bearmemori.api.schemas import MemoryCreate, MemoryResponse, MemoryUpdate, SearchRequest
+from bearmemori.api.schemas import MemoryCreate, MemoryResponse, MemoryUpdate, ReminderResponse, SearchRequest
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import Memory
 
@@ -69,5 +69,13 @@ def create_app(db: MemoryDatabase) -> FastAPI:
         if not memory:
             raise HTTPException(status_code=404, detail="Memory not found")
         db.delete(memory_id)
+
+    @app.get("/reminders", response_model=list[ReminderResponse])
+    def list_active_reminders():
+        return db.get_active_reminders()
+
+    @app.get("/reminders/due", response_model=list[ReminderResponse])
+    def list_due_reminders():
+        return db.get_due_reminders()
 
     return app

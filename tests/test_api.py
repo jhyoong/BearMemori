@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -103,3 +105,55 @@ def test_search_keyword(client, seeded_db):
     assert response.status_code == 200
     data = response.json()
     assert len(data) >= 1
+
+
+@pytest.fixture
+def seeded_reminders(db):
+    future = datetime.now() + timedelta(hours=2)
+    past = datetime.now() - timedelta(minutes=10)
+
+    db.create(Memory(
+        id="rem-1",
+        content="Take meds",
+        raw_input="remind me to take meds",
+        memory_type="reminder",
+        tags=["health"],
+        source="telegram",
+        remind_at=future,
+        recurring_minutes=480,
+    ))
+    db.create(Memory(
+        id="rem-2",
+        content="Call dentist",
+        raw_input="remind me to call dentist",
+        memory_type="reminder",
+        tags=["health"],
+        source="telegram",
+        remind_at=past,
+    ))
+    db.create(Memory(
+        id="mem-normal",
+        content="Likes dark mode",
+        raw_input="I like dark mode",
+        memory_type="preference",
+        tags=["ui"],
+        source="telegram",
+    ))
+    return db
+
+
+def test_list_active_reminders(client, seeded_reminders):
+    response = client.get("/reminders")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    ids = {r["id"] for r in data}
+    assert ids == {"rem-1", "rem-2"}
+
+
+def test_list_due_reminders(client, seeded_reminders):
+    response = client.get("/reminders/due")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["id"] == "rem-2"
