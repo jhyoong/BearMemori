@@ -100,46 +100,6 @@ def create_webapp_router(
         vector_store.add(record)
         return RedirectResponse(url="/webapp/memories", status_code=302)
 
-    @r.get("/memories/{record_id}", response_class=HTMLResponse)
-    async def memory_detail(request: Request, record_id: str):
-        record = db.get(record_id)
-        if not record:
-            return RedirectResponse(url="/webapp/memories", status_code=302)
-        return templates.TemplateResponse(
-            request,
-            "memory_detail.html",
-            {"memory": record, "categories": CATEGORIES},
-        )
-
-    @r.post("/memories/{record_id}")
-    async def memory_update(
-        request: Request,
-        record_id: str,
-        title: str = Form(...),
-        category: str = Form(...),
-        content: str = Form(...),
-        tags: str = Form(""),
-        needs_review: bool = Form(False),
-    ):
-        record = db.get(record_id)
-        if not record:
-            return RedirectResponse(url="/webapp/memories", status_code=302)
-
-        record.title = title
-        record.category = MemoryCategory(category)
-        record.content = content
-        record.tags = [t.strip() for t in tags.split(",") if t.strip()]
-        record.needs_review = needs_review
-        db.update(record)
-        vector_store.update(record)
-        return RedirectResponse(url=f"/webapp/memories/{record_id}", status_code=302)
-
-    @r.delete("/memories/{record_id}")
-    async def memory_delete(record_id: str):
-        db.delete(record_id)
-        vector_store.delete(record_id)
-        return ""  # HTMX removes the element
-
     @r.get("/review", response_class=HTMLResponse)
     async def review_queue(request: Request):
         memories = db.list_all(needs_review=True)
@@ -189,5 +149,46 @@ def create_webapp_router(
         return templates.TemplateResponse(
             request, "partials/memory_table.html", {"memories": memories}
         )
+
+    # Parameterized routes last to avoid capturing "new", "bulk", etc. as record_id
+    @r.get("/memories/{record_id}", response_class=HTMLResponse)
+    async def memory_detail(request: Request, record_id: str):
+        record = db.get(record_id)
+        if not record:
+            return RedirectResponse(url="/webapp/memories", status_code=302)
+        return templates.TemplateResponse(
+            request,
+            "memory_detail.html",
+            {"memory": record, "categories": CATEGORIES},
+        )
+
+    @r.post("/memories/{record_id}")
+    async def memory_update(
+        request: Request,
+        record_id: str,
+        title: str = Form(...),
+        category: str = Form(...),
+        content: str = Form(...),
+        tags: str = Form(""),
+        needs_review: bool = Form(False),
+    ):
+        record = db.get(record_id)
+        if not record:
+            return RedirectResponse(url="/webapp/memories", status_code=302)
+
+        record.title = title
+        record.category = MemoryCategory(category)
+        record.content = content
+        record.tags = [t.strip() for t in tags.split(",") if t.strip()]
+        record.needs_review = needs_review
+        db.update(record)
+        vector_store.update(record)
+        return RedirectResponse(url=f"/webapp/memories/{record_id}", status_code=302)
+
+    @r.delete("/memories/{record_id}")
+    async def memory_delete(record_id: str):
+        db.delete(record_id)
+        vector_store.delete(record_id)
+        return ""  # HTMX removes the element
 
     return r

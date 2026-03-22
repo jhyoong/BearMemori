@@ -143,10 +143,16 @@ def create_application(settings: Settings) -> FastAPI:
 
     # Mount webapp if secret is configured
     if settings.webapp_secret:
-        webapp_auth = WebappAuthMiddleware(api, settings.webapp_secret)
+        webapp_auth = WebappAuthMiddleware(
+            api, settings.webapp_secret, secure_cookie=settings.webapp_secure_cookie
+        )
         webapp_router = create_webapp_router(db, vector_store, webapp_auth)
         api.include_router(webapp_router)
-        api.add_middleware(WebappAuthMiddleware, secret=settings.webapp_secret)
+        api.add_middleware(
+            WebappAuthMiddleware,
+            secret=settings.webapp_secret,
+            secure_cookie=settings.webapp_secure_cookie,
+        )
 
         static_dir = Path(__file__).parent / "webapp" / "static"
         api.mount("/webapp/static", StaticFiles(directory=str(static_dir)), name="webapp-static")

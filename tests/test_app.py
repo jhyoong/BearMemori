@@ -79,45 +79,39 @@ def test_application_has_confirm_and_cleanup(settings, tmp_path):
     assert application.cleanup_task is not None
 
 
-@pytest.mark.asyncio
-async def test_webapp_mounted_when_secret_configured():
-    from bearmemori.app import create_application
-    from bearmemori.config import Settings
-
+def test_webapp_mounted_when_secret_configured(tmp_path):
     settings = Settings(
         telegram_bot_token="fake-token",
         telegram_allowed_user_id=12345,
         llm_base_url="http://localhost:11434/v1",
         llm_model="llama3",
-        database_path=":memory:",
+        database_path=str(tmp_path / "test.db"),
         webapp_secret="test-secret",
     )
 
-    # Create application and check that /webapp routes are registered
-    app = create_application(settings)
-    # Check that webapp routes are present
+    with patch("bearmemori.app.VectorStore") as mock_vs_cls:
+        mock_vs_cls.return_value = MagicMock()
+        app = create_application(settings)
+
     route_paths = [r.path for r in app.routes]
     webapp_routes = [r for r in route_paths if r.startswith("/webapp")]
     assert len(webapp_routes) > 0
 
 
-@pytest.mark.asyncio
-async def test_webapp_not_mounted_when_secret_not_configured():
-    from bearmemori.app import create_application
-    from bearmemori.config import Settings
-
+def test_webapp_not_mounted_when_secret_not_configured(tmp_path):
     settings = Settings(
         telegram_bot_token="fake-token",
         telegram_allowed_user_id=12345,
         llm_base_url="http://localhost:11434/v1",
         llm_model="llama3",
-        database_path=":memory:",
+        database_path=str(tmp_path / "test.db"),
         webapp_secret="",
     )
 
-    # Create application and check that /webapp routes are NOT registered
-    app = create_application(settings)
-    # Check that webapp routes are not present
+    with patch("bearmemori.app.VectorStore") as mock_vs_cls:
+        mock_vs_cls.return_value = MagicMock()
+        app = create_application(settings)
+
     route_paths = [r.path for r in app.routes]
     webapp_routes = [r for r in route_paths if r.startswith("/webapp")]
     assert len(webapp_routes) == 0

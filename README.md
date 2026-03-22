@@ -11,7 +11,9 @@ BearMemori receives conversations, uses an LLM to decide if anything is worth re
 - **Confirm or dismiss** drafts -- user decides what gets saved
 - **Search** memories semantically via ChromaDB embeddings
 - **Retrieve** context -- combines relevant memories with upcoming events into a block that can be injected into an LLM system prompt
-- **Manage** memories -- list, get, delete by ID or category
+- **Manage** memories -- list, get, edit, delete by ID or category
+- **Webapp** -- browse, edit, create, and bulk-manage memories from a browser
+- **Review Later** -- save memories that need refinement and review them later via the webapp
 
 ## Memory Categories
 
@@ -34,12 +36,13 @@ FastAPI REST API (:8100)
   |
   +-- Triage subagent (LLM call) --> PendingStore (in-memory, TTL)
   |                                        |
-  |                                   confirm / dismiss
+  |                                   confirm / dismiss / review later
   |                                        |
   +-- SQLite (relational storage, FTS5 keyword search)
   +-- ChromaDB (vector embeddings, semantic search)
   +-- ReminderScheduler (polls for due events)
   +-- Telegram interface (direct input/notification)
+  +-- Webapp (/webapp/) -- HTMX + Jinja2 memory management UI
 ```
 
 ### Storage
@@ -67,9 +70,13 @@ FastAPI REST API (:8100)
 | `/memory/confirm` | POST | Confirm pending memory to permanent storage |
 | `/memory/search` | POST | Semantic search with optional category filter |
 | `/memory/retrieve` | GET | Hybrid retrieval (semantic + upcoming events) |
-| `/memory/list` | GET | List memories, optional category filter |
+| `/memory/list` | GET | List memories, optional category and `needs_review` filter |
 | `/memory/events/upcoming` | GET | Upcoming events within day window |
+| `/memory/create` | POST | Create memory directly (bypass LLM extraction) |
+| `/memory/bulk/delete` | POST | Delete multiple memories by ID list |
+| `/memory/bulk/update` | POST | Bulk update fields on multiple memories |
 | `/memory/{id}` | GET | Get a single memory |
+| `/memory/{id}` | PUT | Update memory fields |
 | `/memory/{id}` | DELETE | Delete a memory |
 
 ## Setup
@@ -101,6 +108,12 @@ Required settings:
 |---------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Your Telegram bot token from BotFather |
 | `TELEGRAM_ALLOWED_USER_ID` | Your Telegram user ID (restricts access to one user) |
+
+Optional but recommended:
+
+| Setting | Description |
+|---------|-------------|
+| `WEBAPP_SECRET` | Shared secret for webapp authentication (empty = webapp disabled) |
 
 All other settings have defaults. See `.env.example` for the full list.
 
@@ -145,6 +158,31 @@ docker run -d \
 
 **Image size note:** The image is large (~4-5 GB) because `sentence-transformers` pulls in PyTorch. If size is a concern, consider running the embedding model as a separate service and pointing to it instead.
 
+### Enable the Webapp
+
+The webapp provides a browser-based UI for managing memories. To enable it, set the `WEBAPP_SECRET` environment variable:
+
+```bash
+# In your .env file
+WEBAPP_SECRET=your-secret-here
+```
+
+Once set, the webapp is available at `http://localhost:8100/webapp/login`. Enter the secret to log in.
+
+**Webapp pages:**
+
+| Page | Path | Description |
+|------|------|-------------|
+| Login | `/webapp/login` | Enter shared secret to authenticate |
+| Memories | `/webapp/memories` | Browse all memories with search, category filter, and bulk actions |
+| New Memory | `/webapp/memories/new` | Create a memory directly (no LLM processing) |
+| Edit Memory | `/webapp/memories/{id}` | Edit title, content, category, tags, and review flag |
+| Review Queue | `/webapp/review` | View memories marked "Review Later", approve or delete in bulk |
+
+The webapp uses HTMX for interactivity -- filtering, bulk actions, and inline deletes work without full page reloads. Auth is cookie-based with httponly and samesite-strict flags.
+
+If `WEBAPP_SECRET` is empty or unset, the webapp is not mounted and no `/webapp/` routes exist.
+
 ### Run Tests
 
 ```bash
@@ -177,7 +215,9 @@ bearmemori/
     triage.py          # Conversation triage subagent (API input)
     queue.py           # Priority queue manager
     followup.py        # Follow-up conversation tracking
+    confirm.py         # Confirm/discard handler for pending memories
     scheduler.py       # Reminder polling scheduler
+    cleanup.py         # Pending memory auto-cleanup
     models.py          # QueueItem model
   events/
     bus.py             # Event bus (pub/sub)
@@ -193,10 +233,17 @@ bearmemori/
     vector_store.py    # ChromaDB wrapper
     pending_store.py   # In-memory pending store with TTL
     models.py          # MemoryRecord, MemoryDraft, MemoryCategory, etc.
+  webapp/
+    auth.py            # Shared-secret auth middleware
+    router.py          # Webapp routes (login, CRUD, bulk, review queue)
+    templates/         # Jinja2 templates (base, memories, detail, create, review, partials)
+    static/            # CSS overrides
 tests/
   test_api.py          # API endpoint tests
   test_app.py          # Application factory tests
+  test_cleanup.py      # Pending cleanup tests
   test_config.py       # Config loading tests
+  test_confirm.py      # Confirm handler tests
   test_event_bus.py    # Event bus tests
   test_followup.py     # Follow-up manager tests
   test_integration.py  # End-to-end flow tests
@@ -210,6 +257,8 @@ tests/
   test_telegram.py     # Telegram interface tests
   test_triage.py       # Triage subagent tests
   test_vector_store.py # ChromaDB vector store tests
+  test_webapp.py       # Webapp route and CRUD tests
+  test_webapp_auth.py  # Webapp auth middleware tests
 ```
 
 ## License

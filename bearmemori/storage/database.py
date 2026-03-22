@@ -159,6 +159,8 @@ class MemoryDatabase:
         return cursor.rowcount > 0
 
     def delete_many(self, record_ids: list[str]) -> int:
+        if not record_ids:
+            return 0
         placeholders = ", ".join("?" * len(record_ids))
         cursor = self._conn.execute(
             f"DELETE FROM memories WHERE id IN ({placeholders})", record_ids

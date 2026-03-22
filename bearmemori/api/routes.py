@@ -34,7 +34,7 @@ def create_app(
     llm_api_key: str = "",
     llm_model: str = "",
 ) -> FastAPI:
-    app = FastAPI(title="BearMemori", version="0.3.2")
+    app = FastAPI(title="BearMemori", version="0.3.3")
 
     @app.get("/health")
     def health():
@@ -234,13 +234,17 @@ def create_app(
 
     @app.post("/memory/bulk/update")
     def bulk_update(request: BulkUpdateRequest):
+        allowed_fields = {"title", "content", "category", "tags", "needs_review"}
         updated_count = 0
         for record_id in request.record_ids:
             record = db.get(record_id)
             if record is None:
                 continue
 
-            update_data = request.updates.copy()
+            update_data = {k: v for k, v in request.updates.items() if k in allowed_fields}
+            if not update_data:
+                continue
+
             # Handle category string to enum conversion
             if "category" in update_data and update_data["category"] is not None:
                 try:

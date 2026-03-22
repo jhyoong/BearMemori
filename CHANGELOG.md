@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-03-22
+
+### Added
+
+- **Webapp for memory management**: HTMX + Jinja2 + Pico CSS webapp served at `/webapp/` for browsing, editing, creating, and deleting memories
+  - Memory list with search, category filter, and bulk actions (delete, clear review flag)
+  - Memory detail/edit page with all fields including `needs_review`
+  - Create memory form (bypasses LLM, saves directly)
+  - Review queue page pre-filtered to `needs_review=True` memories with bulk approve/delete
+- **Webapp auth**: Shared-secret authentication via `WEBAPP_SECRET` env var with cookie-based sessions, HMAC-verified tokens, and httponly/samesite-strict cookies
+- **Review Later workflow**: `needs_review` boolean field on `MemoryRecord` and `memories` table with auto-migration for existing databases
+- **Telegram "Review Later" button**: New inline keyboard button saves memories with `needs_review=True` for later refinement in the webapp
+- **New API endpoints**: `PUT /memory/{id}` (update), `POST /memory/create` (direct create), `POST /memory/bulk/delete`, `POST /memory/bulk/update` with field allowlist
+- **`needs_review` filter**: `GET /memory/list` accepts `needs_review` query parameter
+- **Database bulk operations**: `delete_many()` on both `MemoryDatabase` and `VectorStore`, `update()` on `VectorStore`
+- **`WEBAPP_SECRET` config setting**: Empty string disables webapp; any value enables it with auth
+
+### Changed
+
+- **LLM classification prompt**: Biased toward storing memories over requesting follow-ups; only asks for clarification when input is truly unintelligible
+- **`MemoryConfirmed` event**: Now carries `needs_review` field (default `False`), passed through by `ConfirmHandler`
+
+### Fixed
+
+- **Bulk update field allowlist**: Only `title`, `content`, `category`, `tags`, and `needs_review` can be set via bulk update (prevents mutation of `id`, `created_at`, etc.)
+- **Webapp route ordering**: Parameterized `{record_id}` routes registered after static routes (`/new`, `/bulk/*`) to prevent ambiguous matching
+- **`delete_many` empty list guard**: `MemoryDatabase.delete_many([])` returns 0 instead of producing invalid SQL
+- **Auth cookie `secure` flag**: `WebappAuthMiddleware` accepts `secure_cookie` parameter for HTTPS deployments
+- **Test isolation**: Webapp mount tests in `test_app.py` now patch `VectorStore` (consistent with all other tests)
+- **Fixture deduplication**: Removed duplicate webapp fixtures from `conftest.py` (already defined in `test_webapp.py`)
+
+---
+
 ## [0.3.2] - 2026-03-22
 
 ### Added
@@ -99,6 +132,8 @@ Initial release of BearMemori, a personal memory management system.
 - Docker Compose full-stack deployment
 - Test suite with pytest and pytest-asyncio
 
+[0.3.3]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.3
+[0.3.2]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.2
 [0.3.0]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.0
 [0.1.1]: https://github.com/jhyoong/BearMemori/releases/tag/v0.1.1
 [0.1.0]: https://github.com/jhyoong/BearMemori/releases/tag/v0.1.0

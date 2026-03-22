@@ -7,10 +7,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 
 class WebappAuthMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, secret: str):
+    def __init__(self, app, secret: str, secure_cookie: bool = False):
         super().__init__(app)
         self._secret = secret
         self._token = hashlib.sha256(secret.encode()).hexdigest()
+        self._secure_cookie = secure_cookie
 
     async def dispatch(self, request: Request, call_next):
         if not request.url.path.startswith("/webapp"):
@@ -32,6 +33,7 @@ class WebappAuthMiddleware(BaseHTTPMiddleware):
             key="webapp_session",
             value=self._token,
             httponly=True,
+            secure=self._secure_cookie,
             samesite="strict",
             max_age=60 * 60 * 24 * 30,  # 30 days
         )
