@@ -1,10 +1,10 @@
 import asyncio
 import logging
+from typing import cast
 
 import uvicorn
 
-from bearmemori.api.routes import create_app as create_api
-from bearmemori.app import create_application
+from bearmemori.app import Application, create_application
 from bearmemori.config import Settings
 from bearmemori.events.domain import InputReceived
 
@@ -36,16 +36,8 @@ async def processing_loop(application) -> None:
 
 async def main() -> None:
     settings = Settings()
-    application = create_application(settings)
-
-    api = create_api(
-        db=application.db,
-        vector_store=application.vector_store,
-        pending_store=application.pending_store,
-        llm_base_url=settings.llm_base_url,
-        llm_api_key=settings.llm_api_key,
-        llm_model=settings.llm_model,
-    )
+    api = create_application(settings)
+    application = cast(Application, api.state.application)
 
     telegram_app = application.telegram.build()
 
