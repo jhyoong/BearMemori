@@ -5,8 +5,10 @@ import pytest
 from bearmemori.core.confirm import ConfirmHandler
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import MemoryConfirmed, MemoryDiscarded, MemoryStored
+from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import MemoryCategory, MemoryDraft
 from bearmemori.storage.pending_store import PendingStore
+from bearmemori.storage.vector_store import VectorStore
 
 
 @pytest.fixture
@@ -27,6 +29,18 @@ def mock_db():
 @pytest.fixture
 def mock_vector_store():
     return MagicMock()
+
+
+@pytest.fixture
+def db(tmp_path):
+    d = MemoryDatabase(str(tmp_path / "test.db"))
+    d.initialize()
+    return d
+
+
+@pytest.fixture
+def vector_store():
+    return VectorStore()
 
 
 @pytest.fixture
@@ -88,3 +102,24 @@ async def test_discard_cleans_up_image(handler, pending_store, tmp_path):
     await handler.handle_discarded(MemoryDiscarded(pending_id=pid, source_chat_id="123"))
 
     assert not img.exists()
+
+
+@pytest.mark.asyncio
+async def test_confirm_with_needs_review(bus, pending_store, mock_db, mock_vector_store):
+    handler = ConfirmHandler(bus, pending_store, mock_db, mock_vector_store)
+    draft = MemoryDraft(
+        category=MemoryCategory.GENERAL, title="Test", content="Test content"
+    )
+    pending_id = pending_store.add(draft, chat_id="123")
+
+    event = MemoryConfirmed(
+        pending_id=pending_id, source_chat_id="123", needs_review=True
+    )
+    await handler.handle_confirmed(event)
+
+    # Verify the record stored in db has needs_review=True
+    record = mock_db.create.call_args[0][0]
+    assert record.needs_review is True
+
+    # Also verify the record was added to vector store
+    mock_vector_store.add.assert_called_once()

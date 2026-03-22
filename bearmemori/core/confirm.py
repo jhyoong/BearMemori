@@ -33,6 +33,7 @@ class ConfirmHandler:
 
         record_id = f"mem_{uuid.uuid4().hex[:12]}"
         record = MemoryRecord.from_draft(pending.draft, record_id)
+        record.needs_review = event.needs_review
         self._db.create(record)
         self._vector_store.add(record)
         self._pending_store.remove(event.pending_id)
@@ -45,7 +46,7 @@ class ConfirmHandler:
                 source_chat_id=event.source_chat_id,
             )
         )
-        logger.info("Confirmed and stored memory %s", record.id)
+        logger.info("Confirmed and stored memory %s (needs_review=%s)", record.id, record.needs_review)
 
     async def handle_discarded(self, event: MemoryDiscarded) -> None:
         pending = self._pending_store.get(event.pending_id)
