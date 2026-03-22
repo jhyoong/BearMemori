@@ -18,7 +18,7 @@
             <td>{{ memory.category }}</td>
             <td>{{ memory.tags | join(', ') }}</td>
             <td>{% if memory.needs_review %}Needs Review{% endif %}</td>
-            <td>{{ memory.created_at[:10] }}</td>
+            <td>{{ memory.created_at.strftime('%Y-%m-%d') }}</td>
             <td>
                 <a href="/webapp/memories/{{ memory.id }}">Edit</a>
                 <a href="#" hx-delete="/webapp/memories/{{ memory.id }}" hx-confirm="Delete this memory?" hx-target="#row-{{ memory.id }}" hx-swap="outerHTML">Delete</a>
