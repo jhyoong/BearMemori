@@ -1,0 +1,4 @@
+/* Minimal overrides for BearMemori webapp */
+table td a { margin-right: 0.5rem; }
+#bulk-actions button { margin-right: 0.5rem; }
+[role="alert"] { color: var(--pico-del-color); }

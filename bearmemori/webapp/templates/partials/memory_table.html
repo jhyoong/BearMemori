@@ -1,0 +1,32 @@
+<table>
+    <thead>
+        <tr>
+            <th><input type="checkbox" id="select-all" onclick="document.querySelectorAll('.mem-check').forEach(c => c.checked = this.checked)"></th>
+            <th>Title</th>
+            <th>Category</th>
+            <th>Tags</th>
+            <th>Review</th>
+            <th>Created</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for memory in memories %}
+        <tr id="row-{{ memory.id }}">
+            <td><input type="checkbox" class="mem-check" name="record_ids" value="{{ memory.id }}"></td>
+            <td><a href="/webapp/memories/{{ memory.id }}">{{ memory.title }}</a></td>
+            <td>{{ memory.category }}</td>
+            <td>{{ memory.tags | join(', ') }}</td>
+            <td>{% if memory.needs_review %}Needs Review{% endif %}</td>
+            <td>{{ memory.created_at[:10] }}</td>
+            <td>
+                <a href="/webapp/memories/{{ memory.id }}">Edit</a>
+                <a href="#" hx-delete="/webapp/memories/{{ memory.id }}" hx-confirm="Delete this memory?" hx-target="#row-{{ memory.id }}" hx-swap="outerHTML">Delete</a>
+            </td>
+        </tr>
+        {% endfor %}
+        {% if not memories %}
+        <tr><td colspan="7">No memories found.</td></tr>
+        {% endif %}
+    </tbody>
+</table>
