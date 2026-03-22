@@ -42,5 +42,6 @@ def test_webapp_secret_default():
     settings = Settings(
         telegram_bot_token="test",
         telegram_allowed_user_id=123,
+        _env_file=None,
     )
     assert settings.webapp_secret == ""
