@@ -122,6 +122,15 @@ class TelegramInterface:
             await self._bus.emit(MemoryDiscarded(pending_id=pending_id, source_chat_id=chat_id))
             await query.message.edit_text(query.message.text + "\n\nDiscarded.")
             await query.answer("Discarded")
+        elif action == "review":
+            await self._bus.emit(
+                MemoryConfirmed(
+                    pending_id=pending_id,
+                    source_chat_id=chat_id,
+                    needs_review=True,
+                )
+            )
+            await query.answer("Saved for review")
 
         self._pending_chat_ids.pop(pending_id, None)
 
@@ -140,12 +149,14 @@ class TelegramInterface:
             [
                 [
                     InlineKeyboardButton("Save", callback_data=f"save:{event.pending_id}"),
-                    InlineKeyboardButton("Edit", callback_data=f"edit:{event.pending_id}"),
                     InlineKeyboardButton(
-                        "Discard",
-                        callback_data=f"discard:{event.pending_id}",
+                        "Review Later", callback_data=f"review:{event.pending_id}"
                     ),
-                ]
+                ],
+                [
+                    InlineKeyboardButton("Edit", callback_data=f"edit:{event.pending_id}"),
+                    InlineKeyboardButton("Discard", callback_data=f"discard:{event.pending_id}"),
+                ],
             ]
         )
 

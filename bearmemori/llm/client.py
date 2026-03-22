@@ -27,8 +27,12 @@ class ExtractionResult(BaseModel):
 CLASSIFY_SYSTEM_PROMPT = (
     "/no_think\n"
     "You are a memory classification assistant. Given user input, decide whether to:\n"
-    '1. "store" - the input contains clear information worth remembering\n'
+    '1. "store" - the input contains information worth remembering\n'
     '2. "followup" - the input is unclear and needs more context\n'
+    "\n"
+    "IMPORTANT: Prefer to store the memory even if the input is vague or incomplete. "
+    "Extract what you can and save it. Only request a follow-up if the input is truly "
+    "unintelligible or you cannot determine any meaningful content to extract.\n"
     "\n"
     "You MUST respond with a single valid JSON object and nothing else.\n"
     '- For store: {"action": "store", "category": "<category>", "confidence": <0-1>}\n'

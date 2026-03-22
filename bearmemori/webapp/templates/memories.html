@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Memories - BearMemori{% endblock %}
+{% block content %}
+<h2>Memories</h2>
+
+<form hx-get="/webapp/memories" hx-target="#memory-table" hx-swap="innerHTML" hx-push-url="true">
+    <div class="grid">
+        <input type="search" name="q" placeholder="Search..." value="{{ q or '' }}">
+        <select name="category">
+            <option value="">All Categories</option>
+            {% for cat in categories %}
+            <option value="{{ cat }}" {% if category == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Filter</button>
+    </div>
+</form>
+
+<form id="bulk-form">
+    <div id="bulk-actions" style="margin-bottom: 1rem;">
+        <button type="button" hx-post="/webapp/memories/bulk/delete" hx-include="#bulk-form" hx-confirm="Delete selected memories?" hx-target="#memory-table" hx-swap="innerHTML" class="secondary">Delete Selected</button>
+        <button type="button" hx-post="/webapp/memories/bulk/clear-review" hx-include="#bulk-form" hx-target="#memory-table" hx-swap="innerHTML" class="contrast">Clear Review Flag</button>
+    </div>
+
+    <div id="memory-table">
+        {% include "partials/memory_table.html" %}
+    </div>
+</form>
+{% endblock %}

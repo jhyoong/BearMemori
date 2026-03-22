@@ -47,6 +47,7 @@ class MemoryRecord(BaseModel):
     tags: list[str] = Field(default_factory=list)
     source: MemorySource | None = None
     metadata: dict = Field(default_factory=dict)
+    needs_review: bool = False
 
     @classmethod
     def from_draft(cls, draft: MemoryDraft, record_id: str) -> MemoryRecord:
@@ -59,6 +60,7 @@ class MemoryRecord(BaseModel):
             event_fields=draft.event_fields,
             tags=draft.tags,
             source=draft.source,
+            needs_review=False,
         )
 
 

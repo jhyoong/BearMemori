@@ -216,3 +216,27 @@ async def test_edit_text_routes_to_pending(interface, bus):
     assert len(received) == 1
     assert received[0].context == {"edit_pending_id": "pend_abc123"}
     assert "12345" not in interface._edit_pending
+
+
+@pytest.mark.asyncio
+async def test_callback_review_emits_confirmed_with_needs_review(interface, bus):
+    confirmed = []
+    bus.on(MemoryConfirmed, lambda e: confirmed.append(e))
+
+    interface._app = MagicMock()
+    interface._app.bot = AsyncMock()
+    interface._pending_chat_ids = {"pend_abc123": "42"}
+
+    query = AsyncMock()
+    query.data = "review:pend_abc123"
+    query.message = AsyncMock()
+
+    update = _make_update()
+    update.callback_query = query
+
+    await interface._handle_callback(update, MagicMock())
+
+    assert len(confirmed) == 1
+    assert confirmed[0].pending_id == "pend_abc123"
+    assert confirmed[0].needs_review is True
+    query.answer.assert_called_once_with("Saved for review")

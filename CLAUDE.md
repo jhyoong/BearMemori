@@ -14,6 +14,7 @@ bearmemori/
   llm/          # OpenAI-compatible client (targets local LLM endpoint), response parsing
   storage/      # SQLite + FTS5 (database.py), ChromaDB vectors (vector_store.py), pending store
   api/          # FastAPI REST API (routes.py, schemas.py)
+  webapp/       # HTMX webapp (router.py, auth.py, templates/, static/)
 ```
 
 Entry point: `bearmemori/app.py` wires everything together. Run via `bearmemori/__main__.py`.
@@ -31,6 +32,7 @@ Entry point: `bearmemori/app.py` wires everything together. Run via `bearmemori/
 
 - Python 3.12+, managed with `uv`
 - FastAPI + Uvicorn (REST API)
+- Jinja2 + HTMX + Pico CSS (webapp)
 - python-telegram-bot (Telegram interface)
 - openai SDK (LLM client, OpenAI-compatible endpoint)
 - ChromaDB + sentence-transformers (vector search)
@@ -64,6 +66,7 @@ all settings and defaults. Key settings:
 - `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_USER_ID` -- Telegram bot auth
 - `DATABASE_PATH` -- SQLite database location
 - `CHROMA_PERSIST_DIR` -- ChromaDB persistence directory
+- `WEBAPP_SECRET` -- shared secret for webapp auth (empty = webapp disabled)
 
 ## Conventions
 

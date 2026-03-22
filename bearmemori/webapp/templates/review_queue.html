@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Review Queue - BearMemori{% endblock %}
+{% block content %}
+<h2>Review Queue</h2>
+<p>{{ memories | length }} memories need review.</p>
+
+<form id="bulk-form">
+    <div style="margin-bottom: 1rem;">
+        <button type="button" hx-post="/webapp/review/bulk/approve" hx-include="#bulk-form" hx-target="#review-table" hx-swap="innerHTML" class="contrast">Approve Selected</button>
+        <button type="button" hx-post="/webapp/memories/bulk/delete" hx-include="#bulk-form" hx-confirm="Delete selected?" hx-target="#review-table" hx-swap="innerHTML" class="secondary">Delete Selected</button>
+    </div>
+
+    <div id="review-table">
+        {% include "partials/memory_table.html" %}
+    </div>
+</form>
+{% endblock %}

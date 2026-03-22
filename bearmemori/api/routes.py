@@ -1,9 +1,18 @@
 import logging
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException
 
-from bearmemori.api.schemas import ConfirmRequest, SearchRequest, TriageRequest
+from bearmemori.api.schemas import (
+    BulkDeleteRequest,
+    BulkUpdateRequest,
+    ConfirmRequest,
+    CreateMemoryRequest,
+    SearchRequest,
+    TriageRequest,
+    UpdateMemoryRequest,
+)
 from bearmemori.core.triage import run_triage
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import (
@@ -25,7 +34,7 @@ def create_app(
     llm_api_key: str = "",
     llm_model: str = "",
 ) -> FastAPI:
-    app = FastAPI(title="BearMemori", version="0.3.2")
+    app = FastAPI(title="BearMemori", version="0.3.3")
 
     @app.get("/health")
     def health():
@@ -126,7 +135,7 @@ def create_app(
         return {"events": [e.model_dump(mode="json") for e in events]}
 
     @app.get("/memory/list")
-    def list_memories(category: str | None = None):
+    def list_memories(category: str | None = None, needs_review: bool | None = None):
         if category is not None:
             try:
                 cat = MemoryCategory(category)
@@ -138,6 +147,8 @@ def create_app(
             records = db.list_by_category(cat)
         else:
             records = db.list_all()
+        if needs_review is not None:
+            records = [r for r in records if r.needs_review == needs_review]
         return {"memories": [r.model_dump(mode="json") for r in records]}
 
     @app.get("/memory/{record_id}")
@@ -155,5 +166,98 @@ def create_app(
         vector_store.delete(record_id)
         logger.info("Deleted memory: %s", record_id)
         return {"status": "deleted"}
+
+    @app.put("/memory/{record_id}")
+    def update_memory(record_id: str, request: UpdateMemoryRequest):
+        record = db.get(record_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Memory not found")
+
+        update_data = request.model_dump(exclude_unset=True)
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No updates provided")
+
+        # Handle category as string to MemoryCategory enum
+        if "category" in update_data and update_data["category"] is not None:
+            try:
+                update_data["category"] = MemoryCategory(update_data["category"])
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid category: {update_data['category']}",
+                )
+
+        # Update the record
+        updated_record = record.model_copy(update=update_data)
+        db.update(updated_record)
+        vector_store.update(updated_record)
+
+        logger.info("Updated memory: %s", record_id)
+        return {"status": "updated"}
+
+    @app.post("/memory/create")
+    def create_memory_direct(request: CreateMemoryRequest):
+        try:
+            category = MemoryCategory(request.category)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid category: {request.category}",
+            )
+
+        record_id = f"mem_{uuid.uuid4().hex[:12]}"
+        record = MemoryRecord(
+            id=record_id,
+            category=category,
+            title=request.title,
+            content=request.content,
+            created_at=datetime.now(UTC),
+            tags=request.tags or [],
+            needs_review=False,
+        )
+
+        db.create(record)
+        vector_store.add(record)
+        logger.info("Created memory: %s", record_id)
+        return {"record_id": record_id, "status": "created"}
+
+    @app.post("/memory/bulk/delete")
+    def bulk_delete(request: BulkDeleteRequest):
+        deleted_count = 0
+        for record_id in request.record_ids:
+            if db.delete(record_id):
+                vector_store.delete(record_id)
+                deleted_count += 1
+                logger.info("Deleted memory: %s", record_id)
+
+        return {"deleted": deleted_count}
+
+    @app.post("/memory/bulk/update")
+    def bulk_update(request: BulkUpdateRequest):
+        allowed_fields = {"title", "content", "category", "tags", "needs_review"}
+        updated_count = 0
+        for record_id in request.record_ids:
+            record = db.get(record_id)
+            if record is None:
+                continue
+
+            update_data = {k: v for k, v in request.updates.items() if k in allowed_fields}
+            if not update_data:
+                continue
+
+            # Handle category string to enum conversion
+            if "category" in update_data and update_data["category"] is not None:
+                try:
+                    update_data["category"] = MemoryCategory(update_data["category"])
+                except ValueError:
+                    continue
+
+            updated_record = record.model_copy(update=update_data)
+            db.update(updated_record)
+            vector_store.update(updated_record)
+            updated_count += 1
+            logger.info("Updated memory: %s", record_id)
+
+        return {"updated": updated_count}
 
     return app

@@ -181,3 +181,83 @@ def test_upcoming_events(client, db, vector_store):
     r = client.get("/memory/events/upcoming")
     assert r.status_code == 200
     assert len(r.json()["events"]) == 1
+
+
+def test_update_memory(client, db, sample_record):
+    db.create(sample_record)
+    response = client.put(
+        f"/memory/{sample_record.id}",
+        json={"title": "Updated Title", "needs_review": True},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "updated"
+
+    retrieved = db.get(sample_record.id)
+    assert retrieved.title == "Updated Title"
+    assert retrieved.needs_review is True
+
+
+def test_create_memory_direct(client):
+    response = client.post(
+        "/memory/create",
+        json={
+            "category": "general",
+            "title": "Direct Memory",
+            "content": "Created from webapp",
+            "tags": ["test"],
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "record_id" in data
+    assert data["status"] == "created"
+
+
+def test_bulk_delete(client, db, sample_record):
+    record2 = sample_record.model_copy(update={"id": "mem_second123"})
+    db.create(sample_record)
+    db.create(record2)
+    response = client.post(
+        "/memory/bulk/delete",
+        json={"record_ids": [sample_record.id, record2.id]},
+    )
+    assert response.status_code == 200
+    assert response.json()["deleted"] == 2
+
+
+def test_bulk_update(client, db, sample_record):
+    record2 = sample_record.model_copy(update={"id": "mem_second123"})
+    db.create(sample_record)
+    db.create(record2)
+    response = client.post(
+        "/memory/bulk/update",
+        json={
+            "record_ids": [sample_record.id, record2.id],
+            "updates": {"needs_review": False},
+        },
+    )
+    assert response.status_code == 200
+
+
+def test_list_memories_needs_review_filter(client, db, sample_record):
+    db.create(sample_record)
+    review_record = sample_record.model_copy(update={"id": "mem_review123", "needs_review": True})
+    db.create(review_record)
+
+    response = client.get("/memory/list?needs_review=true")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["memories"]) == 1
+
+
+@pytest.fixture
+def sample_record():
+    return MemoryRecord(
+        id="mem_test_sample",
+        category=MemoryCategory.GENERAL,
+        title="Sample Memory",
+        content="Sample content",
+        created_at=datetime.now(UTC),
+        tags=["sample"],
+    )

@@ -40,6 +40,13 @@ class VectorStore:
     def delete(self, record_id: str) -> None:
         self._collection.delete(ids=[record_id])
 
+    def update(self, record: MemoryRecord) -> None:
+        self.add(record)
+
+    def delete_many(self, record_ids: list[str]) -> None:
+        if record_ids:
+            self._collection.delete(ids=record_ids)
+
     def search(
         self,
         query: str,

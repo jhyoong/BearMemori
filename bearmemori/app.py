@@ -1,5 +1,10 @@
 import logging
+from pathlib import Path
 
+from fastapi import FastAPI
+from starlette.staticfiles import StaticFiles
+
+from bearmemori.api.routes import create_app as create_api_app
 from bearmemori.config import Settings
 from bearmemori.core.cleanup import PendingCleanupTask
 from bearmemori.core.confirm import ConfirmHandler
@@ -22,6 +27,8 @@ from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
+from bearmemori.webapp.auth import WebappAuthMiddleware
+from bearmemori.webapp.router import create_webapp_router
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +63,7 @@ class Application:
         self.scheduler = scheduler
 
 
-def create_application(settings: Settings) -> Application:
+def create_application(settings: Settings) -> FastAPI:
     bus = EventBus()
 
     db = MemoryDatabase(settings.database_path)
@@ -109,7 +116,7 @@ def create_application(settings: Settings) -> Application:
     bus.on(SendMessage, telegram.handle_send_message)
     bus.on(ReminderDue, telegram.handle_reminder_due)
 
-    return Application(
+    application = Application(
         bus=bus,
         db=db,
         vector_store=vector_store,
@@ -123,3 +130,34 @@ def create_application(settings: Settings) -> Application:
         settings=settings,
         scheduler=scheduler,
     )
+
+    # Create FastAPI app
+    api = create_api_app(
+        db=db,
+        vector_store=vector_store,
+        pending_store=pending_store,
+        llm_base_url=settings.llm_base_url,
+        llm_api_key=settings.llm_api_key,
+        llm_model=settings.llm_model,
+    )
+
+    # Mount webapp if secret is configured
+    if settings.webapp_secret:
+        webapp_auth = WebappAuthMiddleware(
+            api, settings.webapp_secret, secure_cookie=settings.webapp_secure_cookie
+        )
+        webapp_router = create_webapp_router(db, vector_store, webapp_auth)
+        api.include_router(webapp_router)
+        api.add_middleware(
+            WebappAuthMiddleware,
+            secret=settings.webapp_secret,
+            secure_cookie=settings.webapp_secure_cookie,
+        )
+
+        static_dir = Path(__file__).parent / "webapp" / "static"
+        api.mount("/webapp/static", StaticFiles(directory=str(static_dir)), name="webapp-static")
+
+    # Store application in app state for access by __main__.py
+    api.state.application = application
+
+    return api
