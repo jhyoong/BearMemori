@@ -1,3 +1,4 @@
+import base64
 import logging
 
 from openai import AsyncOpenAI
@@ -56,6 +57,18 @@ FOLLOWUP_SYSTEM_PROMPT = (
     "Ask a single, clear clarifying question to better understand "
     "what the user wants to remember.\n"
     "Keep your question short and direct."
+)
+
+DESCRIBE_IMAGE_SYSTEM_PROMPT = (
+    "/no_think\n"
+    "You are a memory extraction assistant. "
+    "Describe the image and extract structured memory data.\n"
+    "\n"
+    "You MUST respond with a single valid JSON object and nothing else.\n"
+    '{"content": "<description of what the image shows>", "category": "<category>", '
+    '"title": "<short descriptive title>", "tags": ["tag1", "tag2"], '
+    '"event_fields": null}\n'
+    "Categories: profile, general, event, location, task, reminder"
 )
 
 
@@ -135,3 +148,26 @@ class LLMClient:
             temperature=0.7,
         )
         return response.choices[0].message.content
+
+    async def describe_image(
+        self, image_bytes: bytes, caption: str | None = None
+    ) -> ExtractionResult:
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        user_content = [
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+        ]
+        if caption:
+            user_content.append({"type": "text", "text": caption})
+
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": DESCRIBE_IMAGE_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.1,
+        )
+        raw = response.choices[0].message.content
+        logger.debug("Describe image raw output: %s", raw)
+        data = extract_json(raw)
+        return ExtractionResult(**data)
