@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from bearmemori.llm.client import LLMClient
+from bearmemori.llm.client import CLASSIFY_SYSTEM_PROMPT, LLMClient
 
 
 @pytest.fixture
@@ -219,3 +219,9 @@ async def test_describe_image(client):
     assert messages[1]["role"] == "user"
     assert isinstance(messages[1]["content"], list)
     assert messages[1]["content"][0]["type"] == "image_url"
+
+
+def test_classify_prompt_biases_toward_store():
+    assert "prefer" in CLASSIFY_SYSTEM_PROMPT.lower()
+    assert "store" in CLASSIFY_SYSTEM_PROMPT.lower()
+    assert "unintelligible" in CLASSIFY_SYSTEM_PROMPT.lower()
