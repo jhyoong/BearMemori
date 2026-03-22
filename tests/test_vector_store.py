@@ -1,8 +1,9 @@
-import pytest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+import pytest
+
+from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
 from bearmemori.storage.vector_store import VectorStore
-from bearmemori.storage.models import MemoryRecord, MemoryCategory, EventFields
 
 
 @pytest.fixture
@@ -18,7 +19,7 @@ def _make_record(**overrides) -> MemoryRecord:
         category=MemoryCategory.PROFILE,
         title="Coffee preference",
         content="User likes black coffee",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         tags=["coffee"],
     )
     defaults.update(overrides)
@@ -34,7 +35,14 @@ def test_add_and_search(store):
 
 def test_search_with_category_filter(store):
     store.add(_make_record(id="mem_1", category=MemoryCategory.PROFILE))
-    store.add(_make_record(id="mem_2", category=MemoryCategory.EVENT, title="Meeting", content="Team meeting"))
+    store.add(
+        _make_record(
+            id="mem_2",
+            category=MemoryCategory.EVENT,
+            title="Meeting",
+            content="Team meeting",
+        )
+    )
     results = store.search("meeting", top_k=5, category="event")
     assert all(r["metadata"]["category"] == "event" for r in results)
 

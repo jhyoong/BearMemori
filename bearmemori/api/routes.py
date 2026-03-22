@@ -1,9 +1,9 @@
-import uuid
 import logging
+import uuid
 
 from fastapi import FastAPI, HTTPException
 
-from bearmemori.api.schemas import TriageRequest, ConfirmRequest, SearchRequest
+from bearmemori.api.schemas import ConfirmRequest, SearchRequest, TriageRequest
 from bearmemori.core.triage import run_triage
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import (
@@ -110,7 +110,11 @@ def create_app(
         context_block = "\n".join(lines) if lines else ""
 
         items = semantic_results + [
-            {"id": e.id, "document": f"{e.title}: {e.content}", "metadata": {"category": e.category.value}}
+            {
+                "id": e.id,
+                "document": f"{e.title}: {e.content}",
+                "metadata": {"category": e.category.value},
+            }
             for e in upcoming_events
         ]
 

@@ -1,11 +1,11 @@
 import json
 import sqlite3
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 from bearmemori.storage.models import (
-    MemoryRecord,
-    MemoryCategory,
     EventFields,
+    MemoryCategory,
+    MemoryRecord,
     MemorySource,
 )
 
@@ -107,7 +107,7 @@ class MemoryDatabase:
             event_recurrence = record.event_fields.recurrence
 
         source_json = record.source.model_dump_json() if record.source else None
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         self._conn.execute(
             """INSERT INTO memories
@@ -133,22 +133,16 @@ class MemoryDatabase:
         self._conn.commit()
 
     def get(self, record_id: str) -> MemoryRecord | None:
-        row = self._conn.execute(
-            "SELECT * FROM memories WHERE id = ?", (record_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM memories WHERE id = ?", (record_id,)).fetchone()
         return self._row_to_record(row) if row else None
 
     def delete(self, record_id: str) -> bool:
-        cursor = self._conn.execute(
-            "DELETE FROM memories WHERE id = ?", (record_id,)
-        )
+        cursor = self._conn.execute("DELETE FROM memories WHERE id = ?", (record_id,))
         self._conn.commit()
         return cursor.rowcount > 0
 
     def list_all(self) -> list[MemoryRecord]:
-        rows = self._conn.execute(
-            "SELECT * FROM memories ORDER BY created_at DESC"
-        ).fetchall()
+        rows = self._conn.execute("SELECT * FROM memories ORDER BY created_at DESC").fetchall()
         return [self._row_to_record(r) for r in rows]
 
     def list_by_category(self, category: MemoryCategory) -> list[MemoryRecord]:
@@ -170,8 +164,8 @@ class MemoryDatabase:
         return [self._row_to_record(r) for r in rows]
 
     def get_upcoming_events(self, days: int = 7) -> list[MemoryRecord]:
-        now = datetime.now(timezone.utc).isoformat()
-        future = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+        now = datetime.now(UTC).isoformat()
+        future = (datetime.now(UTC) + timedelta(days=days)).isoformat()
         rows = self._conn.execute(
             """SELECT * FROM memories
                WHERE category IN ('event', 'reminder', 'task')
@@ -185,7 +179,7 @@ class MemoryDatabase:
         return [self._row_to_record(r) for r in rows]
 
     def get_due_events(self) -> list[MemoryRecord]:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         rows = self._conn.execute(
             """SELECT * FROM memories
                WHERE category IN ('event', 'reminder', 'task')
@@ -207,7 +201,7 @@ class MemoryDatabase:
             event_recurrence = record.event_fields.recurrence
 
         source_json = record.source.model_dump_json() if record.source else None
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         self._conn.execute(
             """UPDATE memories SET category=?, title=?, content=?, raw_input=?,

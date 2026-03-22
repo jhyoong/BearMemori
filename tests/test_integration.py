@@ -1,15 +1,15 @@
-import pytest
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
-from datetime import datetime, timezone, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
 from bearmemori.api.routes import create_app
+from bearmemori.core.triage import TriageResult
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import MemoryCategory, MemoryDraft, EventFields
+from bearmemori.storage.models import EventFields, MemoryCategory, MemoryDraft
 from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
-from bearmemori.core.triage import TriageResult
 
 
 @pytest.fixture
@@ -20,8 +20,12 @@ def full_stack(tmp_path):
     vs.init()
     ps = PendingStore()
     app = create_app(
-        db=db, vector_store=vs, pending_store=ps,
-        llm_base_url="http://test", llm_api_key="test", llm_model="test",
+        db=db,
+        vector_store=vs,
+        pending_store=ps,
+        llm_base_url="http://test",
+        llm_api_key="test",
+        llm_model="test",
     )
     return TestClient(app), db, vs, ps
 
@@ -38,9 +42,12 @@ def test_triage_confirm_retrieve_flow(full_stack):
     )
     with patch("bearmemori.api.routes.run_triage") as mock:
         mock.return_value = TriageResult(should_save=True, draft=draft)
-        r = client.post("/memory/triage", json={
-            "conversation": [{"role": "user", "content": "I love black coffee"}],
-        })
+        r = client.post(
+            "/memory/triage",
+            json={
+                "conversation": [{"role": "user", "content": "I love black coffee"}],
+            },
+        )
     assert r.json()["should_save"] is True
     pending_id = r.json()["pending_id"]
 
@@ -77,9 +84,12 @@ def test_triage_no_save_flow(full_stack):
 
     with patch("bearmemori.api.routes.run_triage") as mock:
         mock.return_value = TriageResult(should_save=False)
-        r = client.post("/memory/triage", json={
-            "conversation": [{"role": "user", "content": "Hello there"}],
-        })
+        r = client.post(
+            "/memory/triage",
+            json={
+                "conversation": [{"role": "user", "content": "Hello there"}],
+            },
+        )
     assert r.json()["should_save"] is False
     assert "pending_id" not in r.json()
 
@@ -88,11 +98,14 @@ def test_pending_dismiss_flow(full_stack):
     client, db, vs, ps = full_stack
 
     # Create pending directly
-    r = client.post("/memory/pending", json={
-        "category": "general",
-        "title": "Test info",
-        "content": "Some test information",
-    })
+    r = client.post(
+        "/memory/pending",
+        json={
+            "category": "general",
+            "title": "Test info",
+            "content": "Some test information",
+        },
+    )
     pending_id = r.json()["pending_id"]
 
     # Dismiss it
@@ -107,7 +120,7 @@ def test_pending_dismiss_flow(full_stack):
 def test_event_with_upcoming(full_stack):
     client, db, vs, ps = full_stack
 
-    future = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    future = (datetime.now(UTC) + timedelta(days=2)).isoformat()
     draft = MemoryDraft(
         category=MemoryCategory.EVENT,
         title="Dentist appointment",
@@ -117,9 +130,12 @@ def test_event_with_upcoming(full_stack):
     )
     with patch("bearmemori.api.routes.run_triage") as mock:
         mock.return_value = TriageResult(should_save=True, draft=draft)
-        r = client.post("/memory/triage", json={
-            "conversation": [{"role": "user", "content": "I have a dentist appointment"}],
-        })
+        r = client.post(
+            "/memory/triage",
+            json={
+                "conversation": [{"role": "user", "content": "I have a dentist appointment"}],
+            },
+        )
     pending_id = r.json()["pending_id"]
     client.post("/memory/confirm", json={"pending_id": pending_id})
 

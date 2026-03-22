@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -55,7 +55,7 @@ class MemoryRecord(BaseModel):
             category=draft.category,
             title=draft.title,
             content=draft.content,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             event_fields=draft.event_fields,
             tags=draft.tags,
             source=draft.source,
@@ -66,4 +66,4 @@ class PendingMemory(BaseModel):
     pending_id: str
     draft: MemoryDraft
     ttl_seconds: int
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -11,7 +11,7 @@ bearmemori/
   events/       # Event definitions (types.py, domain.py) and async pub/sub bus
   interfaces/   # Telegram adapter (emits/handles events)
   core/         # Queue manager, processor, follow-up manager, scheduler, triage
-  llm/          # OpenAI-compatible client (targets local LLM endpoint)
+  llm/          # OpenAI-compatible client (targets local LLM endpoint), response parsing
   storage/      # SQLite + FTS5 (database.py), ChromaDB vectors (vector_store.py), pending store
   api/          # FastAPI REST API (routes.py, schemas.py)
 ```

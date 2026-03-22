@@ -1,11 +1,12 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
-from datetime import datetime, timezone, timedelta
 
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import (
-    MemoryRecord,
-    MemoryCategory,
     EventFields,
+    MemoryCategory,
+    MemoryRecord,
     MemorySource,
 )
 
@@ -23,7 +24,7 @@ def _make_record(**overrides) -> MemoryRecord:
         category=MemoryCategory.PROFILE,
         title="Test memory",
         content="Test content",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         tags=["test"],
     )
     defaults.update(overrides)
@@ -97,20 +98,24 @@ def test_source_roundtrip(db):
 
 
 def test_upcoming_events(db):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     future = (now + timedelta(days=2)).isoformat()
     past = (now - timedelta(days=2)).isoformat()
 
-    db.create(_make_record(
-        id="mem_future",
-        category=MemoryCategory.EVENT,
-        event_fields=EventFields(datetime=future, status="pending"),
-    ))
-    db.create(_make_record(
-        id="mem_past",
-        category=MemoryCategory.EVENT,
-        event_fields=EventFields(datetime=past, status="pending"),
-    ))
+    db.create(
+        _make_record(
+            id="mem_future",
+            category=MemoryCategory.EVENT,
+            event_fields=EventFields(datetime=future, status="pending"),
+        )
+    )
+    db.create(
+        _make_record(
+            id="mem_past",
+            category=MemoryCategory.EVENT,
+            event_fields=EventFields(datetime=past, status="pending"),
+        )
+    )
     results = db.get_upcoming_events(days=7)
     assert len(results) == 1
     assert results[0].id == "mem_future"

@@ -5,11 +5,13 @@ from dataclasses import dataclass
 import httpx
 from pydantic import ValidationError
 
-from bearmemori.storage.models import MemoryDraft, MemoryCategory, EventFields
+from bearmemori.llm.parsing import extract_json
+from bearmemori.storage.models import EventFields, MemoryCategory, MemoryDraft
 
 logger = logging.getLogger(__name__)
 
 TRIAGE_SYSTEM_PROMPT = """\
+/no_think
 You are a memory triage agent. Given a conversation, decide if any information \
 is worth saving as a long-term memory.
 
@@ -21,15 +23,15 @@ Categories:
 - "task": Action items, to-dos
 - "reminder": Triggered notifications with scheduling
 
-Respond with valid JSON only. If the conversation contains memory-worthy information:
-{
-  "should_save": true,
-  "category": "profile|general|event|location|task|reminder",
-  "title": "Short descriptive title",
-  "content": "The key information to remember",
-  "tags": ["tag1", "tag2"],
-  "event_fields": null or {"datetime": "ISO 8601", "status": "pending", "recurrence": null}
-}
+You MUST respond with a single valid JSON object and nothing else. No explanation, \
+no commentary, no markdown formatting.
+
+If the conversation contains memory-worthy information:
+{"should_save": true, "category": "<category>", "title": "<short title>", \
+"content": "<key information>", "tags": ["tag1", "tag2"], "event_fields": null}
+
+For events/tasks/reminders, set event_fields to:
+{"datetime": "ISO 8601", "status": "pending", "recurrence": null}
 
 If nothing is worth saving:
 {"should_save": false}
@@ -83,8 +85,7 @@ async def run_triage(
 
     try:
         conv_text = "\n".join(
-            f"{msg['role'].upper()}: {msg.get('content', '')}"
-            for msg in conversation[-10:]
+            f"{msg['role'].upper()}: {msg.get('content', '')}" for msg in conversation[-10:]
         )
     except (KeyError, AttributeError) as e:
         logger.warning("Malformed conversation item: %s", e)
@@ -97,8 +98,17 @@ async def run_triage(
 
     try:
         response = await _llm_call(messages, llm_base_url, llm_api_key, llm_model)
-        raw = response["choices"][0]["message"]["content"]
-        data = json.loads(raw)
+        message = response["choices"][0]["message"]
+        logger.info("Triage LLM full message keys: %s", list(message.keys()))
+        raw = message.get("content") or ""
+        reasoning = message.get("reasoning_content") or ""
+        if not raw and reasoning:
+            logger.info("Triage LLM content empty, falling back to reasoning_content")
+            raw = reasoning
+        if not raw:
+            logger.warning("Triage LLM returned empty content. Full message: %s", message)
+        logger.debug("Triage LLM raw output: %s", raw)
+        data = extract_json(raw)
     except (json.JSONDecodeError, KeyError, IndexError) as e:
         logger.warning("Triage LLM returned unparseable output: %s", e)
         return TriageResult(should_save=False)

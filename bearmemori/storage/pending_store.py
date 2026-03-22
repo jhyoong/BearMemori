@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from bearmemori.storage.models import MemoryDraft, PendingMemory
 
@@ -35,14 +35,12 @@ class PendingStore:
         return False
 
     def cleanup(self) -> int:
-        expired = [
-            pid for pid, item in self._store.items() if self._is_expired(item)
-        ]
+        expired = [pid for pid, item in self._store.items() if self._is_expired(item)]
         for pid in expired:
             del self._store[pid]
         return len(expired)
 
     def _is_expired(self, item: PendingMemory) -> bool:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         elapsed = (now - item.created_at).total_seconds()
         return elapsed >= item.ttl_seconds

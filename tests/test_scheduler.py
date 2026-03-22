@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,7 +15,7 @@ def _make_record(**overrides) -> MemoryRecord:
         "category": MemoryCategory.REMINDER,
         "title": "Reminder",
         "content": "Take meds",
-        "created_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
         "raw_input": "remind me to take meds",
         "event_fields": EventFields(
             datetime="2026-03-21T10:00:00",

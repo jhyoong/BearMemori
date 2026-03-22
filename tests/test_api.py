@@ -1,20 +1,20 @@
-import pytest
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
-from datetime import datetime, timezone, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
 from bearmemori.api.routes import create_app
+from bearmemori.core.triage import TriageResult
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import (
-    MemoryRecord,
+    EventFields,
     MemoryCategory,
     MemoryDraft,
-    EventFields,
+    MemoryRecord,
 )
 from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
-from bearmemori.core.triage import TriageResult
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ def _seed_memory(db, vector_store, **overrides):
         category=MemoryCategory.PROFILE,
         title="Coffee preference",
         content="User likes black coffee",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         tags=["coffee"],
     )
     defaults.update(overrides)
@@ -168,9 +168,10 @@ def test_retrieve(client, db, vector_store):
 
 
 def test_upcoming_events(client, db, vector_store):
-    future = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    future = (datetime.now(UTC) + timedelta(days=2)).isoformat()
     _seed_memory(
-        db, vector_store,
+        db,
+        vector_store,
         id="mem_event",
         category=MemoryCategory.EVENT,
         title="Meeting",

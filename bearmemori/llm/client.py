@@ -1,8 +1,9 @@
-import json
 import logging
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel
+
+from bearmemori.llm.parsing import extract_json
 
 logger = logging.getLogger(__name__)
 
@@ -23,21 +24,23 @@ class ExtractionResult(BaseModel):
 
 
 CLASSIFY_SYSTEM_PROMPT = (
+    "/no_think\n"
     "You are a memory classification assistant. Given user input, decide whether to:\n"
     '1. "store" - the input contains clear information worth remembering\n'
     '2. "followup" - the input is unclear and needs more context\n'
     "\n"
-    "Respond with JSON only:\n"
+    "You MUST respond with a single valid JSON object and nothing else.\n"
     '- For store: {"action": "store", "category": "<category>", "confidence": <0-1>}\n'
     "  Categories: profile, general, event, location, task, reminder\n"
     '- For followup: {"action": "followup", "question": "<your clarifying question>"}'
 )
 
 EXTRACT_SYSTEM_PROMPT = (
+    "/no_think\n"
     "You are a memory extraction assistant. Extract structured memory data from the user input.\n"
     "If follow-up context is provided, use the full conversation to understand the memory.\n"
     "\n"
-    "Respond with JSON only:\n"
+    "You MUST respond with a single valid JSON object and nothing else.\n"
     '{"content": "<clear summary of the memory>", "category": "<category>", '
     '"title": "<short descriptive title>", "tags": ["tag1", "tag2"], '
     '"event_fields": null}\n'
@@ -99,7 +102,9 @@ class LLMClient:
             ],
             temperature=0.1,
         )
-        data = json.loads(response.choices[0].message.content)
+        raw = response.choices[0].message.content
+        logger.debug("Classify raw output: %s", raw)
+        data = extract_json(raw)
         return ClassificationResult(**data)
 
     async def extract_memory(self, text: str, context: dict | None) -> ExtractionResult:
@@ -113,7 +118,9 @@ class LLMClient:
             messages=messages,
             temperature=0.1,
         )
-        data = json.loads(response.choices[0].message.content)
+        raw = response.choices[0].message.content
+        logger.debug("Extract raw output: %s", raw)
+        data = extract_json(raw)
         return ExtractionResult(**data)
 
     async def generate_followup(self, text: str, context: dict | None) -> str:

@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from bearmemori.core.models import QueueItem
 from bearmemori.events.bus import EventBus
@@ -54,7 +54,7 @@ class Processor:
             category=MemoryCategory(extraction.category),
             title=extraction.title,
             content=extraction.content,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             raw_input=text,
             event_fields=event_fields,
             tags=extraction.tags,

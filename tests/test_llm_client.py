@@ -15,11 +15,17 @@ def client():
 async def test_classify_input_returns_store(client):
     mock_response = AsyncMock()
     mock_response.choices = [
-        AsyncMock(message=AsyncMock(content=json.dumps({
-            "action": "store",
-            "category": "profile",
-            "confidence": 0.9,
-        })))
+        AsyncMock(
+            message=AsyncMock(
+                content=json.dumps(
+                    {
+                        "action": "store",
+                        "category": "profile",
+                        "confidence": 0.9,
+                    }
+                )
+            )
+        )
     ]
 
     with patch.object(client._client.chat.completions, "create", return_value=mock_response):
@@ -33,10 +39,16 @@ async def test_classify_input_returns_store(client):
 async def test_classify_input_returns_followup(client):
     mock_response = AsyncMock()
     mock_response.choices = [
-        AsyncMock(message=AsyncMock(content=json.dumps({
-            "action": "followup",
-            "question": "What kind of dark mode?",
-        })))
+        AsyncMock(
+            message=AsyncMock(
+                content=json.dumps(
+                    {
+                        "action": "followup",
+                        "question": "What kind of dark mode?",
+                    }
+                )
+            )
+        )
     ]
 
     with patch.object(client._client.chat.completions, "create", return_value=mock_response):
@@ -50,13 +62,19 @@ async def test_classify_input_returns_followup(client):
 async def test_extract_memory(client):
     mock_response = AsyncMock()
     mock_response.choices = [
-        AsyncMock(message=AsyncMock(content=json.dumps({
-            "content": "User prefers dark mode in all applications",
-            "category": "profile",
-            "title": "Dark mode preference",
-            "tags": ["ui", "dark-mode", "preference"],
-            "event_fields": None,
-        })))
+        AsyncMock(
+            message=AsyncMock(
+                content=json.dumps(
+                    {
+                        "content": "User prefers dark mode in all applications",
+                        "category": "profile",
+                        "title": "Dark mode preference",
+                        "tags": ["ui", "dark-mode", "preference"],
+                        "event_fields": None,
+                    }
+                )
+            )
+        )
     ]
 
     with patch.object(client._client.chat.completions, "create", return_value=mock_response):
@@ -85,11 +103,17 @@ async def test_generate_followup(client):
 async def test_classify_reminder(client):
     mock_response = AsyncMock()
     mock_response.choices = [
-        AsyncMock(message=AsyncMock(content=json.dumps({
-            "action": "store",
-            "category": "reminder",
-            "confidence": 0.95,
-        })))
+        AsyncMock(
+            message=AsyncMock(
+                content=json.dumps(
+                    {
+                        "action": "store",
+                        "category": "reminder",
+                        "confidence": 0.95,
+                    }
+                )
+            )
+        )
     ]
 
     with patch.object(client._client.chat.completions, "create", return_value=mock_response):
@@ -103,17 +127,23 @@ async def test_classify_reminder(client):
 async def test_extract_reminder(client):
     mock_response = AsyncMock()
     mock_response.choices = [
-        AsyncMock(message=AsyncMock(content=json.dumps({
-            "content": "Take meds",
-            "category": "reminder",
-            "title": "Take meds at 8pm",
-            "tags": ["health"],
-            "event_fields": {
-                "datetime": "2026-03-21T20:00:00",
-                "status": "pending",
-                "recurrence": None,
-            },
-        })))
+        AsyncMock(
+            message=AsyncMock(
+                content=json.dumps(
+                    {
+                        "content": "Take meds",
+                        "category": "reminder",
+                        "title": "Take meds at 8pm",
+                        "tags": ["health"],
+                        "event_fields": {
+                            "datetime": "2026-03-21T20:00:00",
+                            "status": "pending",
+                            "recurrence": None,
+                        },
+                    }
+                )
+            )
+        )
     ]
 
     with patch.object(client._client.chat.completions, "create", return_value=mock_response):
@@ -128,17 +158,23 @@ async def test_extract_reminder(client):
 async def test_extract_recurring_reminder(client):
     mock_response = AsyncMock()
     mock_response.choices = [
-        AsyncMock(message=AsyncMock(content=json.dumps({
-            "content": "Take meds every 8 hours",
-            "category": "reminder",
-            "title": "Take meds every 8 hours",
-            "tags": ["health"],
-            "event_fields": {
-                "datetime": "2026-03-21T20:00:00",
-                "status": "pending",
-                "recurrence": "every 8 hours",
-            },
-        })))
+        AsyncMock(
+            message=AsyncMock(
+                content=json.dumps(
+                    {
+                        "content": "Take meds every 8 hours",
+                        "category": "reminder",
+                        "title": "Take meds every 8 hours",
+                        "tags": ["health"],
+                        "event_fields": {
+                            "datetime": "2026-03-21T20:00:00",
+                            "status": "pending",
+                            "recurrence": "every 8 hours",
+                        },
+                    }
+                )
+            )
+        )
     ]
 
     with patch.object(client._client.chat.completions, "create", return_value=mock_response):

@@ -45,7 +45,7 @@ FastAPI REST API (:8100)
 ### Storage
 
 - **SQLite** -- relational storage with FTS5 full-text search on title, content, and tags. WAL mode for concurrent access.
-- **ChromaDB** -- vector embeddings using sentence-transformers (`all-MiniLM-L6-v2` by default). Persisted to disk.
+- **ChromaDB** -- vector embeddings using sentence-transformers (`all-mpnet-base-v2` by default). Persisted to disk.
 - **PendingStore** -- in-memory dict with TTL-based expiry for draft memories awaiting user confirmation.
 
 ### Internal Components
@@ -116,6 +116,35 @@ This starts:
 - The reminder scheduler
 - The internal processing queue
 
+### Run with Docker
+
+```bash
+docker build -t bearmemori .
+docker run -d \
+  --name bearmemori \
+  -p 8100:8100 \
+  -v bearmemori-data:/data \
+  -e TELEGRAM_BOT_TOKEN=your-token \
+  -e TELEGRAM_ALLOWED_USER_ID=your-id \
+  -e LLM_BASE_URL=http://your-llm-host:11434/v1 \
+  bearmemori
+```
+
+The `-v bearmemori-data:/data` volume mount persists the SQLite database and ChromaDB vectors across container restarts. The container stores data at `/data` by default (`DATABASE_PATH=/data/bearmemori.db`, `CHROMA_PERSIST_DIR=/data/chroma`).
+
+You can pass any configuration setting as an environment variable with `-e`, or mount a `.env` file:
+
+```bash
+docker run -d \
+  --name bearmemori \
+  -p 8100:8100 \
+  -v bearmemori-data:/data \
+  --env-file .env \
+  bearmemori
+```
+
+**Image size note:** The image is large (~4-5 GB) because `sentence-transformers` pulls in PyTorch. If size is a concern, consider running the embedding model as a separate service and pointing to it instead.
+
 ### Run Tests
 
 ```bash
@@ -126,7 +155,7 @@ uv run pytest -v
 
 BearMemori is a drop-in replacement for teleBearAI's memory service. To switch:
 
-1. Run BearMemori as a service (standalone or via Docker)
+1. Run BearMemori as a service (standalone or via Docker, see [Run with Docker](#run-with-docker))
 2. In teleBearAI's `.env`, set:
    ```
    MEMORY_SERVICE_URL=http://localhost:8100
@@ -158,6 +187,7 @@ bearmemori/
     telegram.py        # Telegram bot handler
   llm/
     client.py          # OpenAI-compatible LLM client
+    parsing.py         # JSON extraction from LLM responses
   storage/
     database.py        # SQLite + FTS5
     vector_store.py    # ChromaDB wrapper

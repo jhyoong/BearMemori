@@ -35,9 +35,7 @@ class TelegramInterface:
         text = update.message.text
         logger.info("Received text from %s: %s", chat_id, text[:80])
 
-        await self._bus.emit(
-            InputReceived(input_type="text", content=text, source_chat_id=chat_id)
-        )
+        await self._bus.emit(InputReceived(input_type="text", content=text, source_chat_id=chat_id))
 
     async def _handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_authorized(update):

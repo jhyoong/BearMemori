@@ -2,9 +2,13 @@ __pycache__/
 *.py[cod]
 .env
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 .venv/
 dist/
 *.egg-info/
 .ruff_cache/
 .pytest_cache/
+.python-version
+chroma_data/

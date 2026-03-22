@@ -59,10 +59,14 @@ class VectorStore:
         items = []
         if results["ids"] and results["ids"][0]:
             for i, id_ in enumerate(results["ids"][0]):
-                items.append({
-                    "id": id_,
-                    "document": results["documents"][0][i],
-                    "metadata": results["metadatas"][0][i],
-                    "distance": results["distances"][0][i] if results.get("distances") else None,
-                })
+                items.append(
+                    {
+                        "id": id_,
+                        "document": results["documents"][0][i],
+                        "metadata": results["metadatas"][0][i],
+                        "distance": results["distances"][0][i]
+                        if results.get("distances")
+                        else None,
+                    }
+                )
         return items

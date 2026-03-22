@@ -1,7 +1,6 @@
 from bearmemori.storage.models import (
-    MemoryCategory,
     EventFields,
-    MemorySource,
+    MemoryCategory,
     MemoryDraft,
     MemoryRecord,
     PendingMemory,

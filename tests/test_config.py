@@ -13,7 +13,7 @@ def test_settings_loads_defaults():
     assert settings.database_path == "bearmemori.db"
     assert settings.queue_max_size == 1000
     assert settings.followup_timeout_hours == 24
-    assert settings.embedding_model == "all-MiniLM-L6-v2"
+    assert settings.embedding_model == "all-mpnet-base-v2"
 
 
 def test_reminder_poll_interval_default(monkeypatch):
@@ -26,9 +26,10 @@ def test_reminder_poll_interval_default(monkeypatch):
 def test_new_settings_defaults(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test")
     monkeypatch.setenv("TELEGRAM_ALLOWED_USER_ID", "123")
-    s = Settings()
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    s = Settings(_env_file=None)
     assert s.chroma_persist_dir == "chroma_data"
-    assert s.embedding_model == "all-MiniLM-L6-v2"
+    assert s.embedding_model == "all-mpnet-base-v2"
     assert s.pending_ttl_seconds == 86400
     assert s.retrieval_top_k == 5
     assert s.upcoming_events_days == 7

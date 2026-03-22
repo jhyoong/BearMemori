@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+.venv
+.env
+.git
+.ruff_cache
+.pytest_cache
+*.db
+*.db-shm
+*.db-wal
+chroma_data/
+tests/

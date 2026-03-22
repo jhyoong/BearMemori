@@ -72,12 +72,14 @@ async def test_reminder_due_event():
     received = []
     bus.on(ReminderDue, lambda e: received.append(e))
 
-    await bus.emit(ReminderDue(
-        memory_id="rem-1",
-        content="Take meds",
-        source_chat_id="42",
-        remind_at_iso="2026-03-21T10:00:00",
-    ))
+    await bus.emit(
+        ReminderDue(
+            memory_id="rem-1",
+            content="Take meds",
+            source_chat_id="42",
+            remind_at_iso="2026-03-21T10:00:00",
+        )
+    )
 
     assert len(received) == 1
     assert received[0].memory_id == "rem-1"
