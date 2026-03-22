@@ -1,13 +1,11 @@
 import logging
-import uuid
-from datetime import UTC, datetime
 
 from bearmemori.core.models import QueueItem
 from bearmemori.events.bus import EventBus
-from bearmemori.events.domain import FollowUpRequired, MemoryStored
+from bearmemori.events.domain import FollowUpRequired, MemoryPending
 from bearmemori.llm.client import LLMClient
-from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord, MemorySource
+from bearmemori.storage.models import EventFields, MemoryCategory, MemoryDraft, MemorySource
+from bearmemori.storage.pending_store import PendingStore
 
 logger = logging.getLogger(__name__)
 
@@ -17,15 +15,18 @@ class Processor:
         self,
         bus: EventBus,
         llm: LLMClient,
-        db: MemoryDatabase,
+        pending_store: PendingStore,
     ) -> None:
         self._bus = bus
         self._llm = llm
-        self._db = db
+        self._pending_store = pending_store
 
     async def process_item(self, item: QueueItem) -> None:
-        text = item.content if isinstance(item.content, str) else str(item.content)
+        if item.input_type == "image":
+            await self._process_image(item)
+            return
 
+        text = item.content if isinstance(item.content, str) else str(item.content)
         classification = await self._llm.classify_input(text)
 
         if classification.action == "followup":
@@ -33,7 +34,6 @@ class Processor:
             context = item.context or {"messages": []}
             context["messages"].append({"role": "user", "content": text})
             context["messages"].append({"role": "assistant", "content": question})
-
             await self._bus.emit(
                 FollowUpRequired(
                     question=question,
@@ -44,30 +44,69 @@ class Processor:
             return
 
         extraction = await self._llm.extract_memory(text, item.context)
+        await self._create_pending(extraction, text, item.source_chat_id)
 
+    async def _process_image(self, item: QueueItem) -> None:
+        image_bytes = item.content.get("image_bytes", b"")
+        caption = item.content.get("caption", "")
+        image_path = item.content.get("image_path")
+
+        if caption:
+            classification = await self._llm.classify_input(caption)
+            if classification.action == "followup":
+                question = await self._llm.generate_followup(caption, item.context)
+                context = item.context or {"messages": []}
+                context["messages"].append({"role": "user", "content": caption})
+                context["messages"].append({"role": "assistant", "content": question})
+                await self._bus.emit(
+                    FollowUpRequired(
+                        question=question,
+                        source_chat_id=item.source_chat_id,
+                        context=context,
+                    )
+                )
+                return
+            extraction = await self._llm.extract_memory(caption, item.context)
+        else:
+            extraction = await self._llm.describe_image(image_bytes, caption=caption)
+
+        await self._create_pending(
+            extraction, caption or "[image]", item.source_chat_id, image_path=image_path,
+        )
+
+    async def _create_pending(
+        self, extraction, raw_input: str, chat_id: str, image_path: str | None = None,
+    ) -> None:
         event_fields = None
         if extraction.event_fields:
             event_fields = EventFields(**extraction.event_fields)
 
-        record = MemoryRecord(
-            id=f"mem_{uuid.uuid4().hex[:12]}",
+        draft = MemoryDraft(
             category=MemoryCategory(extraction.category),
             title=extraction.title,
             content=extraction.content,
-            created_at=datetime.now(UTC),
-            raw_input=text,
             event_fields=event_fields,
             tags=extraction.tags,
-            source=MemorySource(platform="telegram", chat_id=item.source_chat_id),
+            source=MemorySource(platform="telegram", chat_id=chat_id),
         )
-        self._db.create(record)
+
+        pending_id = self._pending_store.add(
+            draft, chat_id=chat_id, image_path=image_path,
+        )
+
+        preview_data = {
+            "title": extraction.title,
+            "category": extraction.category,
+            "content": extraction.content,
+            "tags": extraction.tags,
+            "event_fields": extraction.event_fields,
+        }
 
         await self._bus.emit(
-            MemoryStored(
-                memory_id=record.id,
-                content=record.content,
-                category=record.category.value,
-                source_chat_id=item.source_chat_id,
+            MemoryPending(
+                pending_id=pending_id,
+                preview_data=preview_data,
+                source_chat_id=chat_id,
             )
         )
-        logger.info("Stored memory %s: %s", record.id, record.content[:80])
+        logger.info("Pending memory %s: %s", pending_id, extraction.content[:80])

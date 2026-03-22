@@ -5,9 +5,8 @@ import pytest
 from bearmemori.core.models import QueueItem
 from bearmemori.core.processor import Processor
 from bearmemori.events.bus import EventBus
-from bearmemori.events.domain import FollowUpRequired, MemoryStored
+from bearmemori.events.domain import FollowUpRequired, MemoryPending
 from bearmemori.llm.client import ClassificationResult, ExtractionResult
-from bearmemori.storage.models import MemoryCategory, MemoryRecord
 
 
 @pytest.fixture
@@ -17,25 +16,25 @@ def bus():
 
 @pytest.fixture
 def mock_llm():
-    llm = AsyncMock()
-    return llm
+    return AsyncMock()
 
 
 @pytest.fixture
-def mock_db():
-    db = MagicMock()
-    return db
+def mock_pending_store():
+    store = MagicMock()
+    store.add.return_value = "pend_abc123"
+    return store
 
 
 @pytest.fixture
-def processor(bus, mock_llm, mock_db):
-    return Processor(bus=bus, llm=mock_llm, db=mock_db)
+def processor(bus, mock_llm, mock_pending_store):
+    return Processor(bus=bus, llm=mock_llm, pending_store=mock_pending_store)
 
 
 @pytest.mark.asyncio
-async def test_process_item_stores_memory(processor, bus, mock_llm, mock_db):
-    stored_events = []
-    bus.on(MemoryStored, lambda e: stored_events.append(e))
+async def test_process_item_creates_pending_memory(processor, bus, mock_llm, mock_pending_store):
+    pending_events = []
+    bus.on(MemoryPending, lambda e: pending_events.append(e))
 
     mock_llm.classify_input.return_value = ClassificationResult(
         action="store", category="profile", confidence=0.9
@@ -50,14 +49,11 @@ async def test_process_item_stores_memory(processor, bus, mock_llm, mock_db):
     item = QueueItem(input_type="text", content="I like dark mode", source_chat_id="123")
     await processor.process_item(item)
 
-    mock_db.create.assert_called_once()
-    created_record = mock_db.create.call_args[0][0]
-    assert isinstance(created_record, MemoryRecord)
-    assert created_record.category == MemoryCategory.PROFILE
-    assert created_record.title == "Dark mode preference"
-    assert len(stored_events) == 1
-    assert stored_events[0].source_chat_id == "123"
-    assert stored_events[0].category == "profile"
+    mock_pending_store.add.assert_called_once()
+    assert len(pending_events) == 1
+    assert pending_events[0].pending_id == "pend_abc123"
+    assert pending_events[0].source_chat_id == "123"
+    assert pending_events[0].preview_data["title"] == "Dark mode preference"
 
 
 @pytest.mark.asyncio
@@ -78,9 +74,9 @@ async def test_process_item_requests_followup(processor, bus, mock_llm):
 
 
 @pytest.mark.asyncio
-async def test_process_item_stores_reminder(processor, bus, mock_llm, mock_db):
-    stored_events = []
-    bus.on(MemoryStored, lambda e: stored_events.append(e))
+async def test_process_item_stores_reminder(processor, bus, mock_llm, mock_pending_store):
+    pending_events = []
+    bus.on(MemoryPending, lambda e: pending_events.append(e))
 
     mock_llm.classify_input.return_value = ClassificationResult(
         action="store", category="reminder", confidence=0.95
@@ -104,13 +100,61 @@ async def test_process_item_stores_reminder(processor, bus, mock_llm, mock_db):
     )
     await processor.process_item(item)
 
-    mock_db.create.assert_called_once()
-    created_record = mock_db.create.call_args[0][0]
-    assert isinstance(created_record, MemoryRecord)
-    assert created_record.category == MemoryCategory.REMINDER
-    assert created_record.title == "Take meds every 8 hours"
-    assert created_record.event_fields.datetime == "2026-03-21T20:00:00"
-    assert created_record.event_fields.recurrence == "every 8 hours"
-    assert created_record.source.chat_id == "123"
-    assert len(stored_events) == 1
-    assert stored_events[0].category == "reminder"
+    mock_pending_store.add.assert_called_once()
+    assert len(pending_events) == 1
+    assert pending_events[0].preview_data["category"] == "reminder"
+
+
+@pytest.mark.asyncio
+async def test_process_image_without_caption(processor, bus, mock_llm, mock_pending_store):
+    pending_events = []
+    bus.on(MemoryPending, lambda e: pending_events.append(e))
+
+    mock_llm.describe_image.return_value = ExtractionResult(
+        content="A sunset over the ocean",
+        category="general",
+        title="Ocean sunset",
+        tags=["photo", "nature"],
+    )
+
+    item = QueueItem(
+        input_type="image",
+        content={"image_bytes": b"fake-image", "caption": "", "image_path": "/tmp/test.jpg"},
+        source_chat_id="123",
+    )
+    await processor.process_item(item)
+
+    mock_llm.describe_image.assert_called_once_with(b"fake-image", caption="")
+    mock_pending_store.add.assert_called_once()
+    assert len(pending_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_process_image_with_caption(processor, bus, mock_llm, mock_pending_store):
+    pending_events = []
+    bus.on(MemoryPending, lambda e: pending_events.append(e))
+
+    mock_llm.classify_input.return_value = ClassificationResult(
+        action="store", category="general", confidence=0.9
+    )
+    mock_llm.extract_memory.return_value = ExtractionResult(
+        content="Photo of new apartment kitchen",
+        category="general",
+        title="New apartment kitchen",
+        tags=["home"],
+    )
+
+    item = QueueItem(
+        input_type="image",
+        content={
+            "image_bytes": b"fake-image",
+            "caption": "My new kitchen",
+            "image_path": "/tmp/test.jpg",
+        },
+        source_chat_id="123",
+    )
+    await processor.process_item(item)
+
+    mock_llm.classify_input.assert_called_once_with("My new kitchen")
+    mock_pending_store.add.assert_called_once()
+    assert len(pending_events) == 1
