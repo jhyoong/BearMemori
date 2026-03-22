@@ -59,3 +59,24 @@ def test_pending_memory_creation():
     assert pm.pending_id == "pend_abc123"
     assert pm.ttl_seconds == 3600
     assert pm.created_at is not None
+
+
+def test_memory_record_needs_review_default():
+    draft = MemoryDraft(
+        category=MemoryCategory.GENERAL,
+        title="Test",
+        content="Test content",
+    )
+    record = MemoryRecord.from_draft(draft, "mem_test123")
+    assert record.needs_review is False
+
+
+def test_memory_record_needs_review_set():
+    draft = MemoryDraft(
+        category=MemoryCategory.GENERAL,
+        title="Test",
+        content="Test content",
+    )
+    record = MemoryRecord.from_draft(draft, "mem_test123")
+    record.needs_review = True
+    assert record.needs_review is True
