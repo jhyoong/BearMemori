@@ -22,6 +22,11 @@ class Processor:
         self._pending_store = pending_store
 
     async def process_item(self, item: QueueItem) -> None:
+        # Handle edit corrections for a pending memory
+        if item.context and "edit_pending_id" in item.context:
+            await self._process_edit(item)
+            return
+
         if item.input_type == "image":
             await self._process_image(item)
             return
@@ -45,6 +50,32 @@ class Processor:
 
         extraction = await self._llm.extract_memory(text, item.context)
         await self._create_pending(extraction, text, item.source_chat_id)
+
+    async def _process_edit(self, item: QueueItem) -> None:
+        pending_id = item.context["edit_pending_id"]
+        pending = self._pending_store.get(pending_id)
+        if pending is None:
+            logger.warning("Edit target %s not found (expired?)", pending_id)
+            return
+
+        text = item.content if isinstance(item.content, str) else str(item.content)
+        original_content = pending.draft.content
+
+        context = {
+            "messages": [
+                {"role": "user", "content": original_content},
+                {"role": "user", "content": text},
+            ]
+        }
+        extraction = await self._llm.extract_memory(text, context)
+
+        self._pending_store.remove(pending_id)
+        await self._create_pending(
+            extraction,
+            text,
+            item.source_chat_id,
+            image_path=pending.image_path,
+        )
 
     async def _process_image(self, item: QueueItem) -> None:
         image_bytes = item.content.get("image_bytes", b"")

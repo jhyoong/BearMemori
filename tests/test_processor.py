@@ -130,6 +130,50 @@ async def test_process_image_without_caption(processor, bus, mock_llm, mock_pend
 
 
 @pytest.mark.asyncio
+async def test_process_edit_re_extracts_memory(
+    processor, bus, mock_llm, mock_pending_store
+):
+    pending_events = []
+    bus.on(MemoryPending, lambda e: pending_events.append(e))
+
+    # Set up the original pending memory
+    original_pending = MagicMock()
+    original_pending.draft.content = "Dentist on Tuesday"
+    original_pending.chat_id = "123"
+    original_pending.image_path = None
+    mock_pending_store.get.return_value = original_pending
+
+    mock_pending_store.add.return_value = "pend_new123"
+
+    mock_llm.extract_memory.return_value = ExtractionResult(
+        content="Dentist appointment on Wednesday",
+        category="reminder",
+        title="Dentist on Wednesday",
+        tags=["health"],
+        event_fields={
+            "datetime": "2026-04-16T10:00:00",
+            "status": "pending",
+            "recurrence": None,
+        },
+    )
+
+    item = QueueItem(
+        input_type="text",
+        content="Actually it's Wednesday not Tuesday",
+        source_chat_id="123",
+        context={"edit_pending_id": "pend_abc123"},
+    )
+    await processor.process_item(item)
+
+    # Old pending should be removed
+    mock_pending_store.remove.assert_called_with("pend_abc123")
+    # New pending should be created
+    mock_pending_store.add.assert_called_once()
+    assert len(pending_events) == 1
+    assert pending_events[0].preview_data["title"] == "Dentist on Wednesday"
+
+
+@pytest.mark.asyncio
 async def test_process_image_with_caption(processor, bus, mock_llm, mock_pending_store):
     pending_events = []
     bus.on(MemoryPending, lambda e: pending_events.append(e))
