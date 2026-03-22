@@ -127,3 +127,64 @@ def test_keyword_search(db):
     results = db.search_keyword("coffee")
     assert len(results) >= 1
     assert any(r.id == "mem_1" for r in results)
+
+
+def test_create_memory_with_needs_review(db, sample_record):
+    sample_record.needs_review = True
+    db.create(sample_record)
+    retrieved = db.get(sample_record.id)
+    assert retrieved is not None
+    assert retrieved.needs_review is True
+
+
+def test_create_memory_default_needs_review(db, sample_record):
+    db.create(sample_record)
+    retrieved = db.get(sample_record.id)
+    assert retrieved is not None
+    assert retrieved.needs_review is False
+
+
+def test_list_memories_filter_needs_review(db, sample_record):
+    db.create(sample_record)
+
+    review_record = sample_record.model_copy(
+        update={"id": "mem_review123", "needs_review": True}
+    )
+    db.create(review_record)
+
+    all_memories = db.list_all()
+    assert len(all_memories) == 2
+
+    review_only = db.list_all(needs_review=True)
+    assert len(review_only) == 1
+    assert review_only[0].id == "mem_review123"
+
+    no_review = db.list_all(needs_review=False)
+    assert len(no_review) == 1
+    assert no_review[0].id == sample_record.id
+
+
+def test_update_memory_needs_review(db, sample_record):
+    db.create(sample_record)
+    sample_record.needs_review = True
+    db.update(sample_record)
+    retrieved = db.get(sample_record.id)
+    assert retrieved.needs_review is True
+
+
+def test_delete_many(db, sample_record):
+    record2 = sample_record.model_copy(update={"id": "mem_second123"})
+    record3 = sample_record.model_copy(update={"id": "mem_third1234"})
+    db.create(sample_record)
+    db.create(record2)
+    db.create(record3)
+    deleted = db.delete_many([sample_record.id, record2.id])
+    assert deleted == 2
+    assert db.get(sample_record.id) is None
+    assert db.get(record2.id) is None
+    assert db.get(record3.id) is not None
+
+
+@pytest.fixture
+def sample_record():
+    return _make_record()
