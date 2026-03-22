@@ -49,3 +49,36 @@ def test_cleanup():
     time.sleep(1.1)
     removed = store.cleanup()
     assert removed == 2
+
+
+def test_add_with_chat_id_and_image_path():
+    store = PendingStore()
+    pid = store.add(_make_draft(), chat_id="123", image_path="/tmp/test.jpg")
+    result = store.get(pid)
+    assert result is not None
+    assert result.chat_id == "123"
+    assert result.image_path == "/tmp/test.jpg"
+
+
+def test_add_stores_message_id():
+    store = PendingStore()
+    pid = store.add(_make_draft(), chat_id="123")
+    result = store.get(pid)
+    assert result.chat_id == "123"
+    assert result.message_id is None
+
+    store.set_message_id(pid, 42)
+    result = store.get(pid)
+    assert result.message_id == 42
+
+
+def test_cleanup_returns_expired_ids():
+    store = PendingStore(default_ttl=1)
+    pid1 = store.add(_make_draft(), chat_id="123")
+    pid2 = store.add(_make_draft(), chat_id="456")
+    time.sleep(1.1)
+    expired = store.cleanup_with_details()
+    assert len(expired) == 2
+    expired_ids = {e.pending_id for e in expired}
+    assert pid1 in expired_ids
+    assert pid2 in expired_ids

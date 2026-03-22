@@ -67,3 +67,6 @@ class PendingMemory(BaseModel):
     draft: MemoryDraft
     ttl_seconds: int
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    chat_id: str = ""
+    message_id: int | None = None
+    image_path: str | None = None
