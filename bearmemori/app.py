@@ -82,7 +82,11 @@ def create_application(settings: Settings) -> Application:
     confirm_handler = ConfirmHandler(
         bus=bus, pending_store=pending_store, db=db, vector_store=vector_store,
     )
-    cleanup_task = PendingCleanupTask(bus=bus, pending_store=pending_store)
+    cleanup_task = PendingCleanupTask(
+        bus=bus,
+        pending_store=pending_store,
+        interval_seconds=settings.cleanup_interval_seconds,
+    )
     telegram = TelegramInterface(
         bus=bus,
         token=settings.telegram_bot_token,

@@ -12,7 +12,8 @@ class Settings(BaseSettings):
     embedding_model: str = "all-mpnet-base-v2"
     database_path: str = "bearmemori.db"
     chroma_persist_dir: str = "chroma_data"
-    pending_ttl_seconds: int = 86400
+    pending_ttl_seconds: int = 1800
+    cleanup_interval_seconds: int = 300
     queue_max_size: int = 1000
     followup_timeout_hours: int = 24
     reminder_poll_interval_seconds: int = 60
