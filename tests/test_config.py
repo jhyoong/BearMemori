@@ -36,3 +36,11 @@ def test_new_settings_defaults(monkeypatch):
     assert s.upcoming_events_days == 7
     assert s.api_port == 8100
     assert s.llm_api_key == "not-needed"
+
+
+def test_webapp_secret_default():
+    settings = Settings(
+        telegram_bot_token="test",
+        telegram_allowed_user_id=123,
+    )
+    assert settings.webapp_secret == ""
