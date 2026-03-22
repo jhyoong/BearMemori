@@ -51,6 +51,7 @@ async def main() -> None:
 
     asyncio.create_task(processing_loop(application))
     asyncio.create_task(application.scheduler.run())
+    asyncio.create_task(application.cleanup_task.run())
 
     config = uvicorn.Config(api, host="0.0.0.0", port=settings.api_port, log_level="info")
     server = uvicorn.Server(config)
