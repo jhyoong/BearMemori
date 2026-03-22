@@ -1,7 +1,8 @@
 import logging
-from typing import cast
+from pathlib import Path
 
 from fastapi import FastAPI
+from starlette.staticfiles import StaticFiles
 
 from bearmemori.api.routes import create_app as create_api_app
 from bearmemori.config import Settings
@@ -28,9 +29,6 @@ from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
 from bearmemori.webapp.auth import WebappAuthMiddleware
 from bearmemori.webapp.router import create_webapp_router
-
-from starlette.staticfiles import StaticFiles
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

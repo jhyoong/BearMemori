@@ -147,9 +147,7 @@ def test_create_memory_default_needs_review(db, sample_record):
 def test_list_memories_filter_needs_review(db, sample_record):
     db.create(sample_record)
 
-    review_record = sample_record.model_copy(
-        update={"id": "mem_review123", "needs_review": True}
-    )
+    review_record = sample_record.model_copy(update={"id": "mem_review123", "needs_review": True})
     db.create(review_record)
 
     all_memories = db.list_all()

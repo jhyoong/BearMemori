@@ -1,4 +1,3 @@
-import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
@@ -50,6 +49,7 @@ def test_protected_route_allowed_with_valid_session():
     client = TestClient(app)
     # Create a new middleware instance to get the valid token
     from bearmemori.webapp.auth import WebappAuthMiddleware as AuthMiddleware
+
     auth = AuthMiddleware(app, "test-secret")
     # Manually set the valid session cookie
     client.cookies.set("webapp_session", auth._token)

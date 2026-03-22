@@ -155,9 +155,7 @@ class TelegramInterface:
                 ],
                 [
                     InlineKeyboardButton("Edit", callback_data=f"edit:{event.pending_id}"),
-                    InlineKeyboardButton(
-                        "Discard", callback_data=f"discard:{event.pending_id}"
-                    ),
+                    InlineKeyboardButton("Discard", callback_data=f"discard:{event.pending_id}"),
                 ],
             ]
         )

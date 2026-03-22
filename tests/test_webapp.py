@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-import pytest
 
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import MemoryCategory, MemoryRecord
@@ -264,9 +264,7 @@ def test_bulk_approve_review(authed_webapp_client, db):
 
 
 def test_memories_htmx_partial(authed_webapp_client):
-    response = authed_webapp_client.get(
-        "/webapp/memories", headers={"HX-Request": "true"}
-    )
+    response = authed_webapp_client.get("/webapp/memories", headers={"HX-Request": "true"})
     assert response.status_code == 200
     assert "<table>" in response.text
 

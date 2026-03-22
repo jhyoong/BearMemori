@@ -1,6 +1,5 @@
 import hashlib
 import hmac
-import secrets
 
 from fastapi import Request, Response
 from fastapi.responses import RedirectResponse
@@ -18,9 +17,7 @@ class WebappAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Allow login page and static files
-        if request.url.path in ("/webapp/login",) or request.url.path.startswith(
-            "/webapp/static"
-        ):
+        if request.url.path in ("/webapp/login",) or request.url.path.startswith("/webapp/static"):
             return await call_next(request)
 
         # Check session cookie
@@ -41,6 +38,4 @@ class WebappAuthMiddleware(BaseHTTPMiddleware):
         return response
 
     def verify_secret(self, provided: str) -> bool:
-        return hmac.compare_digest(
-            hashlib.sha256(provided.encode()).hexdigest(), self._token
-        )
+        return hmac.compare_digest(hashlib.sha256(provided.encode()).hexdigest(), self._token)

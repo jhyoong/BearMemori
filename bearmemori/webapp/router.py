@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -76,9 +76,7 @@ def create_webapp_router(
 
     @r.get("/memories/new", response_class=HTMLResponse)
     async def create_memory_page(request: Request):
-        return templates.TemplateResponse(
-            request, "create.html", {"categories": CATEGORIES}
-        )
+        return templates.TemplateResponse(request, "create.html", {"categories": CATEGORIES})
 
     @r.post("/memories/new")
     async def create_memory_submit(
@@ -134,9 +132,7 @@ def create_webapp_router(
         record.needs_review = needs_review
         db.update(record)
         vector_store.update(record)
-        return RedirectResponse(
-            url=f"/webapp/memories/{record_id}", status_code=302
-        )
+        return RedirectResponse(url=f"/webapp/memories/{record_id}", status_code=302)
 
     @r.delete("/memories/{record_id}")
     async def memory_delete(record_id: str):

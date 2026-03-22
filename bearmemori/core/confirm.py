@@ -46,7 +46,9 @@ class ConfirmHandler:
                 source_chat_id=event.source_chat_id,
             )
         )
-        logger.info("Confirmed and stored memory %s (needs_review=%s)", record.id, record.needs_review)
+        logger.info(
+            "Confirmed and stored memory %s (needs_review=%s)", record.id, record.needs_review
+        )
 
     async def handle_discarded(self, event: MemoryDiscarded) -> None:
         pending = self._pending_store.get(event.pending_id)

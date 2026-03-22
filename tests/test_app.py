@@ -81,8 +81,8 @@ def test_application_has_confirm_and_cleanup(settings, tmp_path):
 
 @pytest.mark.asyncio
 async def test_webapp_mounted_when_secret_configured():
-    from bearmemori.config import Settings
     from bearmemori.app import create_application
+    from bearmemori.config import Settings
 
     settings = Settings(
         telegram_bot_token="fake-token",
@@ -103,8 +103,8 @@ async def test_webapp_mounted_when_secret_configured():
 
 @pytest.mark.asyncio
 async def test_webapp_not_mounted_when_secret_not_configured():
-    from bearmemori.config import Settings
     from bearmemori.app import create_application
+    from bearmemori.config import Settings
 
     settings = Settings(
         telegram_bot_token="fake-token",

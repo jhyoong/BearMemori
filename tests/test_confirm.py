@@ -107,14 +107,10 @@ async def test_discard_cleans_up_image(handler, pending_store, tmp_path):
 @pytest.mark.asyncio
 async def test_confirm_with_needs_review(bus, pending_store, mock_db, mock_vector_store):
     handler = ConfirmHandler(bus, pending_store, mock_db, mock_vector_store)
-    draft = MemoryDraft(
-        category=MemoryCategory.GENERAL, title="Test", content="Test content"
-    )
+    draft = MemoryDraft(category=MemoryCategory.GENERAL, title="Test", content="Test content")
     pending_id = pending_store.add(draft, chat_id="123")
 
-    event = MemoryConfirmed(
-        pending_id=pending_id, source_chat_id="123", needs_review=True
-    )
+    event = MemoryConfirmed(pending_id=pending_id, source_chat_id="123", needs_review=True)
     await handler.handle_confirmed(event)
 
     # Verify the record stored in db has needs_review=True

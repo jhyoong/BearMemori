@@ -127,7 +127,8 @@ class MemoryDatabase:
         self._conn.execute(
             """INSERT INTO memories
                (id, category, title, content, raw_input, created_at, updated_at,
-                tags, source, event_datetime, event_status, event_recurrence, metadata, needs_review)
+                tags, source, event_datetime, event_status, event_recurrence,
+                metadata, needs_review)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 record.id,
@@ -167,9 +168,7 @@ class MemoryDatabase:
 
     def list_all(self, needs_review: bool | None = None) -> list[MemoryRecord]:
         if needs_review is None:
-            rows = self._conn.execute(
-                "SELECT * FROM memories ORDER BY created_at DESC"
-            ).fetchall()
+            rows = self._conn.execute("SELECT * FROM memories ORDER BY created_at DESC").fetchall()
         else:
             rows = self._conn.execute(
                 "SELECT * FROM memories WHERE needs_review = ? ORDER BY created_at DESC",

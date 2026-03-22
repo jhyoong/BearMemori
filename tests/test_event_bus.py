@@ -123,9 +123,7 @@ def test_memory_confirmed_needs_review_default():
 
 
 def test_memory_confirmed_needs_review_set():
-    event = MemoryConfirmed(
-        pending_id="pend_test", source_chat_id="123", needs_review=True
-    )
+    event = MemoryConfirmed(pending_id="pend_test", source_chat_id="123", needs_review=True)
     assert event.needs_review is True
 
 
