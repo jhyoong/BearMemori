@@ -1,141 +1,217 @@
-# BearMemori v0.1.1
+# BearMemori
 
-[![GitHub release](https://img.shields.io/github/v/release/jhyoong/BearMemori)](https://github.com/jhyoong/BearMemori/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+Personal memory microservice with LLM-powered triage, semantic search, and human-in-the-loop confirmation. Designed as a drop-in replacement for [teleBearAI](https://github.com/your-repo/teleBearAI)'s memory layer.
 
-> [!NOTE]                                                                                                                                                                                      
-> An ambitious personal project for my personal use. I'm building this with the aim of storing and managing memories with the help of AI. 
+## What It Does
 
-A personal memory management system built with a microservice architecture. Capture memories, tasks, reminders, and events via a Telegram bot. An LLM (via the OpenAI API) processes items asynchronously (image tagging, intent classification). All LLM-generated content starts as `pending` until the user confirms it.
+BearMemori receives conversations, uses an LLM to decide if anything is worth remembering, and stores confirmed memories for later retrieval. It exposes a REST API that a chatbot (or any client) can call to:
+
+- **Triage** conversations -- LLM evaluates whether a conversation contains memory-worthy information
+- **Propose** memory drafts -- pending memories await user confirmation (human-in-the-loop)
+- **Confirm or dismiss** drafts -- user decides what gets saved
+- **Search** memories semantically via ChromaDB embeddings
+- **Retrieve** context -- combines relevant memories with upcoming events into a block that can be injected into an LLM system prompt
+- **Manage** memories -- list, get, delete by ID or category
+
+## Memory Categories
+
+| Category | Description |
+|----------|-------------|
+| `profile` | Stable user facts (preferences, identity, relationships) |
+| `general` | Non-time-bound information (recommendations, facts) |
+| `event` | Time-bound commitments (appointments, deadlines) |
+| `location` | Places, addresses, venues |
+| `task` | Action items, to-dos |
+| `reminder` | Triggered notifications with scheduling |
 
 ## Architecture
 
 ```
-User (Telegram) -> Telegram Gateway -> Core API -> SQLite (aiosqlite)
-                                                 -> Redis Streams -> LLM Worker
-User (Telegram) -> Assistant Bot -> Core API (read/write via HTTP)
-                                 -> OpenAI API (tool-calling)
-                                 -> Redis (chat history, session summaries)
-Email Poller -> Core API (events endpoint)
+Client (e.g. teleBearAI bot)
+  |
+  v
+FastAPI REST API (:8100)
+  |
+  +-- Triage subagent (LLM call) --> PendingStore (in-memory, TTL)
+  |                                        |
+  |                                   confirm / dismiss
+  |                                        |
+  +-- SQLite (relational storage, FTS5 keyword search)
+  +-- ChromaDB (vector embeddings, semantic search)
+  +-- ReminderScheduler (polls for due events)
+  +-- Telegram interface (direct input/notification)
 ```
 
-The **Core API** is the central source of truth. Other services communicate with it via HTTP or Redis streams.
+### Storage
 
-### Services
+- **SQLite** -- relational storage with FTS5 full-text search on title, content, and tags. WAL mode for concurrent access.
+- **ChromaDB** -- vector embeddings using sentence-transformers (`all-mpnet-base-v2` by default). Persisted to disk.
+- **PendingStore** -- in-memory dict with TTL-based expiry for draft memories awaiting user confirmation.
 
-Each service lives in its own directory with its own Python package:
+### Internal Components
 
-| Service | Directory | Description | Status |
-|---------|-----------|-------------|--------|
-| **Core API** | `core/core_svc/` | FastAPI REST API (port 8000) | Implemented |
-| **Shared Library** | `shared/shared_lib/` | Pydantic models, enums, config, Redis stream utilities | Implemented |
-| **Telegram Gateway** | `telegram/tg_gateway/` | Telegram bot interface | ~95% |
-| **LLM Worker** | `llm_worker/worker/` | Async LLM processing via OpenAI API | Implemented |
-| **Assistant** | `assistant/assistant_svc/` | Conversational AI assistant with OpenAI tool-calling | Implemented |
-| **Email Poller** | `email_poller/poller/` | Email polling for calendar events | Stub |
+- **Event Bus** -- pub/sub for loose coupling between components
+- **Queue Manager** -- priority queue for processing incoming messages
+- **Processor** -- classify/extract pipeline for direct Telegram input
+- **Triage Subagent** -- conversation-level LLM evaluation for the REST API
+- **Reminder Scheduler** -- polls for due events and fires notifications
 
-### Core API Endpoints
+## API Endpoints
 
-The Core API exposes routers for: memories, tasks, reminders, events, search, settings, backup, audit, and LLM jobs.
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/memory/triage` | POST | Evaluate conversation, propose memory draft |
+| `/memory/pending` | POST | Create pending memory directly |
+| `/memory/pending/{id}` | DELETE | Dismiss a pending memory |
+| `/memory/confirm` | POST | Confirm pending memory to permanent storage |
+| `/memory/search` | POST | Semantic search with optional category filter |
+| `/memory/retrieve` | GET | Hybrid retrieval (semantic + upcoming events) |
+| `/memory/list` | GET | List memories, optional category filter |
+| `/memory/events/upcoming` | GET | Upcoming events within day window |
+| `/memory/{id}` | GET | Get a single memory |
+| `/memory/{id}` | DELETE | Delete a memory |
 
-### Database
+## Setup
 
-SQLite with WAL mode, foreign keys enabled, and FTS5 for full-text search. Schema is managed via numbered migration files in `core/migrations/`. The migration runner tracks applied versions in a `schema_version` table.
+### Requirements
 
-### LLM Job Pattern
+- Python 3.12+
+- An OpenAI-compatible LLM API (e.g. Ollama, vLLM, or OpenAI)
+- A Telegram bot token (for the built-in Telegram interface)
 
-When the Core API needs LLM processing (e.g., auto-tagging an image), it inserts a row into the `llm_jobs` table with `status=pending` and a JSON payload. The LLM Worker reads from Redis streams, calls the LLM via the OpenAI API, then PATCHes the result back to the Core API. The affected entity stays in `pending` status until the user confirms it.
-
-For a detailed architecture overview, see [docs/architecture.md](docs/architecture.md).
-
-## Prerequisites
-
-- Python 3.11+
-- Docker and Docker Compose (for full stack)
-- Redis (provided via Docker, or install locally)
-
-## Getting Started
-
-### Run the full stack with Docker
+### Install
 
 ```bash
-docker-compose up --build
+git clone <repo-url> && cd BearMemori
+uv pip install -e ".[dev]"
 ```
 
-This starts all services: Core API, Telegram Gateway, LLM Worker, Assistant, Email Poller, and Redis.
+### Configure
 
-### Run the Core API locally
-
-Install the shared library first (required dependency):
+Copy `.env.example` to `.env` and fill in the required values:
 
 ```bash
-cd shared && pip install -e .
+cp .env.example .env
 ```
 
-Then install and run the Core API:
+Required settings:
+
+| Setting | Description |
+|---------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Your Telegram bot token from BotFather |
+| `TELEGRAM_ALLOWED_USER_ID` | Your Telegram user ID (restricts access to one user) |
+
+All other settings have defaults. See `.env.example` for the full list.
+
+### Run
 
 ```bash
-cd core && pip install -e .
-hatch run uvicorn core_svc.main:app --host 0.0.0.0 --port 8000
+uv run python -m bearmemori
 ```
 
-The API will be available at `http://localhost:8000`. A health check endpoint is at `/health`.
+This starts:
+- The FastAPI server on the configured port (default 8100)
+- The Telegram bot (polling mode)
+- The reminder scheduler
+- The internal processing queue
 
-## Testing
-
-Tests use an in-memory SQLite database with all migrations applied and a `fakeredis` instance (no real Redis needed).
+### Run with Docker
 
 ```bash
-# Run all tests
-pytest
-
-# Run a specific test file
-pytest tests/test_core/test_memories.py
-
-# Run a single test
-pytest tests/test_core/test_memories.py::TestMemories::test_create_memory
-
-# Run tests matching a pattern
-pytest -k "test_create_memory"
-
-# Run with coverage
-pytest --cov=. --cov-report=term-missing
+docker build -t bearmemori .
+docker run -d \
+  --name bearmemori \
+  -p 8100:8100 \
+  -v bearmemori-data:/data \
+  -e TELEGRAM_BOT_TOKEN=your-token \
+  -e TELEGRAM_ALLOWED_USER_ID=your-id \
+  -e LLM_BASE_URL=http://your-llm-host:11434/v1 \
+  bearmemori
 ```
 
-## Linting and Type Checking
+The `-v bearmemori-data:/data` volume mount persists the SQLite database and ChromaDB vectors across container restarts. The container stores data at `/data` by default (`DATABASE_PATH=/data/bearmemori.db`, `CHROMA_PERSIST_DIR=/data/chroma`).
+
+You can pass any configuration setting as an environment variable with `-e`, or mount a `.env` file:
 
 ```bash
-ruff check .
-mypy .
+docker run -d \
+  --name bearmemori \
+  -p 8100:8100 \
+  -v bearmemori-data:/data \
+  --env-file .env \
+  bearmemori
 ```
 
-## Configuration
+**Image size note:** The image is large (~4-5 GB) because `sentence-transformers` pulls in PyTorch. If size is a concern, consider running the embedding model as a separate service and pointing to it instead.
 
-Configuration is managed via environment variables, loaded through Pydantic Settings in `shared_lib.config`. Copy `.env.example` to `.env` (if available) and set the required values. When running with Docker Compose, the `.env` file is automatically loaded by all services.
+### Run Tests
 
-### Assistant Service
+```bash
+uv run pytest -v
+```
 
-The assistant requires its own Telegram bot token (separate from the main gateway bot) and an OpenAI API key:
+## Integration with teleBearAI
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ASSISTANT_TELEGRAM_BOT_TOKEN` | Telegram bot token for the assistant | (required) |
-| `ASSISTANT_ALLOWED_USER_IDS` | Comma-separated Telegram user IDs allowed to use the assistant | (empty) |
-| `OPENAI_API_KEY` | OpenAI API key | `not-needed` |
-| `OPENAI_BASE_URL` | OpenAI-compatible API base URL | `https://api.openai.com/v1` |
-| `OPENAI_MODEL` | Model to use for conversations | `gpt-4o` |
+BearMemori is a drop-in replacement for teleBearAI's memory service. To switch:
 
-## Contributing
+1. Run BearMemori as a service (standalone or via Docker, see [Run with Docker](#run-with-docker))
+2. In teleBearAI's `.env`, set:
+   ```
+   MEMORY_SERVICE_URL=http://localhost:8100
+   ```
+3. No other changes needed -- the API contract matches.
 
-This is a personal project, but contributions are welcome. To get started:
+## Project Structure
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Install dependencies: `cd shared && pip install -e .`, then the same for the service you are working on
-4. Run the tests: `pytest`
-5. Run the linter: `ruff check .`
-6. Open a pull request
+```
+bearmemori/
+  __main__.py          # Entry point
+  app.py               # Application factory and wiring
+  config.py            # Settings (pydantic-settings, loaded from .env)
+  api/
+    routes.py          # FastAPI endpoints
+    schemas.py         # Request/response models
+  core/
+    processor.py       # Classify/extract pipeline (Telegram input)
+    triage.py          # Conversation triage subagent (API input)
+    queue.py           # Priority queue manager
+    followup.py        # Follow-up conversation tracking
+    scheduler.py       # Reminder polling scheduler
+    models.py          # QueueItem model
+  events/
+    bus.py             # Event bus (pub/sub)
+    types.py           # Base Event class
+    domain.py          # Domain event types
+  interfaces/
+    telegram.py        # Telegram bot handler
+  llm/
+    client.py          # OpenAI-compatible LLM client
+    parsing.py         # JSON extraction from LLM responses
+  storage/
+    database.py        # SQLite + FTS5
+    vector_store.py    # ChromaDB wrapper
+    pending_store.py   # In-memory pending store with TTL
+    models.py          # MemoryRecord, MemoryDraft, MemoryCategory, etc.
+tests/
+  test_api.py          # API endpoint tests
+  test_app.py          # Application factory tests
+  test_config.py       # Config loading tests
+  test_event_bus.py    # Event bus tests
+  test_followup.py     # Follow-up manager tests
+  test_integration.py  # End-to-end flow tests
+  test_llm_client.py   # LLM client tests
+  test_models.py       # Model validation tests
+  test_pending_store.py # Pending store tests
+  test_processor.py    # Processor pipeline tests
+  test_queue.py        # Queue manager tests
+  test_scheduler.py    # Reminder scheduler tests
+  test_storage.py      # SQLite database tests
+  test_telegram.py     # Telegram interface tests
+  test_triage.py       # Triage subagent tests
+  test_vector_store.py # ChromaDB vector store tests
+```
 
 ## License
 
-MIT -- see [LICENSE](LICENSE) for details.
+TBD

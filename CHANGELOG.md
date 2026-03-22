@@ -5,33 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-22
+
+Complete rewrite from multi-service architecture to an event-driven modular monolith. Single Python process replaces the previous Core API + Telegram Gateway + LLM Worker + Assistant + Redis stack.
+
+### Added
+
+- **Event-driven architecture**: Async event bus with pub/sub for loose coupling between modules
+- **Memory categories**: Profile, general, event, location, task, and reminder categories with structured event fields
+- **ChromaDB vector store**: Semantic search using sentence-transformers (`all-mpnet-base-v2`) embeddings
+- **SQLite + FTS5**: Relational storage with full-text search on title, content, and tags
+- **Human-in-the-loop (HITL) confirmation**: Pending memory store with TTL-based expiry for draft memories awaiting user confirmation
+- **Triage subagent**: LLM-powered conversation evaluation for the REST API, proposes memory drafts from conversations
+- **Reminder scheduler**: Polls for due events and fires notifications with recurring support
+- **Follow-up manager**: Tracks multi-turn conversations until the LLM has enough context
+- **Priority queue**: In-memory queue with priority system for sequential LLM processing
+- **REST API**: FastAPI endpoints for triage, search, retrieval, and memory CRUD
+- **Telegram interface**: Direct text and photo input with event-driven notification delivery
+- **Docker support**: Multi-stage Dockerfile with `uv` for fast builds, `.dockerignore` for clean images
+- **LLM response parsing**: Handles Qwen3 `<think>` blocks, markdown code fences, and loose JSON extraction
+- **Robust LLM prompts**: `/no_think` directive and stronger JSON-only instructions for local LLM compatibility
+
+### Changed
+
+- **Architecture**: Replaced multi-service Docker Compose stack (Core API, Telegram Gateway, LLM Worker, Assistant, Redis) with a single async Python process
+- **Storage**: Replaced Redis streams with in-memory event bus; kept SQLite, added ChromaDB
+- **Embedding model**: Changed default from `all-MiniLM-L6-v2` to `all-mpnet-base-v2`
+- **LLM client**: Now uses OpenAI-compatible API via `openai` SDK, targeting local LLM endpoints
+- **Configuration**: Simplified to a single `.env` file with `pydantic-settings`
+- **Dependencies**: Managed with `uv` instead of Poetry/pip
+
+### Removed
+
+- Redis dependency and all Redis stream infrastructure
+- Separate Core API, Telegram Gateway, LLM Worker, Assistant, and Email Poller services
+- Docker Compose multi-service deployment
+- Migration system (single-process SQLite with auto-schema creation)
+- Poetry lock files and per-service pyproject.toml files
+
+---
+
 ## [0.1.1] - 2026-03-01
 
 ### Added
 
-- **Admin API endpoints** (`core/core_svc/routers/admin.py`):
-  - `GET /admin/queue-stats` - LLM job queue statistics (counts by status/type, oldest job age)
-  - `GET /admin/health` - System health check (database and Redis connectivity)
-  - `GET /admin/stream-health` - Redis stream introspection (stream lengths, pending counts, consumer info)
-  - `GET /admin/llm-health` - Read LLM worker health status from Redis cache
-
-- **LLM Worker health monitoring** (`llm_worker/worker/health_check.py`): Module for publishing health status to Redis
-
-- **Telegram /timezone command** (`telegram/tg_gateway/handlers/command.py`):
-  - View current timezone with `/timezone`
-  - Set timezone using UTC offset (`/timezone +8`) or IANA name (`/timezone Asia/Tokyo`)
-  - Timezone helper utilities in `telegram/tg_gateway/tz_utils.py`
-
-- **Architecture documentation** (`docs/architecture.md`): System architecture with Mermaid diagrams, design decisions, error handling, data lifecycle
-
-- **Service README files**: Individual documentation for core, telegram, llm_worker, assistant, email_poller, and shared services
+- Admin API endpoints for queue stats, health checks, stream health, and LLM health
+- LLM Worker health monitoring via Redis
+- Telegram /timezone command with UTC offset and IANA timezone support
+- Architecture documentation with Mermaid diagrams
+- Service README files
 
 ### Changed
 
-- **Core API**: Refined timezone handling in conversation handlers and callback processing
-- **Telegram Gateway**: Fixed button interaction handling for image memories
-- **Settings model**: Fixed to ignore extra environment variables
-- **Linting**: Fixed all ruff lint errors, added `ruff.toml` configuration
+- Refined timezone handling in conversation handlers and callback processing
+- Fixed Telegram button interaction handling for image memories
+- Fixed Settings model to ignore extra environment variables
 
 ### Fixed
 
@@ -47,16 +75,14 @@ Initial release of BearMemori, a personal memory management system.
 
 ### Added
 
-- **Core API** (`core/core_svc/`): FastAPI REST API with routers for memories, tasks, reminders, events, search, settings, backup, audit, and LLM jobs.
-- **Shared Library** (`shared/shared_lib/`): Pydantic models, enums, configuration (Pydantic Settings with env var overrides), and Redis stream utilities.
-- **Telegram Gateway** (`telegram/tg_gateway/`): Telegram bot for capturing memories, managing tasks and reminders, confirming LLM-generated content.
-- **LLM Worker** (`llm_worker/worker/`): Async consumer that reads Redis streams and dispatches to 5 handlers (image tagging, intent classification, task matching, follow-up generation, email extraction) via the OpenAI API.
-- **Assistant Service** (`assistant/assistant_svc/`): Conversational AI assistant using OpenAI tool-calling with 7 tools, chat history management with token counting, session summarization, daily digest scheduler, and briefing builder.
-- **Email Poller** (`email_poller/poller/`): Stub service for future email-based event ingestion.
-- **Database**: SQLite with WAL mode, foreign keys, FTS5 full-text search, and a numbered migration system (`core/migrations/`).
-- **Docker Compose**: Full-stack deployment with Core API, Telegram Gateway, LLM Worker, Assistant, Email Poller, and Redis.
-- **Test suite**: pytest with pytest-asyncio, fakeredis, in-memory SQLite. Tests for core API, LLM worker, and assistant service.
+- Core API with FastAPI REST endpoints
+- Telegram Gateway for capturing memories and managing tasks
+- LLM Worker with async Redis stream consumer and 5 handlers
+- Assistant Service with OpenAI tool-calling and daily digest
+- SQLite with WAL mode, FTS5, and numbered migration system
+- Docker Compose full-stack deployment
+- Test suite with pytest and pytest-asyncio
 
+[0.3.0]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.0
 [0.1.1]: https://github.com/jhyoong/BearMemori/releases/tag/v0.1.1
-
 [0.1.0]: https://github.com/jhyoong/BearMemori/releases/tag/v0.1.0
