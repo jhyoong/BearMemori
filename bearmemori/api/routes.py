@@ -25,7 +25,7 @@ def create_app(
     llm_api_key: str = "",
     llm_model: str = "",
 ) -> FastAPI:
-    app = FastAPI(title="BearMemori", version="0.4.0")
+    app = FastAPI(title="BearMemori", version="0.3.2")
 
     @app.get("/health")
     def health():
