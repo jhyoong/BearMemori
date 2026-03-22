@@ -1,7 +1,7 @@
 import pytest
 
 from bearmemori.events.bus import EventBus
-from bearmemori.events.domain import ReminderDue
+from bearmemori.events.domain import MemoryConfirmed, MemoryDiscarded, MemoryPending, ReminderDue
 from bearmemori.events.types import Event
 
 
@@ -84,3 +84,44 @@ async def test_reminder_due_event():
     assert len(received) == 1
     assert received[0].memory_id == "rem-1"
     assert received[0].content == "Take meds"
+
+
+@pytest.mark.asyncio
+async def test_memory_pending_event():
+    bus = EventBus()
+    received = []
+    bus.on(MemoryPending, lambda e: received.append(e))
+    await bus.emit(
+        MemoryPending(
+            pending_id="pend_abc123",
+            preview_data={
+                "title": "Test",
+                "category": "general",
+                "content": "Test content",
+                "tags": [],
+            },
+            source_chat_id="123",
+        )
+    )
+    assert len(received) == 1
+    assert received[0].pending_id == "pend_abc123"
+
+
+@pytest.mark.asyncio
+async def test_memory_confirmed_event():
+    bus = EventBus()
+    received = []
+    bus.on(MemoryConfirmed, lambda e: received.append(e))
+    await bus.emit(MemoryConfirmed(pending_id="pend_abc123", source_chat_id="123"))
+    assert len(received) == 1
+    assert received[0].pending_id == "pend_abc123"
+
+
+@pytest.mark.asyncio
+async def test_memory_discarded_event():
+    bus = EventBus()
+    received = []
+    bus.on(MemoryDiscarded, lambda e: received.append(e))
+    await bus.emit(MemoryDiscarded(pending_id="pend_abc123", source_chat_id="123"))
+    assert len(received) == 1
+    assert received[0].pending_id == "pend_abc123"

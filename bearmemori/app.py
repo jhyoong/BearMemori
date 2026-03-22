@@ -1,12 +1,22 @@
 import logging
 
 from bearmemori.config import Settings
+from bearmemori.core.cleanup import PendingCleanupTask
+from bearmemori.core.confirm import ConfirmHandler
 from bearmemori.core.followup import FollowUpManager
 from bearmemori.core.processor import Processor
 from bearmemori.core.queue import QueueManager
 from bearmemori.core.scheduler import ReminderScheduler
 from bearmemori.events.bus import EventBus
-from bearmemori.events.domain import FollowUpRequired, InputReceived, ReminderDue, SendMessage
+from bearmemori.events.domain import (
+    FollowUpRequired,
+    InputReceived,
+    MemoryConfirmed,
+    MemoryDiscarded,
+    MemoryPending,
+    ReminderDue,
+    SendMessage,
+)
 from bearmemori.interfaces.telegram import TelegramInterface
 from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
@@ -26,6 +36,8 @@ class Application:
         queue_manager: QueueManager,
         processor: Processor,
         followup_manager: FollowUpManager,
+        confirm_handler: ConfirmHandler,
+        cleanup_task: PendingCleanupTask,
         telegram: TelegramInterface,
         settings: Settings,
         scheduler: ReminderScheduler,
@@ -37,6 +49,8 @@ class Application:
         self.queue_manager = queue_manager
         self.processor = processor
         self.followup_manager = followup_manager
+        self.confirm_handler = confirm_handler
+        self.cleanup_task = cleanup_task
         self.telegram = telegram
         self.settings = settings
         self.scheduler = scheduler
@@ -63,8 +77,19 @@ def create_application(settings: Settings) -> Application:
     )
 
     queue_manager = QueueManager(bus, max_size=settings.queue_max_size)
-    processor = Processor(bus=bus, llm=llm, db=db)
+    processor = Processor(bus=bus, llm=llm, pending_store=pending_store)
     followup_manager = FollowUpManager(bus)
+    confirm_handler = ConfirmHandler(
+        bus=bus,
+        pending_store=pending_store,
+        db=db,
+        vector_store=vector_store,
+    )
+    cleanup_task = PendingCleanupTask(
+        bus=bus,
+        pending_store=pending_store,
+        interval_seconds=settings.cleanup_interval_seconds,
+    )
     telegram = TelegramInterface(
         bus=bus,
         token=settings.telegram_bot_token,
@@ -78,6 +103,9 @@ def create_application(settings: Settings) -> Application:
 
     bus.on(InputReceived, queue_manager.handle_input)
     bus.on(FollowUpRequired, followup_manager.handle_followup_required)
+    bus.on(MemoryPending, telegram.handle_memory_pending)
+    bus.on(MemoryConfirmed, confirm_handler.handle_confirmed)
+    bus.on(MemoryDiscarded, confirm_handler.handle_discarded)
     bus.on(SendMessage, telegram.handle_send_message)
     bus.on(ReminderDue, telegram.handle_reminder_due)
 
@@ -89,6 +117,8 @@ def create_application(settings: Settings) -> Application:
         queue_manager=queue_manager,
         processor=processor,
         followup_manager=followup_manager,
+        confirm_handler=confirm_handler,
+        cleanup_task=cleanup_task,
         telegram=telegram,
         settings=settings,
         scheduler=scheduler,

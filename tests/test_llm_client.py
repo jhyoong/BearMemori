@@ -182,3 +182,40 @@ async def test_extract_recurring_reminder(client):
 
     assert result.category == "reminder"
     assert result.event_fields["recurrence"] == "every 8 hours"
+
+
+@pytest.mark.asyncio
+async def test_describe_image(client):
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(
+            message=AsyncMock(
+                content=json.dumps(
+                    {
+                        "content": "A sunset over the ocean",
+                        "category": "general",
+                        "title": "Ocean sunset",
+                        "tags": ["photo", "nature"],
+                        "event_fields": None,
+                    }
+                )
+            )
+        )
+    ]
+
+    with patch.object(
+        client._client.chat.completions, "create", return_value=mock_response
+    ) as mock_create:
+        result = await client.describe_image(b"fake-image-bytes")
+
+    assert result.title == "Ocean sunset"
+    assert result.content == "A sunset over the ocean"
+    assert result.category == "general"
+
+    # Verify vision message format was used
+    call_args = mock_create.call_args
+    messages = call_args.kwargs["messages"]
+    assert len(messages) == 2
+    assert messages[1]["role"] == "user"
+    assert isinstance(messages[1]["content"], list)
+    assert messages[1]["content"][0]["type"] == "image_url"

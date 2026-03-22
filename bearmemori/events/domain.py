@@ -47,3 +47,19 @@ class ReminderDue(Event):
     content: str
     source_chat_id: str
     remind_at_iso: str
+
+
+class MemoryPending(Event):
+    pending_id: str
+    preview_data: dict
+    source_chat_id: str
+
+
+class MemoryConfirmed(Event):
+    pending_id: str
+    source_chat_id: str
+
+
+class MemoryDiscarded(Event):
+    pending_id: str
+    source_chat_id: str
