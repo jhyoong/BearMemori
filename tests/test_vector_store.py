@@ -62,3 +62,28 @@ def test_event_metadata(store):
     store.add(record)
     results = store.search("coffee", top_k=5)
     assert results[0]["metadata"]["event_datetime"] == "2026-03-25T14:00:00"
+
+
+def test_update_document(store):
+    record = _make_record()
+    store.add(record)
+    updated_record = record.model_copy(
+        update={
+            "content": "Updated content here",
+            "title": "Updated Title",
+        }
+    )
+    store.update(updated_record)
+    results = store.search("Updated content", top_k=1)
+    assert len(results) == 1
+    assert results[0]["id"] == record.id
+
+
+def test_delete_many(store):
+    record1 = _make_record(id="mem_first123")
+    record2 = _make_record(id="mem_second123")
+    store.add(record1)
+    store.add(record2)
+    store.delete_many([record1.id, record2.id])
+    results = store.search(record1.content, top_k=5)
+    assert len(results) == 0
