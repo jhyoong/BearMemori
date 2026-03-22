@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-03-22
+
+### Added
+
+- **Human-in-the-loop confirmation flow**: Inline keyboard UI for memory confirmation/discardal with callback handling
+- **Pending memory auto-cleanup**: `PendingCleanupTask` automatically discards expired pending memories after TTL
+- **LLM vision support**: `describe_image` method in LLM client for photo analysis
+- **Memory events**: `MemoryPending`, `MemoryConfirmed`, `MemoryDiscarded` domain events
+- **Edit flow handling**: Processor handles correction/edit submissions, re-extracts memory with updated content
+
+### Changed
+
+- **Pending TTL**: Default updated to 30 minutes with configurable cleanup interval
+
+---
+
 ## [0.3.0] - 2026-03-22
 
 Complete rewrite from multi-service architecture to an event-driven modular monolith. Single Python process replaces the previous Core API + Telegram Gateway + LLM Worker + Assistant + Redis stack.
