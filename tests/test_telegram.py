@@ -23,9 +23,7 @@ def bus():
 
 @pytest.fixture
 def interface(bus):
-    return TelegramInterface(
-        bus=bus, token="fake-token", allowed_user_id=ALLOWED_USER_ID
-    )
+    return TelegramInterface(bus=bus, token="fake-token", allowed_user_id=ALLOWED_USER_ID)
 
 
 def _make_update(user_id=ALLOWED_USER_ID):
@@ -88,9 +86,7 @@ async def test_handle_send_message(interface):
     event = SendMessage(chat_id="12345", text="Hello back")
     await interface.handle_send_message(event)
 
-    mock_bot.send_message.assert_called_once_with(
-        chat_id=12345, text="Hello back"
-    )
+    mock_bot.send_message.assert_called_once_with(chat_id=12345, text="Hello back")
 
 
 @pytest.mark.asyncio

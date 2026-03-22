@@ -80,7 +80,10 @@ def create_application(settings: Settings) -> Application:
     processor = Processor(bus=bus, llm=llm, pending_store=pending_store)
     followup_manager = FollowUpManager(bus)
     confirm_handler = ConfirmHandler(
-        bus=bus, pending_store=pending_store, db=db, vector_store=vector_store,
+        bus=bus,
+        pending_store=pending_store,
+        db=db,
+        vector_store=vector_store,
     )
     cleanup_task = PendingCleanupTask(
         bus=bus,

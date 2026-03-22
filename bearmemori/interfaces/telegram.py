@@ -38,20 +38,14 @@ class TelegramInterface:
     def build(self) -> Application:
         self._app = Application.builder().token(self._token).build()
         self._app.add_handler(CallbackQueryHandler(self._handle_callback))
-        self._app.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text)
-        )
+        self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text))
         self._app.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
         self._app.add_handler(CommandHandler("start", self._handle_start))
         return self._app
 
-    async def _handle_text(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
+    async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_authorized(update):
-            logger.warning(
-                "Unauthorized text message from user %s", update.effective_user.id
-            )
+            logger.warning("Unauthorized text message from user %s", update.effective_user.id)
             return
 
         chat_id = str(update.effective_chat.id)
@@ -71,17 +65,11 @@ class TelegramInterface:
             return
 
         logger.info("Received text from %s: %s", chat_id, text[:80])
-        await self._bus.emit(
-            InputReceived(input_type="text", content=text, source_chat_id=chat_id)
-        )
+        await self._bus.emit(InputReceived(input_type="text", content=text, source_chat_id=chat_id))
 
-    async def _handle_photo(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
+    async def _handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_authorized(update):
-            logger.warning(
-                "Unauthorized photo message from user %s", update.effective_user.id
-            )
+            logger.warning("Unauthorized photo message from user %s", update.effective_user.id)
             return
 
         chat_id = str(update.effective_chat.id)
@@ -104,56 +92,35 @@ class TelegramInterface:
             )
         )
 
-    async def _handle_start(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
+    async def _handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_authorized(update):
-            logger.warning(
-                "Unauthorized /start command from user %s", update.effective_user.id
-            )
+            logger.warning("Unauthorized /start command from user %s", update.effective_user.id)
             return
 
         await update.message.reply_text(
-            "Welcome to BearMemori. "
-            "Send me text or images and I will remember them for you."
+            "Welcome to BearMemori. Send me text or images and I will remember them for you."
         )
 
-    async def _handle_callback(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
+    async def _handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_authorized(update):
             return
 
         query = update.callback_query
         data = query.data
         action, pending_id = data.split(":", 1)
-        chat_id = self._pending_chat_ids.get(
-            pending_id, str(update.effective_chat.id)
-        )
+        chat_id = self._pending_chat_ids.get(pending_id, str(update.effective_chat.id))
 
         if action == "save":
-            await self._bus.emit(
-                MemoryConfirmed(pending_id=pending_id, source_chat_id=chat_id)
-            )
-            await query.message.edit_text(
-                query.message.text + "\n\nSaved."
-            )
+            await self._bus.emit(MemoryConfirmed(pending_id=pending_id, source_chat_id=chat_id))
+            await query.message.edit_text(query.message.text + "\n\nSaved.")
             await query.answer("Saved")
         elif action == "edit":
             self._edit_pending[chat_id] = pending_id
-            await query.message.edit_text(
-                query.message.text + "\n\nSend your corrections."
-            )
+            await query.message.edit_text(query.message.text + "\n\nSend your corrections.")
             await query.answer()
         elif action == "discard":
-            await self._bus.emit(
-                MemoryDiscarded(
-                    pending_id=pending_id, source_chat_id=chat_id
-                )
-            )
-            await query.message.edit_text(
-                query.message.text + "\n\nDiscarded."
-            )
+            await self._bus.emit(MemoryDiscarded(pending_id=pending_id, source_chat_id=chat_id))
+            await query.message.edit_text(query.message.text + "\n\nDiscarded.")
             await query.answer("Discarded")
 
         self._pending_chat_ids.pop(pending_id, None)
@@ -164,11 +131,7 @@ class TelegramInterface:
 
         preview = event.preview_data
         tags_str = ", ".join(preview.get("tags", []))
-        text = (
-            f"Memory Preview\n\n"
-            f"Title: {preview['title']}\n"
-            f"Category: {preview['category']}\n"
-        )
+        text = f"Memory Preview\n\nTitle: {preview['title']}\nCategory: {preview['category']}\n"
         if tags_str:
             text += f"Tags: {tags_str}\n"
         text += f"Content: {preview['content']}"
@@ -176,12 +139,8 @@ class TelegramInterface:
         keyboard = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(
-                        "Save", callback_data=f"save:{event.pending_id}"
-                    ),
-                    InlineKeyboardButton(
-                        "Edit", callback_data=f"edit:{event.pending_id}"
-                    ),
+                    InlineKeyboardButton("Save", callback_data=f"save:{event.pending_id}"),
+                    InlineKeyboardButton("Edit", callback_data=f"edit:{event.pending_id}"),
                     InlineKeyboardButton(
                         "Discard",
                         callback_data=f"discard:{event.pending_id}",
@@ -199,9 +158,7 @@ class TelegramInterface:
 
     async def handle_send_message(self, event: SendMessage) -> None:
         if self._app:
-            await self._app.bot.send_message(
-                chat_id=int(event.chat_id), text=event.text
-            )
+            await self._app.bot.send_message(chat_id=int(event.chat_id), text=event.text)
 
     async def handle_reminder_due(self, event: ReminderDue) -> None:
         if self._app:

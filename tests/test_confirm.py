@@ -32,7 +32,10 @@ def mock_vector_store():
 @pytest.fixture
 def handler(bus, pending_store, mock_db, mock_vector_store):
     return ConfirmHandler(
-        bus=bus, pending_store=pending_store, db=mock_db, vector_store=mock_vector_store,
+        bus=bus,
+        pending_store=pending_store,
+        db=mock_db,
+        vector_store=mock_vector_store,
     )
 
 

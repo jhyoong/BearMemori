@@ -102,11 +102,18 @@ class Processor:
             extraction = await self._llm.describe_image(image_bytes, caption=caption)
 
         await self._create_pending(
-            extraction, caption or "[image]", item.source_chat_id, image_path=image_path,
+            extraction,
+            caption or "[image]",
+            item.source_chat_id,
+            image_path=image_path,
         )
 
     async def _create_pending(
-        self, extraction, raw_input: str, chat_id: str, image_path: str | None = None,
+        self,
+        extraction,
+        raw_input: str,
+        chat_id: str,
+        image_path: str | None = None,
     ) -> None:
         event_fields = None
         if extraction.event_fields:
@@ -122,7 +129,9 @@ class Processor:
         )
 
         pending_id = self._pending_store.add(
-            draft, chat_id=chat_id, image_path=image_path,
+            draft,
+            chat_id=chat_id,
+            image_path=image_path,
         )
 
         preview_data = {

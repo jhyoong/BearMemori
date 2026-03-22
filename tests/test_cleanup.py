@@ -33,9 +33,7 @@ def _make_draft():
 
 
 @pytest.mark.asyncio
-async def test_cleanup_discards_expired_and_notifies(
-    cleanup, bus, pending_store
-):
+async def test_cleanup_discards_expired_and_notifies(cleanup, bus, pending_store):
     discarded_events = []
     send_events = []
     bus.on(MemoryDiscarded, lambda e: discarded_events.append(e))

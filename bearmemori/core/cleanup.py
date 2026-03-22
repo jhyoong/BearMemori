@@ -28,9 +28,7 @@ class PendingCleanupTask:
                 if path.exists():
                     path.unlink()
             await self._bus.emit(
-                MemoryDiscarded(
-                    pending_id=item.pending_id, source_chat_id=item.chat_id
-                )
+                MemoryDiscarded(pending_id=item.pending_id, source_chat_id=item.chat_id)
             )
             await self._bus.emit(
                 SendMessage(
@@ -39,15 +37,11 @@ class PendingCleanupTask:
                 )
             )
         if expired:
-            logger.info(
-                "Cleaned up %d expired pending memories", len(expired)
-            )
+            logger.info("Cleaned up %d expired pending memories", len(expired))
         return len(expired)
 
     async def run(self) -> None:
-        logger.info(
-            "Pending cleanup task started (interval=%ds)", self._interval
-        )
+        logger.info("Pending cleanup task started (interval=%ds)", self._interval)
         while True:
             await asyncio.sleep(self._interval)
             await self.run_once()

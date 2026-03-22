@@ -91,16 +91,18 @@ async def test_memory_pending_event():
     bus = EventBus()
     received = []
     bus.on(MemoryPending, lambda e: received.append(e))
-    await bus.emit(MemoryPending(
-        pending_id="pend_abc123",
-        preview_data={
-            "title": "Test",
-            "category": "general",
-            "content": "Test content",
-            "tags": [],
-        },
-        source_chat_id="123",
-    ))
+    await bus.emit(
+        MemoryPending(
+            pending_id="pend_abc123",
+            preview_data={
+                "title": "Test",
+                "category": "general",
+                "content": "Test content",
+                "tags": [],
+            },
+            source_chat_id="123",
+        )
+    )
     assert len(received) == 1
     assert received[0].pending_id == "pend_abc123"
 

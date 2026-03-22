@@ -130,9 +130,7 @@ async def test_process_image_without_caption(processor, bus, mock_llm, mock_pend
 
 
 @pytest.mark.asyncio
-async def test_process_edit_re_extracts_memory(
-    processor, bus, mock_llm, mock_pending_store
-):
+async def test_process_edit_re_extracts_memory(processor, bus, mock_llm, mock_pending_store):
     pending_events = []
     bus.on(MemoryPending, lambda e: pending_events.append(e))
 
