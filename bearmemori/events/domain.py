@@ -58,6 +58,7 @@ class MemoryPending(Event):
 class MemoryConfirmed(Event):
     pending_id: str
     source_chat_id: str
+    needs_review: bool = False
 
 
 class MemoryDiscarded(Event):

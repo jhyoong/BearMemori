@@ -117,6 +117,18 @@ async def test_memory_confirmed_event():
     assert received[0].pending_id == "pend_abc123"
 
 
+def test_memory_confirmed_needs_review_default():
+    event = MemoryConfirmed(pending_id="pend_test", source_chat_id="123")
+    assert event.needs_review is False
+
+
+def test_memory_confirmed_needs_review_set():
+    event = MemoryConfirmed(
+        pending_id="pend_test", source_chat_id="123", needs_review=True
+    )
+    assert event.needs_review is True
+
+
 @pytest.mark.asyncio
 async def test_memory_discarded_event():
     bus = EventBus()
