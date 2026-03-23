@@ -33,6 +33,7 @@ def create_app(
     llm_base_url: str = "",
     llm_api_key: str = "",
     llm_model: str = "",
+    llm_max_tokens: int = 4096,
 ) -> FastAPI:
     app = FastAPI(title="BearMemori", version="0.3.3")
 
@@ -47,6 +48,7 @@ def create_app(
             llm_base_url=llm_base_url,
             llm_api_key=llm_api_key,
             llm_model=llm_model,
+            llm_max_tokens=llm_max_tokens,
             memory_hint=request.memory_hint,
         )
         if not result.should_save or result.draft is None:
