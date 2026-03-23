@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import MemoryCategory, MemoryRecord
+from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
 from bearmemori.storage.vector_store import VectorStore
 from bearmemori.webapp.auth import WebappAuthMiddleware
 
@@ -171,6 +171,9 @@ def create_webapp_router(
         content: str = Form(...),
         tags: str = Form(""),
         needs_review: bool = Form(False),
+        event_datetime: str = Form(""),
+        event_status: str = Form("pending"),
+        event_recurrence: str = Form(""),
     ):
         record = db.get(record_id)
         if not record:
@@ -181,6 +184,14 @@ def create_webapp_router(
         record.content = content
         record.tags = [t.strip() for t in tags.split(",") if t.strip()]
         record.needs_review = needs_review
+        if event_datetime:
+            record.event_fields = EventFields(
+                datetime=event_datetime,
+                status=event_status,
+                recurrence=event_recurrence if event_recurrence else None,
+            )
+        else:
+            record.event_fields = None
         db.update(record)
         vector_store.update(record)
         return RedirectResponse(url=f"/webapp/memories/{record_id}", status_code=302)
