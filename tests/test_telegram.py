@@ -240,3 +240,29 @@ async def test_callback_review_emits_confirmed_with_needs_review(interface, bus)
     assert confirmed[0].pending_id == "pend_abc123"
     assert confirmed[0].needs_review is True
     query.answer.assert_called_once_with("Saved for review")
+
+
+@pytest.mark.asyncio
+async def test_callback_review_removes_buttons_and_updates_text(interface, bus):
+    confirmed = []
+    bus.on(MemoryConfirmed, lambda e: confirmed.append(e))
+
+    interface._app = MagicMock()
+    interface._app.bot = AsyncMock()
+    interface._pending_chat_ids = {"pend_abc123": "42"}
+
+    query = AsyncMock()
+    query.data = "review:pend_abc123"
+    query.message = AsyncMock()
+    query.message.text = "Memory Preview\n\nTitle: Test\nCategory: reminder\nContent: Test content"
+
+    update = _make_update()
+    update.callback_query = query
+
+    await interface._handle_callback(update, MagicMock())
+
+    assert len(confirmed) == 1
+    assert confirmed[0].needs_review is True
+    query.message.edit_text.assert_called_once()
+    call_args = query.message.edit_text.call_args
+    assert "Saved for review" in call_args[0][0]
