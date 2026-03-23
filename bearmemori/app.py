@@ -2,7 +2,10 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI
+<<<<<<< HEAD
 from fastapi.responses import RedirectResponse
+=======
+>>>>>>> main
 from starlette.staticfiles import StaticFiles
 
 from bearmemori.api.routes import create_app as create_api_app
@@ -140,7 +143,10 @@ def create_application(settings: Settings) -> FastAPI:
         llm_base_url=settings.llm_base_url,
         llm_api_key=settings.llm_api_key,
         llm_model=settings.llm_model,
+<<<<<<< HEAD
         llm_max_tokens=settings.llm_max_tokens,
+=======
+>>>>>>> main
     )
 
     # Mount webapp if secret is configured
@@ -159,10 +165,13 @@ def create_application(settings: Settings) -> FastAPI:
         static_dir = Path(__file__).parent / "webapp" / "static"
         api.mount("/webapp/static", StaticFiles(directory=str(static_dir)), name="webapp-static")
 
+<<<<<<< HEAD
         @api.get("/", include_in_schema=False)
         async def root_redirect():
             return RedirectResponse(url="/webapp/login")
 
+=======
+>>>>>>> main
     # Store application in app state for access by __main__.py
     api.state.application = application
 
