@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-03-23
+
+### Added
+
+- `llm_max_tokens` config setting to control token budget for LLM calls (default: 4096)
+
+### Fixed
+
+- Webapp root `/` now redirects to `/webapp/login` when webapp is enabled
+- LLM response handling for reasoning models (e.g., Qwen3.5) that put JSON in `reasoning_content` instead of `content` -- added `_get_content()` helper in LLM client
+- Triage LLM calls now respect `llm_max_tokens` to prevent reasoning models from exhausting token budget on thinking
+
+---
+
 ## [0.3.3] - 2026-03-22
 
 ### Added
@@ -132,6 +146,7 @@ Initial release of BearMemori, a personal memory management system.
 - Docker Compose full-stack deployment
 - Test suite with pytest and pytest-asyncio
 
+[0.3.4]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.4
 [0.3.3]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.3
 [0.3.2]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.2
 [0.3.0]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.0
