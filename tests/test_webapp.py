@@ -269,6 +269,29 @@ def test_memories_htmx_partial(authed_webapp_client):
     assert "<table>" in response.text
 
 
+def test_memory_list_shows_event_datetime(authed_webapp_client, db):
+    from bearmemori.storage.models import EventFields
+
+    record = MemoryRecord(
+        id="mem_reminder1",
+        category=MemoryCategory.REMINDER,
+        title="Take meds",
+        content="Take meds every 8 hours",
+        created_at=datetime.now(UTC),
+        tags=["health"],
+        event_fields=EventFields(
+            datetime="2026-03-25T15:00:00",
+            status="pending",
+            recurrence="every 8 hours",
+        ),
+    )
+    db.create(record)
+    response = authed_webapp_client.get("/webapp/memories")
+    assert response.status_code == 200
+    assert "2026-03-25" in response.text
+    assert "pending" in response.text.lower()
+
+
 def test_review_queue_with_memories(authed_webapp_client, db):
     record = MemoryRecord(
         id="mem_review1",
