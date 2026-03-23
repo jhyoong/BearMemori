@@ -116,8 +116,14 @@ class Processor:
         image_path: str | None = None,
     ) -> None:
         event_fields = None
+        logger.debug(
+            "Extraction event_fields (raw): %s (type: %s)",
+            extraction.event_fields,
+            type(extraction.event_fields).__name__,
+        )
         if extraction.event_fields:
             event_fields = EventFields(**extraction.event_fields)
+            logger.debug("Constructed EventFields: %s", event_fields)
 
         draft = MemoryDraft(
             category=MemoryCategory(extraction.category),
