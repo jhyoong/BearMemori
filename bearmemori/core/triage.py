@@ -126,9 +126,7 @@ async def run_triage(
     ]
 
     try:
-        response = await _llm_call(
-            messages, llm_base_url, llm_api_key, llm_model, llm_max_tokens
-        )
+        response = await _llm_call(messages, llm_base_url, llm_api_key, llm_model, llm_max_tokens)
         message = response["choices"][0]["message"]
         logger.info("Triage LLM full message keys: %s", list(message.keys()))
         raw = message.get("content") or ""
