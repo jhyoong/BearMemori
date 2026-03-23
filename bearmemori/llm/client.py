@@ -9,6 +9,28 @@ from bearmemori.llm.parsing import extract_json
 logger = logging.getLogger(__name__)
 
 
+def _get_content(message) -> str:
+    """Extract text content from a chat completion message.
+
+    Handles reasoning models (e.g. Qwen3.5) where the actual JSON may
+    appear in content or, if content is empty, in reasoning_content.
+    """
+    content = message.content or ""
+    if content:
+        return content
+
+    reasoning = getattr(message, "reasoning_content", None) or ""
+    if reasoning:
+        logger.info("LLM content empty, checking reasoning_content for JSON")
+        try:
+            extract_json(reasoning)
+            return reasoning
+        except Exception:
+            pass
+
+    return content
+
+
 class ClassificationResult(BaseModel):
     action: str  # "store" or "followup"
     category: str | None = None
@@ -119,7 +141,7 @@ class LLMClient:
             ],
             temperature=0.1,
         )
-        raw = response.choices[0].message.content
+        raw = _get_content(response.choices[0].message)
         logger.debug("Classify raw output: %s", raw)
         data = extract_json(raw)
         return ClassificationResult(**data)
@@ -135,7 +157,7 @@ class LLMClient:
             messages=messages,
             temperature=0.1,
         )
-        raw = response.choices[0].message.content
+        raw = _get_content(response.choices[0].message)
         logger.debug("Extract raw output: %s", raw)
         data = extract_json(raw)
         return ExtractionResult(**data)
@@ -151,7 +173,7 @@ class LLMClient:
             messages=messages,
             temperature=0.7,
         )
-        return response.choices[0].message.content
+        return _get_content(response.choices[0].message)
 
     async def describe_image(
         self, image_bytes: bytes, caption: str | None = None
@@ -171,7 +193,7 @@ class LLMClient:
             ],
             temperature=0.1,
         )
-        raw = response.choices[0].message.content
+        raw = _get_content(response.choices[0].message)
         logger.debug("Describe image raw output: %s", raw)
         data = extract_json(raw)
         return ExtractionResult(**data)

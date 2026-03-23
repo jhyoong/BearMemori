@@ -10,6 +10,33 @@ from bearmemori.storage.models import EventFields, MemoryCategory, MemoryDraft
 
 logger = logging.getLogger(__name__)
 
+
+def _extract_from_response(content: str, reasoning: str) -> dict:
+    """Try to extract JSON from content first, then from reasoning_content.
+
+    Reasoning models (e.g. Qwen3.5) may put the JSON answer in content,
+    or when max_tokens is exhausted by reasoning, the JSON may only appear
+    within the reasoning_content field.
+    """
+    if content:
+        try:
+            return extract_json(content)
+        except json.JSONDecodeError:
+            logger.debug("No JSON in content field, trying reasoning_content")
+
+    if reasoning:
+        try:
+            return extract_json(reasoning)
+        except json.JSONDecodeError:
+            pass
+
+    raise json.JSONDecodeError(
+        "No valid JSON found in content or reasoning_content",
+        content or reasoning or "",
+        0,
+    )
+
+
 TRIAGE_SYSTEM_PROMPT = """\
 /no_think
 You are a memory triage agent. Given a conversation, decide if any information \
@@ -54,6 +81,7 @@ async def _llm_call(
     base_url: str,
     api_key: str,
     model: str,
+    max_tokens: int = 4096,
 ) -> dict:
     async with httpx.AsyncClient(
         base_url=base_url,
@@ -65,7 +93,7 @@ async def _llm_call(
             json={
                 "model": model,
                 "messages": messages,
-                "max_tokens": 512,
+                "max_tokens": max_tokens,
             },
         )
         response.raise_for_status()
@@ -77,6 +105,7 @@ async def run_triage(
     llm_base_url: str,
     llm_api_key: str,
     llm_model: str,
+    llm_max_tokens: int = 4096,
     memory_hint: dict | None = None,
 ) -> TriageResult:
     hint_text = ""
@@ -97,18 +126,18 @@ async def run_triage(
     ]
 
     try:
-        response = await _llm_call(messages, llm_base_url, llm_api_key, llm_model)
+        response = await _llm_call(
+            messages, llm_base_url, llm_api_key, llm_model, llm_max_tokens
+        )
         message = response["choices"][0]["message"]
         logger.info("Triage LLM full message keys: %s", list(message.keys()))
         raw = message.get("content") or ""
         reasoning = message.get("reasoning_content") or ""
-        if not raw and reasoning:
-            logger.info("Triage LLM content empty, falling back to reasoning_content")
-            raw = reasoning
         if not raw:
             logger.warning("Triage LLM returned empty content. Full message: %s", message)
         logger.debug("Triage LLM raw output: %s", raw)
-        data = extract_json(raw)
+        logger.debug("Triage LLM reasoning output: %s", reasoning[:200] if reasoning else "")
+        data = _extract_from_response(raw, reasoning)
     except (json.JSONDecodeError, KeyError, IndexError) as e:
         logger.warning("Triage LLM returned unparseable output: %s", e)
         return TriageResult(should_save=False)
