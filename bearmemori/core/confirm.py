@@ -5,7 +5,7 @@ from pathlib import Path
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import MemoryConfirmed, MemoryDiscarded, MemoryStored
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import MemoryRecord
+from bearmemori.storage.models import MemoryRecord, MemorySource
 from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
 
@@ -34,6 +34,12 @@ class ConfirmHandler:
         record_id = f"mem_{uuid.uuid4().hex[:12]}"
         record = MemoryRecord.from_draft(pending.draft, record_id)
         record.needs_review = event.needs_review
+        if event.source_chat_id:
+            record.source = MemorySource(
+                platform="telegram",
+                chat_id=event.source_chat_id,
+            )
+            record.metadata["source_chat_id"] = event.source_chat_id
         self._db.create(record)
         self._vector_store.add(record)
         self._pending_store.remove(event.pending_id)

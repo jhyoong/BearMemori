@@ -14,6 +14,18 @@ from bearmemori.webapp.auth import WebappAuthMiddleware
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
+
+def _format_event_datetime(value: str) -> str:
+    """Format ISO 8601 datetime string as YYYY/MM/DD HH:mm."""
+    try:
+        dt = datetime.fromisoformat(value)
+        return dt.strftime("%Y/%m/%d %H:%M")
+    except (ValueError, TypeError):
+        return value
+
+
+templates.env.filters["event_datetime"] = _format_event_datetime
+
 CATEGORIES = [c.value for c in MemoryCategory]
 
 router = APIRouter(prefix="/webapp")
