@@ -45,3 +45,12 @@ def test_webapp_secret_default():
         _env_file=None,
     )
     assert settings.webapp_secret == ""
+
+
+def test_image_storage_dir_default():
+    """IMAGE_STORAGE_DIR defaults to data/images."""
+    settings = Settings(
+        telegram_bot_token="fake",
+        telegram_allowed_user_id=1,
+    )
+    assert settings.image_storage_dir == "data/images"
