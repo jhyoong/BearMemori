@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2026-03-24
+
+### Added
+
+- **USER_TIMEZONE config field**: New `user_timezone` config setting (default: UTC) for specifying user's local timezone
+- **Triage current_time parameter**: TriageRequest now accepts optional `current_time` parameter for timezone-aware triage operations
+- **Timezone injection in triage prompts**: Triage system prompt now receives user's timezone context for accurate datetime handling
+
+---
+
 ## [0.3.5] - 2026-03-24
 
 ### Added

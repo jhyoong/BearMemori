@@ -36,7 +36,7 @@ def create_app(
     llm_max_tokens: int = 4096,
     user_timezone: str = "UTC",
 ) -> FastAPI:
-    app = FastAPI(title="BearMemori", version="0.3.3")
+    app = FastAPI(title="BearMemori", version="0.3.6")
 
     @app.get("/health")
     def health():
