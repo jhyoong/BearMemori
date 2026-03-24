@@ -288,7 +288,7 @@ def test_memory_list_shows_event_datetime(authed_webapp_client, db):
     db.create(record)
     response = authed_webapp_client.get("/webapp/memories")
     assert response.status_code == 200
-    assert "2026-03-25" in response.text
+    assert "2026/03/25 15:00" in response.text
     assert "pending" in response.text.lower()
 
 

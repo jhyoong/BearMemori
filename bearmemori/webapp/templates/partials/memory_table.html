@@ -17,7 +17,7 @@
             <td>
                 <a href="/webapp/memories/{{ memory.id }}">{{ memory.title }}</a>
                 {% if memory.event_fields %}
-                <br><small>Due: {{ memory.event_fields.datetime }} | <mark>{{ memory.event_fields.status }}</mark></small>
+                <br><small>Due: {{ memory.event_fields.datetime | event_datetime }} | <mark>{{ memory.event_fields.status }}</mark></small>
                 {% endif %}
             </td>
             <td>{{ memory.category }}</td>
