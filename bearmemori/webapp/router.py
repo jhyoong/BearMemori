@@ -187,7 +187,7 @@ def create_webapp_router(
         if event_datetime:
             record.event_fields = EventFields(
                 datetime=event_datetime,
-                status=event_status,
+                status=event_status if event_status in ("pending", "done") else "pending",
                 recurrence=event_recurrence if event_recurrence else None,
             )
         else:

@@ -316,8 +316,6 @@ def test_memory_detail_shows_event_fields(authed_webapp_client, db):
 
 
 def test_memory_update_saves_event_fields(authed_webapp_client, db):
-    from bearmemori.storage.models import EventFields
-
     record = MemoryRecord(
         id="mem_reminder3",
         category=MemoryCategory.REMINDER,
