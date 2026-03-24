@@ -34,10 +34,13 @@ def test_triage_route_passes_current_time(client):
 
         mock_triage.return_value = TriageResult(should_save=False)
 
-        response = client.post("/memory/triage", json={
-            "conversation": [{"role": "user", "content": "Remind me in 10 minutes"}],
-            "current_time": "Monday, March 24, 2026, 07:33 PM +0800 (Asia/Singapore)",
-        })
+        response = client.post(
+            "/memory/triage",
+            json={
+                "conversation": [{"role": "user", "content": "Remind me in 10 minutes"}],
+                "current_time": "Monday, March 24, 2026, 07:33 PM +0800 (Asia/Singapore)",
+            },
+        )
 
         assert response.status_code == 200
         call_kwargs = mock_triage.call_args.kwargs

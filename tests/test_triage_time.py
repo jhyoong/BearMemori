@@ -12,11 +12,13 @@ from bearmemori.core.triage import run_triage
 async def test_triage_includes_current_time_in_prompt():
     """When current_time is provided, it should appear in the LLM messages."""
     mock_response = {
-        "choices": [{
-            "message": {
-                "content": json.dumps({"should_save": False}),
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({"should_save": False}),
+                }
             }
-        }]
+        ]
     }
 
     with patch(
@@ -43,11 +45,13 @@ async def test_triage_includes_current_time_in_prompt():
 async def test_triage_generates_fallback_time_when_not_provided():
     """When current_time is None, triage should generate a server-side time."""
     mock_response = {
-        "choices": [{
-            "message": {
-                "content": json.dumps({"should_save": False}),
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({"should_save": False}),
+                }
             }
-        }]
+        ]
     }
 
     with patch(

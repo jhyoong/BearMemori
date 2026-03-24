@@ -16,10 +16,14 @@ def test_settings_has_user_timezone_field():
 
 def test_user_timezone_defaults_to_utc():
     """USER_TIMEZONE defaults to UTC when not set."""
-    with patch.dict(os.environ, {
-        "TELEGRAM_BOT_TOKEN": "test",
-        "TELEGRAM_ALLOWED_USER_ID": "123",
-    }, clear=True):
+    with patch.dict(
+        os.environ,
+        {
+            "TELEGRAM_BOT_TOKEN": "test",
+            "TELEGRAM_ALLOWED_USER_ID": "123",
+        },
+        clear=True,
+    ):
         from bearmemori.config import Settings
 
         settings = Settings()
