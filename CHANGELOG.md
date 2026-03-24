@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-03-24
+
+### Added
+
+- **Webapp event fields display**: Memory list now shows due datetime and status for event/task/reminder memories
+- **Webapp event fields editing**: Memory detail page has editable datetime, status, and recurrence fields for event/task/reminder categories
+- **Debug logging for reminder pipeline**: Added logging at LLM extraction and processor stages to trace `event_fields` through the pipeline
+
+### Fixed
+
+- **Telegram "Review Later" button**: Inline buttons now removed after tapping "Review Later" (was the only action that left buttons visible)
+- **Event status validation**: Webapp router validates `event_status` values on save (only accepts "pending" or "done")
+
+---
+
 ## [0.3.4] - 2026-03-23
 
 ### Added
@@ -146,6 +161,7 @@ Initial release of BearMemori, a personal memory management system.
 - Docker Compose full-stack deployment
 - Test suite with pytest and pytest-asyncio
 
+[0.3.5]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.5
 [0.3.4]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.4
 [0.3.3]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.3
 [0.3.2]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.2

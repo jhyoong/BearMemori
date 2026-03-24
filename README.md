@@ -174,9 +174,9 @@ Once set, the webapp is available at `http://localhost:8100/webapp/login`. Enter
 | Page | Path | Description |
 |------|------|-------------|
 | Login | `/webapp/login` | Enter shared secret to authenticate |
-| Memories | `/webapp/memories` | Browse all memories with search, category filter, and bulk actions |
+| Memories | `/webapp/memories` | Browse all memories with search, category filter, bulk actions, and event datetime/status display |
 | New Memory | `/webapp/memories/new` | Create a memory directly (no LLM processing) |
-| Edit Memory | `/webapp/memories/{id}` | Edit title, content, category, tags, and review flag |
+| Edit Memory | `/webapp/memories/{id}` | Edit title, content, category, tags, review flag, and event fields (datetime, status, recurrence) |
 | Review Queue | `/webapp/review` | View memories marked "Review Later", approve or delete in bulk |
 
 The webapp uses HTMX for interactivity -- filtering, bulk actions, and inline deletes work without full page reloads. Auth is cookie-based with httponly and samesite-strict flags.
