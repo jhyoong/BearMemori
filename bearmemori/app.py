@@ -141,6 +141,7 @@ def create_application(settings: Settings) -> FastAPI:
         llm_api_key=settings.llm_api_key,
         llm_model=settings.llm_model,
         llm_max_tokens=settings.llm_max_tokens,
+        user_timezone=settings.user_timezone,
     )
 
     # Mount webapp if secret is configured

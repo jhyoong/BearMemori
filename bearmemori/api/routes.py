@@ -34,6 +34,7 @@ def create_app(
     llm_api_key: str = "",
     llm_model: str = "",
     llm_max_tokens: int = 4096,
+    user_timezone: str = "UTC",
 ) -> FastAPI:
     app = FastAPI(title="BearMemori", version="0.3.3")
 
@@ -51,6 +52,7 @@ def create_app(
             llm_max_tokens=llm_max_tokens,
             memory_hint=request.memory_hint,
             current_time=request.current_time,
+            user_timezone=user_timezone,
         )
         if not result.should_save or result.draft is None:
             return {"should_save": False}
