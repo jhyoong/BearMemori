@@ -1,6 +1,8 @@
 import json
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 from pydantic import ValidationError
@@ -37,10 +39,27 @@ def _extract_from_response(content: str, reasoning: str) -> dict:
     )
 
 
-TRIAGE_SYSTEM_PROMPT = """\
+def _get_server_time(user_timezone: str = "UTC") -> str:
+    """Generate a human-readable current time string."""
+    now_utc = datetime.now(UTC)
+    try:
+        tz = ZoneInfo(user_timezone)
+    except KeyError:
+        tz = UTC
+        user_timezone = "UTC"
+    now_local = now_utc.astimezone(tz)
+    tz_label = user_timezone if user_timezone != "UTC" else "UTC"
+    return now_local.strftime(f"%A, %B %d, %Y, %I:%M %p %z ({tz_label})")
+
+
+_TRIAGE_SYSTEM_TEMPLATE = """\
 /no_think
 You are a memory triage agent. Given a conversation, decide if any information \
 is worth saving as a long-term memory.
+
+Current date and time: {current_time}
+When the user mentions relative times (e.g. "in 10 minutes", "tomorrow", "next week"), \
+use the current date and time above to compute the absolute ISO 8601 datetime for event_fields.
 
 Categories:
 - "profile": Stable facts about the user (preferences, identity, relationships)
@@ -54,20 +73,23 @@ You MUST respond with a single valid JSON object and nothing else. No explanatio
 no commentary, no markdown formatting.
 
 If the conversation contains memory-worthy information:
-{"should_save": true, "category": "<category>", "title": "<short title>", \
-"content": "<key information>", "tags": ["tag1", "tag2"], "event_fields": null}
+{{"should_save": true, "category": "<category>", "title": "<short title>", \
+"content": "<key information>", "tags": ["tag1", "tag2"], "event_fields": null}}
 
 For events/tasks/reminders, set event_fields to:
-{"datetime": "ISO 8601", "status": "pending", "recurrence": null}
+{{"datetime": "ISO 8601", "status": "pending", "recurrence": null}}
 
 If nothing is worth saving:
-{"should_save": false}
+{{"should_save": false}}
 
 Be selective. Only save genuinely useful, specific information. Do not save:
 - Greetings or small talk
 - Questions without answers
 - Temporary or trivial information
 """
+
+# Backward-compatible alias for code that references TRIAGE_SYSTEM_PROMPT directly
+TRIAGE_SYSTEM_PROMPT = _TRIAGE_SYSTEM_TEMPLATE.format(current_time="(not provided)")
 
 
 @dataclass
@@ -107,7 +129,14 @@ async def run_triage(
     llm_model: str,
     llm_max_tokens: int = 4096,
     memory_hint: dict | None = None,
+    current_time: str | None = None,
+    user_timezone: str = "UTC",
 ) -> TriageResult:
+    if current_time is None:
+        current_time = _get_server_time(user_timezone)
+
+    system_prompt = _TRIAGE_SYSTEM_TEMPLATE.format(current_time=current_time)
+
     hint_text = ""
     if memory_hint:
         hint_text = f"\n\nMemory hint from chatbot: {json.dumps(memory_hint)}"
@@ -121,7 +150,7 @@ async def run_triage(
         return TriageResult(should_save=False)
 
     messages = [
-        {"role": "system", "content": TRIAGE_SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"Conversation:\n{conv_text}{hint_text}"},
     ]
 
