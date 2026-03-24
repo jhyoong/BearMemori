@@ -130,6 +130,7 @@ class TelegramInterface:
                     needs_review=True,
                 )
             )
+            await query.message.edit_text(query.message.text + "\n\nSaved for review.")
             await query.answer("Saved for review")
 
         self._pending_chat_ids.pop(pending_id, None)

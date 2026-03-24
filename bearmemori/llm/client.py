@@ -160,6 +160,7 @@ class LLMClient:
         raw = _get_content(response.choices[0].message)
         logger.debug("Extract raw output: %s", raw)
         data = extract_json(raw)
+        logger.debug("Extracted data event_fields: %s", data.get("event_fields"))
         return ExtractionResult(**data)
 
     async def generate_followup(self, text: str, context: dict | None) -> str:

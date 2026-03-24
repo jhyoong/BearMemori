@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-03-24
+
+### Added
+
+- **Webapp event fields display**: Memory list now shows due datetime and status for event/task/reminder memories
+- **Webapp event fields editing**: Memory detail page has editable datetime, status, and recurrence fields for event/task/reminder categories
+- **Debug logging for reminder pipeline**: Added logging at LLM extraction and processor stages to trace `event_fields` through the pipeline
+
+### Fixed
+
+- **Telegram "Review Later" button**: Inline buttons now removed after tapping "Review Later" (was the only action that left buttons visible)
+- **Event status validation**: Webapp router validates `event_status` values on save (only accepts "pending" or "done")
+
+---
+
+## [0.3.4] - 2026-03-23
+
+### Added
+
+- `llm_max_tokens` config setting to control token budget for LLM calls (default: 4096)
+
+### Fixed
+
+- Webapp root `/` now redirects to `/webapp/login` when webapp is enabled
+- LLM response handling for reasoning models (e.g., Qwen3.5) that put JSON in `reasoning_content` instead of `content` -- added `_get_content()` helper in LLM client
+- Triage LLM calls now respect `llm_max_tokens` to prevent reasoning models from exhausting token budget on thinking
+
+---
+
 ## [0.3.3] - 2026-03-22
 
 ### Added
@@ -132,6 +161,8 @@ Initial release of BearMemori, a personal memory management system.
 - Docker Compose full-stack deployment
 - Test suite with pytest and pytest-asyncio
 
+[0.3.5]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.5
+[0.3.4]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.4
 [0.3.3]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.3
 [0.3.2]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.2
 [0.3.0]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.0

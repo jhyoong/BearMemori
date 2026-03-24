@@ -269,6 +269,118 @@ def test_memories_htmx_partial(authed_webapp_client):
     assert "<table>" in response.text
 
 
+def test_memory_list_shows_event_datetime(authed_webapp_client, db):
+    from bearmemori.storage.models import EventFields
+
+    record = MemoryRecord(
+        id="mem_reminder1",
+        category=MemoryCategory.REMINDER,
+        title="Take meds",
+        content="Take meds every 8 hours",
+        created_at=datetime.now(UTC),
+        tags=["health"],
+        event_fields=EventFields(
+            datetime="2026-03-25T15:00:00",
+            status="pending",
+            recurrence="every 8 hours",
+        ),
+    )
+    db.create(record)
+    response = authed_webapp_client.get("/webapp/memories")
+    assert response.status_code == 200
+    assert "2026-03-25" in response.text
+    assert "pending" in response.text.lower()
+
+
+def test_memory_detail_shows_event_fields(authed_webapp_client, db):
+    from bearmemori.storage.models import EventFields
+
+    record = MemoryRecord(
+        id="mem_reminder2",
+        category=MemoryCategory.REMINDER,
+        title="Dentist appointment",
+        content="Dentist at 3pm",
+        created_at=datetime.now(UTC),
+        tags=["health"],
+        event_fields=EventFields(
+            datetime="2026-03-25T15:00:00",
+            status="pending",
+            recurrence=None,
+        ),
+    )
+    db.create(record)
+    response = authed_webapp_client.get("/webapp/memories/mem_reminder2")
+    assert response.status_code == 200
+    assert "2026-03-25T15:00" in response.text
+    assert "pending" in response.text.lower()
+
+
+def test_memory_update_saves_event_fields(authed_webapp_client, db):
+    record = MemoryRecord(
+        id="mem_reminder3",
+        category=MemoryCategory.REMINDER,
+        title="Take meds",
+        content="Take meds",
+        created_at=datetime.now(UTC),
+        tags=["health"],
+    )
+    db.create(record)
+    response = authed_webapp_client.post(
+        "/webapp/memories/mem_reminder3",
+        data={
+            "title": "Take meds",
+            "category": "reminder",
+            "content": "Take meds every 8 hours",
+            "tags": "health",
+            "event_datetime": "2026-03-25T15:00",
+            "event_status": "pending",
+            "event_recurrence": "every 8 hours",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    updated = db.get("mem_reminder3")
+    assert updated.event_fields is not None
+    assert updated.event_fields.datetime == "2026-03-25T15:00"
+    assert updated.event_fields.status == "pending"
+    assert updated.event_fields.recurrence == "every 8 hours"
+
+
+def test_memory_update_clears_event_fields_when_empty(authed_webapp_client, db):
+    from bearmemori.storage.models import EventFields
+
+    record = MemoryRecord(
+        id="mem_reminder4",
+        category=MemoryCategory.REMINDER,
+        title="Take meds",
+        content="Take meds",
+        created_at=datetime.now(UTC),
+        tags=["health"],
+        event_fields=EventFields(
+            datetime="2026-03-25T15:00:00",
+            status="pending",
+            recurrence=None,
+        ),
+    )
+    db.create(record)
+    response = authed_webapp_client.post(
+        "/webapp/memories/mem_reminder4",
+        data={
+            "title": "Take meds",
+            "category": "general",
+            "content": "Take meds",
+            "tags": "health",
+            "event_datetime": "",
+            "event_status": "pending",
+            "event_recurrence": "",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    updated = db.get("mem_reminder4")
+    assert updated.event_fields is None
+
+
 def test_review_queue_with_memories(authed_webapp_client, db):
     record = MemoryRecord(
         id="mem_review1",

@@ -25,6 +25,25 @@
         Needs Review
     </label>
 
+    <fieldset id="event-fields" {% if not memory.event_fields and memory.category.value not in ['event', 'task', 'reminder'] %}style="display:none"{% endif %}>
+        <legend>Event / Reminder Fields</legend>
+
+        <label for="event_datetime">Date &amp; Time</label>
+        <input type="datetime-local" id="event_datetime" name="event_datetime"
+               value="{{ memory.event_fields.datetime[:16] if memory.event_fields else '' }}">
+
+        <label for="event_status">Status</label>
+        <select id="event_status" name="event_status">
+            <option value="pending" {% if memory.event_fields and memory.event_fields.status == 'pending' %}selected{% endif %}>pending</option>
+            <option value="done" {% if memory.event_fields and memory.event_fields.status == 'done' %}selected{% endif %}>done</option>
+        </select>
+
+        <label for="event_recurrence">Recurrence</label>
+        <input type="text" id="event_recurrence" name="event_recurrence"
+               value="{{ memory.event_fields.recurrence or '' if memory.event_fields else '' }}"
+               placeholder="e.g., every 8 hours, daily, weekly">
+    </fieldset>
+
     <div class="grid">
         <button type="submit">Save Changes</button>
         <button type="button" class="secondary" hx-delete="/webapp/memories/{{ memory.id }}" hx-confirm="Delete this memory permanently?">Delete</button>
