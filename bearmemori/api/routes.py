@@ -50,6 +50,7 @@ def create_app(
             llm_model=llm_model,
             llm_max_tokens=llm_max_tokens,
             memory_hint=request.memory_hint,
+            current_time=request.current_time,
         )
         if not result.should_save or result.draft is None:
             return {"should_save": False}
