@@ -23,3 +23,4 @@ class Settings(BaseSettings):
     webapp_secret: str = ""
     llm_max_tokens: int = 4096
     webapp_secure_cookie: bool = False
+    user_timezone: str = "UTC"
