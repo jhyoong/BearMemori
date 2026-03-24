@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class TriageRequest(BaseModel):
     conversation: list[dict] = Field(min_length=1)
     memory_hint: dict | None = None
+    current_time: str | None = None
 
 
 class ConfirmRequest(BaseModel):
