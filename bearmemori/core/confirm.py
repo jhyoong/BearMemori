@@ -1,6 +1,5 @@
 import logging
 import uuid
-from pathlib import Path
 
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import MemoryConfirmed, MemoryDiscarded, MemoryStored
@@ -60,12 +59,5 @@ class ConfirmHandler:
         pending = self._pending_store.get(event.pending_id)
         if pending is None:
             return
-
-        if pending.image_path:
-            path = Path(pending.image_path)
-            if path.exists():
-                path.unlink()
-                logger.info("Deleted image %s", pending.image_path)
-
         self._pending_store.remove(event.pending_id)
         logger.info("Discarded pending memory %s", event.pending_id)

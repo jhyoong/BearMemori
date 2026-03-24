@@ -94,14 +94,10 @@ async def test_discard_removes_pending(handler, bus, pending_store):
 
 
 @pytest.mark.asyncio
-async def test_discard_cleans_up_image(handler, pending_store, tmp_path):
-    img = tmp_path / "test.jpg"
-    img.write_bytes(b"fake")
-    pid = pending_store.add(_make_draft(), chat_id="123", image_path=str(img))
-
+async def test_discard_with_image_bytes_is_noop(handler, pending_store):
+    pid = pending_store.add(_make_draft(), chat_id="123", image_bytes=b"fake-image")
     await handler.handle_discarded(MemoryDiscarded(pending_id=pid, source_chat_id="123"))
-
-    assert not img.exists()
+    assert pending_store.get(pid) is None
 
 
 @pytest.mark.asyncio

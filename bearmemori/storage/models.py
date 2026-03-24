@@ -71,4 +71,4 @@ class PendingMemory(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     chat_id: str = ""
     message_id: int | None = None
-    image_path: str | None = None
+    image_bytes: bytes | None = None

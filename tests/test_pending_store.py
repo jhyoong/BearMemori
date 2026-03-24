@@ -51,13 +51,21 @@ def test_cleanup():
     assert removed == 2
 
 
-def test_add_with_chat_id_and_image_path():
+def test_add_with_chat_id_and_image_bytes():
     store = PendingStore()
-    pid = store.add(_make_draft(), chat_id="123", image_path="/tmp/test.jpg")
+    pid = store.add(_make_draft(), chat_id="123", image_bytes=b"fake-image-data")
     result = store.get(pid)
     assert result is not None
     assert result.chat_id == "123"
-    assert result.image_path == "/tmp/test.jpg"
+    assert result.image_bytes == b"fake-image-data"
+
+
+def test_add_without_image_bytes():
+    store = PendingStore()
+    pid = store.add(_make_draft(), chat_id="123")
+    result = store.get(pid)
+    assert result is not None
+    assert result.image_bytes is None
 
 
 def test_add_stores_message_id():
