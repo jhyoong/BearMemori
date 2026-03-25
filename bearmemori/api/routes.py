@@ -21,6 +21,7 @@ from bearmemori.storage.models import (
     MemoryCategory,
     MemoryDraft,
     MemoryRecord,
+    MemorySource,
 )
 from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
@@ -100,6 +101,13 @@ def create_app(
 
         record_id = f"mem_{uuid.uuid4().hex[:12]}"
         record = MemoryRecord.from_draft(pending.draft, record_id=record_id)
+
+        if request.source_chat_id:
+            record.source = MemorySource(
+                platform="telegram",
+                chat_id=request.source_chat_id,
+            )
+            record.metadata["source_chat_id"] = request.source_chat_id
 
         db.create(record)
         vector_store.add(record)

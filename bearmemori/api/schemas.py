@@ -9,6 +9,7 @@ class TriageRequest(BaseModel):
 
 class ConfirmRequest(BaseModel):
     pending_id: str
+    source_chat_id: str | None = None
 
 
 class SearchRequest(BaseModel):

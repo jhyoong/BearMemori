@@ -406,3 +406,28 @@ def test_delete_memory_no_image_path(client_with_images, db, vector_store):
 
     response = client.delete("/memory/mem_no_img")
     assert response.status_code == 200
+
+
+def test_confirm_with_source_chat_id(client, db):
+    draft = {
+        "category": "reminder",
+        "title": "Pack bag",
+        "content": "Remind to pack bag",
+        "tags": ["packing"],
+        "event_fields": {"datetime": "2026-03-26T20:00:00+00:00", "status": "pending"},
+    }
+    r = client.post("/memory/pending", json=draft)
+    pending_id = r.json()["pending_id"]
+
+    r = client.post(
+        "/memory/confirm",
+        json={"pending_id": pending_id, "source_chat_id": "46646397"},
+    )
+    assert r.status_code == 200
+    record_id = r.json()["record_id"]
+
+    record = db.get(record_id)
+    assert record.source is not None
+    assert record.source.chat_id == "46646397"
+    assert record.source.platform == "telegram"
+    assert record.metadata["source_chat_id"] == "46646397"
