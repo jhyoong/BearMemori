@@ -69,8 +69,9 @@ _EXTRACT_SYSTEM_TEMPLATE = (
     "If follow-up context is provided, use the full conversation to understand the memory.\n"
     "\n"
     "Current date and time: {current_time}\n"
-    "When the user mentions relative times (e.g. \"in 10 minutes\", \"tomorrow\", \"next week\"), "
-    "use the current date and time above to compute the absolute ISO 8601 datetime for event_fields.\n"
+    'When the user mentions relative times (e.g. "in 10 minutes", "tomorrow", "next week"), '
+    "use the current date and time above to compute the absolute "
+    "ISO 8601 datetime for event_fields.\n"
     "\n"
     "You MUST respond with a single valid JSON object and nothing else.\n"
     '{{"content": "<clear summary of the memory>", "category": "<category>", '
@@ -136,7 +137,13 @@ class _ClientWrapper:
 
 
 class LLMClient:
-    def __init__(self, base_url: str, model: str, api_key: str = "not-needed", user_timezone: str = "UTC") -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        api_key: str = "not-needed",
+        user_timezone: str = "UTC",
+    ) -> None:
         self._client = _ClientWrapper(base_url=base_url, api_key=api_key)
         self._model = model
         self._user_timezone = user_timezone

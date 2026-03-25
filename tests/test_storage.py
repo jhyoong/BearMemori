@@ -238,9 +238,9 @@ def test_update_normalizes_event_datetime_to_utc(db):
 
 
 def test_get_due_events_finds_non_utc_reminder(db):
-    """A reminder stored with non-UTC offset should be found by get_due_events after normalization."""
-    from unittest.mock import patch as mock_patch
+    """Non-UTC offset reminder should be found by get_due_events after normalization."""
     from datetime import datetime as dt
+    from unittest.mock import patch as mock_patch
 
     # Event at 23:34 +08:00 = 15:34 UTC
     record = _make_record(

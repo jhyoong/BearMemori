@@ -341,7 +341,7 @@ def test_memory_update_saves_event_fields(authed_webapp_client, db):
     assert response.status_code == 302
     updated = db.get("mem_reminder3")
     assert updated.event_fields is not None
-    assert updated.event_fields.datetime == "2026-03-25T15:00"
+    assert updated.event_fields.datetime == "2026-03-25T15:00:00+00:00"
     assert updated.event_fields.status == "pending"
     assert updated.event_fields.recurrence == "every 8 hours"
 
