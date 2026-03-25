@@ -80,7 +80,6 @@ class Processor:
     async def _process_image(self, item: QueueItem) -> None:
         image_bytes = item.content.get("image_bytes", b"")
         caption = item.content.get("caption", "")
-        image_bytes_data = item.content.get("image_bytes", b"")
 
         if caption:
             classification = await self._llm.classify_input(caption)
@@ -105,7 +104,7 @@ class Processor:
             extraction,
             caption or "[image]",
             item.source_chat_id,
-            image_bytes=image_bytes_data,
+            image_bytes=image_bytes,
         )
 
     async def _create_pending(
