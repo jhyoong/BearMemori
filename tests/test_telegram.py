@@ -396,3 +396,21 @@ async def test_recall_not_found(interface):
 
     mock_bot.send_message.assert_called_once()
     assert "not found" in mock_bot.send_message.call_args.kwargs["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_handle_reminder_due_empty_chat_id(interface):
+    """Reminder with empty source_chat_id should be skipped, not crash."""
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    event = ReminderDue(
+        memory_id="rem-1",
+        content="Take meds",
+        source_chat_id="",
+        remind_at_iso="2026-03-25T15:00:00+00:00",
+    )
+    # Should not raise
+    await interface.handle_reminder_due(event)
+    mock_bot.send_message.assert_not_called()

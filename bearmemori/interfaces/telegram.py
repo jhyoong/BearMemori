@@ -261,8 +261,13 @@ class TelegramInterface:
             await self._app.bot.send_message(chat_id=int(event.chat_id), text=event.text)
 
     async def handle_reminder_due(self, event: ReminderDue) -> None:
-        if self._app:
-            await self._app.bot.send_message(
-                chat_id=int(event.source_chat_id),
-                text=f"Reminder: {event.content}",
-            )
+        if not self._app or not event.source_chat_id:
+            if not event.source_chat_id:
+                logger.warning(
+                    "Reminder %s has no source_chat_id, cannot deliver", event.memory_id
+                )
+            return
+        await self._app.bot.send_message(
+            chat_id=int(event.source_chat_id),
+            text=f"Reminder: {event.content}",
+        )
