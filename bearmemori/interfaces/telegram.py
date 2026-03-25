@@ -11,7 +11,6 @@ from telegram.ext import (
 )
 
 from bearmemori.events.bus import EventBus
-from bearmemori.storage.database import MemoryDatabase
 from bearmemori.events.domain import (
     InputReceived,
     MemoryConfirmed,
@@ -20,6 +19,7 @@ from bearmemori.events.domain import (
     ReminderDue,
     SendMessage,
 )
+from bearmemori.storage.database import MemoryDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +47,12 @@ class TelegramInterface:
 
     def build(self) -> Application:
         async def post_init(application: Application) -> None:
-            await application.bot.set_my_commands([
-                BotCommand("start", "Welcome message"),
-                BotCommand("recall", "Retrieve a memory by ID"),
-            ])
+            await application.bot.set_my_commands(
+                [
+                    BotCommand("start", "Welcome message"),
+                    BotCommand("recall", "Retrieve a memory by ID"),
+                ]
+            )
 
         self._app = Application.builder().token(self._token).post_init(post_init).build()
         self._app.add_handler(CallbackQueryHandler(self._handle_callback))

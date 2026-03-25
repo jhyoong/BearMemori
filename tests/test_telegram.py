@@ -302,9 +302,10 @@ async def test_recall_sends_memory_details(interface):
     interface._app = MagicMock()
     interface._app.bot = mock_bot
 
+    from datetime import UTC, datetime
     from unittest.mock import MagicMock as SyncMock
-    from bearmemori.storage.models import MemoryRecord, MemoryCategory
-    from datetime import datetime, UTC
+
+    from bearmemori.storage.models import MemoryCategory, MemoryRecord
 
     mock_db = SyncMock()
     interface._db = mock_db
@@ -337,9 +338,10 @@ async def test_recall_sends_photo_when_image_exists(interface, tmp_path):
     interface._app = MagicMock()
     interface._app.bot = mock_bot
 
+    from datetime import UTC, datetime
     from unittest.mock import MagicMock as SyncMock
-    from bearmemori.storage.models import MemoryRecord, MemoryCategory
-    from datetime import datetime, UTC
+
+    from bearmemori.storage.models import MemoryCategory, MemoryRecord
 
     mock_db = SyncMock()
     interface._db = mock_db
@@ -376,6 +378,7 @@ async def test_recall_not_found(interface):
     interface._app.bot = mock_bot
 
     from unittest.mock import MagicMock as SyncMock
+
     mock_db = SyncMock()
     interface._db = mock_db
     mock_db.get.return_value = None

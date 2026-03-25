@@ -101,7 +101,9 @@ async def test_discard_with_image_bytes_is_noop(handler, pending_store):
 
 
 @pytest.mark.asyncio
-async def test_confirm_saves_image_to_disk(bus, pending_store, mock_db, mock_vector_store, tmp_path):
+async def test_confirm_saves_image_to_disk(
+    bus, pending_store, mock_db, mock_vector_store, tmp_path
+):
     handler = ConfirmHandler(
         bus=bus,
         pending_store=pending_store,
