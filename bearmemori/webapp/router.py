@@ -9,22 +9,12 @@ from fastapi.templating import Jinja2Templates
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
 from bearmemori.storage.vector_store import VectorStore
+from bearmemori.utils.time import utc_to_local_iso
 from bearmemori.webapp.auth import WebappAuthMiddleware
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
-
-def _format_event_datetime(value: str) -> str:
-    """Format ISO 8601 datetime string as YYYY/MM/DD HH:mm."""
-    try:
-        dt = datetime.fromisoformat(value)
-        return dt.strftime("%Y/%m/%d %H:%M")
-    except (ValueError, TypeError):
-        return value
-
-
-templates.env.filters["event_datetime"] = _format_event_datetime
 
 CATEGORIES = [c.value for c in MemoryCategory]
 
@@ -36,8 +26,28 @@ def create_webapp_router(
     vector_store: VectorStore,
     auth: WebappAuthMiddleware,
     image_storage_dir: str = "",
+    user_timezone: str = "UTC",
 ) -> APIRouter:
     r = APIRouter(prefix="/webapp")
+
+    def _format_event_dt(value: str) -> str:
+        try:
+            local_iso = utc_to_local_iso(value, user_timezone)
+            dt = datetime.fromisoformat(local_iso)
+            return dt.strftime("%Y/%m/%d %H:%M")
+        except (ValueError, TypeError):
+            return value
+
+    def _format_event_dt_input(value: str) -> str:
+        try:
+            local_iso = utc_to_local_iso(value, user_timezone)
+            dt = datetime.fromisoformat(local_iso)
+            return dt.strftime("%Y-%m-%dT%H:%M")
+        except (ValueError, TypeError):
+            return value
+
+    templates.env.filters["event_datetime"] = _format_event_dt
+    templates.env.filters["event_datetime_input"] = _format_event_dt_input
 
     def _delete_image_file(record_id: str) -> None:
         if not image_storage_dir:
