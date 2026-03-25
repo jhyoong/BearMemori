@@ -94,14 +94,49 @@ async def test_discard_removes_pending(handler, bus, pending_store):
 
 
 @pytest.mark.asyncio
-async def test_discard_cleans_up_image(handler, pending_store, tmp_path):
-    img = tmp_path / "test.jpg"
-    img.write_bytes(b"fake")
-    pid = pending_store.add(_make_draft(), chat_id="123", image_path=str(img))
-
+async def test_discard_with_image_bytes_is_noop(handler, pending_store):
+    pid = pending_store.add(_make_draft(), chat_id="123", image_bytes=b"fake-image")
     await handler.handle_discarded(MemoryDiscarded(pending_id=pid, source_chat_id="123"))
+    assert pending_store.get(pid) is None
 
-    assert not img.exists()
+
+@pytest.mark.asyncio
+async def test_confirm_saves_image_to_disk(
+    bus, pending_store, mock_db, mock_vector_store, tmp_path
+):
+    handler = ConfirmHandler(
+        bus=bus,
+        pending_store=pending_store,
+        db=mock_db,
+        vector_store=mock_vector_store,
+        image_storage_dir=str(tmp_path),
+    )
+
+    pid = pending_store.add(
+        _make_draft(),
+        chat_id="123",
+        image_bytes=b"fake-jpeg-data",
+    )
+
+    await handler.handle_confirmed(MemoryConfirmed(pending_id=pid, source_chat_id="123"))
+
+    record = mock_db.create.call_args[0][0]
+    assert record.image_path is not None
+    assert record.image_path.endswith(".jpg")
+
+    # Verify file was written to disk
+    image_file = tmp_path / f"{record.id}.jpg"
+    assert image_file.exists()
+    assert image_file.read_bytes() == b"fake-jpeg-data"
+
+
+@pytest.mark.asyncio
+async def test_confirm_without_image_has_no_image_path(handler, pending_store, mock_db):
+    pid = pending_store.add(_make_draft(), chat_id="123")
+    await handler.handle_confirmed(MemoryConfirmed(pending_id=pid, source_chat_id="123"))
+
+    record = mock_db.create.call_args[0][0]
+    assert record.image_path is None
 
 
 @pytest.mark.asyncio

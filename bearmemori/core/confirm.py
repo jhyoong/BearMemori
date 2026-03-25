@@ -19,11 +19,13 @@ class ConfirmHandler:
         pending_store: PendingStore,
         db: MemoryDatabase,
         vector_store: VectorStore,
+        image_storage_dir: str = "",
     ) -> None:
         self._bus = bus
         self._pending_store = pending_store
         self._db = db
         self._vector_store = vector_store
+        self._image_storage_dir = image_storage_dir
 
     async def handle_confirmed(self, event: MemoryConfirmed) -> None:
         pending = self._pending_store.get(event.pending_id)
@@ -40,6 +42,14 @@ class ConfirmHandler:
                 chat_id=event.source_chat_id,
             )
             record.metadata["source_chat_id"] = event.source_chat_id
+        # Save image to disk if present
+        if pending.image_bytes and self._image_storage_dir:
+            image_dir = Path(self._image_storage_dir)
+            image_dir.mkdir(parents=True, exist_ok=True)
+            image_file = image_dir / f"{record_id}.jpg"
+            image_file.write_bytes(pending.image_bytes)
+            record.image_path = f"{record_id}.jpg"
+            logger.info("Saved image to %s", image_file)
         self._db.create(record)
         self._vector_store.add(record)
         self._pending_store.remove(event.pending_id)
@@ -60,12 +70,5 @@ class ConfirmHandler:
         pending = self._pending_store.get(event.pending_id)
         if pending is None:
             return
-
-        if pending.image_path:
-            path = Path(pending.image_path)
-            if path.exists():
-                path.unlink()
-                logger.info("Deleted image %s", pending.image_path)
-
         self._pending_store.remove(event.pending_id)
         logger.info("Discarded pending memory %s", event.pending_id)

@@ -138,7 +138,7 @@ async def test_process_edit_re_extracts_memory(processor, bus, mock_llm, mock_pe
     original_pending = MagicMock()
     original_pending.draft.content = "Dentist on Tuesday"
     original_pending.chat_id = "123"
-    original_pending.image_path = None
+    original_pending.image_bytes = None
     mock_pending_store.get.return_value = original_pending
 
     mock_pending_store.add.return_value = "pend_new123"

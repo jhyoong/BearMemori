@@ -14,7 +14,7 @@ class PendingStore:
         draft: MemoryDraft,
         ttl: int | None = None,
         chat_id: str = "",
-        image_path: str | None = None,
+        image_bytes: bytes | None = None,
     ) -> str:
         pending_id = f"pend_{uuid.uuid4().hex[:12]}"
         ttl_seconds = ttl if ttl is not None else self._default_ttl
@@ -23,7 +23,7 @@ class PendingStore:
             draft=draft,
             ttl_seconds=ttl_seconds,
             chat_id=chat_id,
-            image_path=image_path,
+            image_bytes=image_bytes,
         )
         return pending_id
 

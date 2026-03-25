@@ -1,0 +1,6 @@
+1. Reminder system issues
+    - timestamp display should be YYYY/MM/DD and not that disgusting US format
+    - Reminders that were set are not triggered.
+2. webapp not showing images - also not sure if the chatbots are able to send the images back or not
+3. Memory importance field (?) Ranking of how important a memory is ( probably range from 1 - 10  or using some formula )
+4. Telegram menu

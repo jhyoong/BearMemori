@@ -24,3 +24,4 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 4096
     webapp_secure_cookie: bool = False
     user_timezone: str = "UTC"
+    image_storage_dir: str = "data/images"

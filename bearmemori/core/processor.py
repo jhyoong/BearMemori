@@ -74,13 +74,12 @@ class Processor:
             extraction,
             text,
             item.source_chat_id,
-            image_path=pending.image_path,
+            image_bytes=pending.image_bytes,
         )
 
     async def _process_image(self, item: QueueItem) -> None:
         image_bytes = item.content.get("image_bytes", b"")
         caption = item.content.get("caption", "")
-        image_path = item.content.get("image_path")
 
         if caption:
             classification = await self._llm.classify_input(caption)
@@ -105,7 +104,7 @@ class Processor:
             extraction,
             caption or "[image]",
             item.source_chat_id,
-            image_path=image_path,
+            image_bytes=image_bytes,
         )
 
     async def _create_pending(
@@ -113,7 +112,7 @@ class Processor:
         extraction,
         raw_input: str,
         chat_id: str,
-        image_path: str | None = None,
+        image_bytes: bytes | None = None,
     ) -> None:
         event_fields = None
         logger.debug(
@@ -137,7 +136,7 @@ class Processor:
         pending_id = self._pending_store.add(
             draft,
             chat_id=chat_id,
-            image_path=image_path,
+            image_bytes=image_bytes,
         )
 
         preview_data = {
@@ -153,6 +152,7 @@ class Processor:
                 pending_id=pending_id,
                 preview_data=preview_data,
                 source_chat_id=chat_id,
+                image_bytes=image_bytes,
             )
         )
         logger.info("Pending memory %s: %s", pending_id, extraction.content[:80])

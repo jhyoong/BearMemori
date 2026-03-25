@@ -136,6 +136,34 @@ async def test_handle_memory_pending_sends_preview(interface):
 
 
 @pytest.mark.asyncio
+async def test_handle_memory_pending_sends_photo_when_image_present(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    event = MemoryPending(
+        pending_id="pend_img123",
+        preview_data={
+            "title": "Photo memory",
+            "category": "general",
+            "content": "A nice sunset",
+            "tags": ["photo"],
+        },
+        source_chat_id="42",
+        image_bytes=b"fake-jpeg-data",
+    )
+
+    await interface.handle_memory_pending(event)
+
+    mock_bot.send_photo.assert_called_once()
+    call_kwargs = mock_bot.send_photo.call_args.kwargs
+    assert call_kwargs["chat_id"] == 42
+    assert "Photo memory" in call_kwargs["caption"]
+    assert call_kwargs["reply_markup"] is not None
+    mock_bot.send_message.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_callback_save_emits_confirmed(interface, bus):
     confirmed = []
     bus.on(MemoryConfirmed, lambda e: confirmed.append(e))
@@ -147,6 +175,7 @@ async def test_callback_save_emits_confirmed(interface, bus):
     query = AsyncMock()
     query.data = "save:pend_abc123"
     query.message = AsyncMock()
+    query.message.photo = None
 
     update = _make_update()
     update.callback_query = query
@@ -170,6 +199,7 @@ async def test_callback_discard_emits_discarded(interface, bus):
     query = AsyncMock()
     query.data = "discard:pend_abc123"
     query.message = AsyncMock()
+    query.message.photo = None
 
     update = _make_update()
     update.callback_query = query
@@ -190,6 +220,7 @@ async def test_callback_edit_sets_edit_pending(interface):
     query = AsyncMock()
     query.data = "edit:pend_abc123"
     query.message = AsyncMock()
+    query.message.photo = None
 
     update = _make_update()
     update.callback_query = query
@@ -230,6 +261,7 @@ async def test_callback_review_emits_confirmed_with_needs_review(interface, bus)
     query = AsyncMock()
     query.data = "review:pend_abc123"
     query.message = AsyncMock()
+    query.message.photo = None
 
     update = _make_update()
     update.callback_query = query
@@ -255,6 +287,7 @@ async def test_callback_review_removes_buttons_and_updates_text(interface, bus):
     query.data = "review:pend_abc123"
     query.message = AsyncMock()
     query.message.text = "Memory Preview\n\nTitle: Test\nCategory: reminder\nContent: Test content"
+    query.message.photo = None
 
     update = _make_update()
     update.callback_query = query
@@ -266,3 +299,100 @@ async def test_callback_review_removes_buttons_and_updates_text(interface, bus):
     query.message.edit_text.assert_called_once()
     call_args = query.message.edit_text.call_args
     assert "Saved for review" in call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_recall_sends_memory_details(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    from datetime import UTC, datetime
+    from unittest.mock import MagicMock as SyncMock
+
+    from bearmemori.storage.models import MemoryCategory, MemoryRecord
+
+    mock_db = SyncMock()
+    interface._db = mock_db
+
+    record = MemoryRecord(
+        id="mem_abc123",
+        category=MemoryCategory.GENERAL,
+        title="Pizza preference",
+        content="I like pepperoni pizza",
+        created_at=datetime.now(UTC),
+        tags=["food"],
+    )
+    mock_db.get.return_value = record
+
+    update = _make_update()
+    context = MagicMock()
+    context.args = ["mem_abc123"]
+
+    await interface._handle_recall(update, context)
+
+    mock_bot.send_message.assert_called_once()
+    call_kwargs = mock_bot.send_message.call_args.kwargs
+    assert "Pizza preference" in call_kwargs["text"]
+    assert "pepperoni" in call_kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_recall_sends_photo_when_image_exists(interface, tmp_path):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    from datetime import UTC, datetime
+    from unittest.mock import MagicMock as SyncMock
+
+    from bearmemori.storage.models import MemoryCategory, MemoryRecord
+
+    mock_db = SyncMock()
+    interface._db = mock_db
+    interface._image_storage_dir = str(tmp_path)
+
+    (tmp_path / "mem_img456.jpg").write_bytes(b"fake-photo")
+
+    record = MemoryRecord(
+        id="mem_img456",
+        category=MemoryCategory.GENERAL,
+        title="Sunset photo",
+        content="Beautiful sunset at the beach",
+        created_at=datetime.now(UTC),
+        tags=["photo"],
+        image_path="mem_img456.jpg",
+    )
+    mock_db.get.return_value = record
+
+    update = _make_update()
+    context = MagicMock()
+    context.args = ["mem_img456"]
+
+    await interface._handle_recall(update, context)
+
+    mock_bot.send_photo.assert_called_once()
+    call_kwargs = mock_bot.send_photo.call_args.kwargs
+    assert "Sunset photo" in call_kwargs["caption"]
+
+
+@pytest.mark.asyncio
+async def test_recall_not_found(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    from unittest.mock import MagicMock as SyncMock
+
+    mock_db = SyncMock()
+    interface._db = mock_db
+    mock_db.get.return_value = None
+
+    update = _make_update()
+    context = MagicMock()
+    context.args = ["mem_nonexistent"]
+
+    await interface._handle_recall(update, context)
+
+    mock_bot.send_message.assert_called_once()
+    assert "not found" in mock_bot.send_message.call_args.kwargs["text"].lower()

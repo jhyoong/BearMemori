@@ -183,6 +183,22 @@ def test_delete_many(db, sample_record):
     assert db.get(record3.id) is not None
 
 
+def test_create_and_get_with_image_path(db):
+    record = _make_record(id="mem_img1", image_path="images/mem_img1.jpg")
+    db.create(record)
+    result = db.get("mem_img1")
+    assert result is not None
+    assert result.image_path == "images/mem_img1.jpg"
+
+
+def test_image_path_defaults_to_none(db):
+    record = _make_record(id="mem_noimg")
+    db.create(record)
+    result = db.get("mem_noimg")
+    assert result is not None
+    assert result.image_path is None
+
+
 @pytest.fixture
 def sample_record():
     return _make_record()

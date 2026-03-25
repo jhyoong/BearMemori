@@ -76,6 +76,9 @@ def create_application(settings: Settings) -> FastAPI:
     )
     vector_store.init()
 
+    # Ensure image storage directory exists
+    Path(settings.image_storage_dir).mkdir(parents=True, exist_ok=True)
+
     pending_store = PendingStore(default_ttl=settings.pending_ttl_seconds)
 
     llm = LLMClient(
@@ -92,6 +95,7 @@ def create_application(settings: Settings) -> FastAPI:
         pending_store=pending_store,
         db=db,
         vector_store=vector_store,
+        image_storage_dir=settings.image_storage_dir,
     )
     cleanup_task = PendingCleanupTask(
         bus=bus,
@@ -102,6 +106,8 @@ def create_application(settings: Settings) -> FastAPI:
         bus=bus,
         token=settings.telegram_bot_token,
         allowed_user_id=settings.telegram_allowed_user_id,
+        db=db,
+        image_storage_dir=settings.image_storage_dir,
     )
     scheduler = ReminderScheduler(
         bus=bus,
@@ -142,6 +148,7 @@ def create_application(settings: Settings) -> FastAPI:
         llm_model=settings.llm_model,
         llm_max_tokens=settings.llm_max_tokens,
         user_timezone=settings.user_timezone,
+        image_storage_dir=settings.image_storage_dir,
     )
 
     # Mount webapp if secret is configured
@@ -149,7 +156,9 @@ def create_application(settings: Settings) -> FastAPI:
         webapp_auth = WebappAuthMiddleware(
             api, settings.webapp_secret, secure_cookie=settings.webapp_secure_cookie
         )
-        webapp_router = create_webapp_router(db, vector_store, webapp_auth)
+        webapp_router = create_webapp_router(
+            db, vector_store, webapp_auth, image_storage_dir=settings.image_storage_dir
+        )
         api.include_router(webapp_router)
         api.add_middleware(
             WebappAuthMiddleware,

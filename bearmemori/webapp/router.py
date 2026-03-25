@@ -35,8 +35,18 @@ def create_webapp_router(
     db: MemoryDatabase,
     vector_store: VectorStore,
     auth: WebappAuthMiddleware,
+    image_storage_dir: str = "",
 ) -> APIRouter:
     r = APIRouter(prefix="/webapp")
+
+    def _delete_image_file(record_id: str) -> None:
+        if not image_storage_dir:
+            return
+        record = db.get(record_id)
+        if record and record.image_path:
+            file_path = Path(image_storage_dir) / record.image_path
+            if file_path.exists():
+                file_path.unlink()
 
     @r.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request):
@@ -126,6 +136,8 @@ def create_webapp_router(
         form = await request.form()
         record_ids = form.getlist("record_ids")
         if record_ids:
+            for rid in record_ids:
+                _delete_image_file(rid)
             db.delete_many(record_ids)
             vector_store.delete_many(record_ids)
         # Return updated table
@@ -210,6 +222,7 @@ def create_webapp_router(
 
     @r.delete("/memories/{record_id}")
     async def memory_delete(record_id: str):
+        _delete_image_file(record_id)
         db.delete(record_id)
         vector_store.delete(record_id)
         return ""  # HTMX removes the element

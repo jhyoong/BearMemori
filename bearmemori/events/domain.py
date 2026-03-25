@@ -53,6 +53,7 @@ class MemoryPending(Event):
     pending_id: str
     preview_data: dict
     source_chat_id: str
+    image_bytes: bytes | None = None
 
 
 class MemoryConfirmed(Event):

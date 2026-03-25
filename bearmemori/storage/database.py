@@ -85,6 +85,14 @@ class MemoryDatabase:
             )
             self._conn.commit()
 
+        cursor = self._conn.execute(
+            "SELECT name FROM pragma_table_info('memories') WHERE name = ?",
+            ("image_path",),
+        )
+        if cursor.fetchone() is None:
+            self._conn.execute("ALTER TABLE memories ADD COLUMN image_path TEXT")
+            self._conn.commit()
+
     def _row_to_record(self, row: sqlite3.Row) -> MemoryRecord:
         event_fields = None
         if row["event_datetime"] is not None:
@@ -110,6 +118,7 @@ class MemoryDatabase:
             source=source,
             metadata=json.loads(row["metadata"]),
             needs_review=bool(row["needs_review"]),
+            image_path=row["image_path"],
         )
 
     def create(self, record: MemoryRecord) -> None:
@@ -128,8 +137,8 @@ class MemoryDatabase:
             """INSERT INTO memories
                (id, category, title, content, raw_input, created_at, updated_at,
                 tags, source, event_datetime, event_status, event_recurrence,
-                metadata, needs_review)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                metadata, needs_review, image_path)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 record.id,
                 record.category.value,
@@ -145,6 +154,7 @@ class MemoryDatabase:
                 event_recurrence,
                 json.dumps(record.metadata),
                 1 if record.needs_review else 0,
+                record.image_path,
             ),
         )
         self._conn.commit()
@@ -239,7 +249,7 @@ class MemoryDatabase:
         self._conn.execute(
             """UPDATE memories SET category=?, title=?, content=?, raw_input=?,
                updated_at=?, tags=?, source=?, event_datetime=?, event_status=?,
-               event_recurrence=?, metadata=?, needs_review=?
+               event_recurrence=?, metadata=?, needs_review=?, image_path=?
                WHERE id=?""",
             (
                 record.category.value,
@@ -254,6 +264,7 @@ class MemoryDatabase:
                 event_recurrence,
                 json.dumps(record.metadata),
                 1 if record.needs_review else 0,
+                record.image_path,
                 record.id,
             ),
         )

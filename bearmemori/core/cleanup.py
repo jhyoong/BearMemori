@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from pathlib import Path
 
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import MemoryDiscarded, SendMessage
@@ -23,10 +22,6 @@ class PendingCleanupTask:
     async def run_once(self) -> int:
         expired = self._pending_store.cleanup_with_details()
         for item in expired:
-            if item.image_path:
-                path = Path(item.image_path)
-                if path.exists():
-                    path.unlink()
             await self._bus.emit(
                 MemoryDiscarded(pending_id=item.pending_id, source_chat_id=item.chat_id)
             )
