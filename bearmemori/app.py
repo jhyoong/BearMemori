@@ -106,6 +106,8 @@ def create_application(settings: Settings) -> FastAPI:
         bus=bus,
         token=settings.telegram_bot_token,
         allowed_user_id=settings.telegram_allowed_user_id,
+        db=db,
+        image_storage_dir=settings.image_storage_dir,
     )
     scheduler = ReminderScheduler(
         bus=bus,

@@ -11,6 +11,7 @@ from telegram.ext import (
 )
 
 from bearmemori.events.bus import EventBus
+from bearmemori.storage.database import MemoryDatabase
 from bearmemori.events.domain import (
     InputReceived,
     MemoryConfirmed,
@@ -24,13 +25,22 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramInterface:
-    def __init__(self, bus: EventBus, token: str, allowed_user_id: int) -> None:
+    def __init__(
+        self,
+        bus: EventBus,
+        token: str,
+        allowed_user_id: int,
+        db: MemoryDatabase | None = None,
+        image_storage_dir: str = "",
+    ) -> None:
         self._bus = bus
         self._token = token
         self._allowed_user_id = allowed_user_id
         self._app: Application | None = None
         self._pending_chat_ids: dict[str, str] = {}  # pending_id -> chat_id
         self._edit_pending: dict[str, str] = {}  # chat_id -> pending_id
+        self._db = db
+        self._image_storage_dir = image_storage_dir
 
     def _is_authorized(self, update: Update) -> bool:
         return update.effective_user.id == self._allowed_user_id
@@ -41,6 +51,7 @@ class TelegramInterface:
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text))
         self._app.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
         self._app.add_handler(CommandHandler("start", self._handle_start))
+        self._app.add_handler(CommandHandler("recall", self._handle_recall))
         return self._app
 
     async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -134,6 +145,60 @@ class TelegramInterface:
             await query.answer("Saved for review")
 
         self._pending_chat_ids.pop(pending_id, None)
+
+    async def _handle_recall(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not self._is_authorized(update):
+            return
+
+        chat_id = str(update.effective_chat.id)
+
+        if not context.args:
+            await self._app.bot.send_message(
+                chat_id=int(chat_id),
+                text="Usage: /recall <memory_id>",
+            )
+            return
+
+        memory_id = context.args[0]
+
+        if not self._db:
+            await self._app.bot.send_message(
+                chat_id=int(chat_id),
+                text="Database not available.",
+            )
+            return
+
+        record = self._db.get(memory_id)
+        if record is None:
+            await self._app.bot.send_message(
+                chat_id=int(chat_id),
+                text=f"Memory {memory_id} not found.",
+            )
+            return
+
+        tags_str = ", ".join(record.tags) if record.tags else ""
+        text = f"Title: {record.title}\nCategory: {record.category.value}\n"
+        if tags_str:
+            text += f"Tags: {tags_str}\n"
+        text += f"Content: {record.content}"
+
+        # Send photo if image exists
+        if record.image_path and self._image_storage_dir:
+            from pathlib import Path
+
+            image_file = Path(self._image_storage_dir) / Path(record.image_path).name
+            if image_file.exists():
+                await self._app.bot.send_photo(
+                    chat_id=int(chat_id),
+                    photo=image_file.read_bytes(),
+                    caption=text,
+                )
+                return
+
+        await self._app.bot.send_message(
+            chat_id=int(chat_id),
+            text=text,
+        )
 
     async def handle_memory_pending(self, event: MemoryPending) -> None:
         if not self._app:
