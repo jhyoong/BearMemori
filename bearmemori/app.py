@@ -76,6 +76,9 @@ def create_application(settings: Settings) -> FastAPI:
     )
     vector_store.init()
 
+    # Ensure image storage directory exists
+    Path(settings.image_storage_dir).mkdir(parents=True, exist_ok=True)
+
     pending_store = PendingStore(default_ttl=settings.pending_ttl_seconds)
 
     llm = LLMClient(
@@ -92,6 +95,7 @@ def create_application(settings: Settings) -> FastAPI:
         pending_store=pending_store,
         db=db,
         vector_store=vector_store,
+        image_storage_dir=settings.image_storage_dir,
     )
     cleanup_task = PendingCleanupTask(
         bus=bus,

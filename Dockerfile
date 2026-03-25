@@ -25,6 +25,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 RUN mkdir -p /data
 ENV DATABASE_PATH=/data/bearmemori.db
 ENV CHROMA_PERSIST_DIR=/data/chroma
+ENV IMAGE_STORAGE_DIR=/data/images
 
 EXPOSE 8100
 
