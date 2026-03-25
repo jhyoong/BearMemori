@@ -261,3 +261,58 @@ def sample_record():
         created_at=datetime.now(UTC),
         tags=["sample"],
     )
+
+
+@pytest.fixture
+def client_with_images(db, vector_store, pending_store, tmp_path):
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
+    app = create_app(
+        db=db,
+        vector_store=vector_store,
+        pending_store=pending_store,
+        llm_base_url="http://localhost:11434/v1",
+        llm_api_key="test",
+        llm_model="test",
+        image_storage_dir=str(image_dir),
+    )
+    return TestClient(app), image_dir
+
+
+def test_get_image(client_with_images):
+    client, image_dir = client_with_images
+    img_file = image_dir / "test.jpg"
+    img_file.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 10)  # minimal JPEG-like bytes
+    response = client.get("/images/test.jpg")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+
+
+def test_get_image_not_found(client_with_images):
+    client, _ = client_with_images
+    response = client.get("/images/nonexistent.jpg")
+    assert response.status_code == 404
+
+
+def test_get_image_no_storage_configured(db, vector_store, pending_store):
+    app = create_app(
+        db=db,
+        vector_store=vector_store,
+        pending_store=pending_store,
+        llm_base_url="http://localhost:11434/v1",
+        llm_api_key="test",
+        llm_model="test",
+        image_storage_dir="",
+    )
+    c = TestClient(app)
+    response = c.get("/images/anything.jpg")
+    assert response.status_code == 404
+
+
+def test_get_image_path_traversal(client_with_images):
+    client, _ = client_with_images
+    response = client.get("/images/..%2Fsecret.txt")
+    assert response.status_code in (400, 404)  # URL decoding may vary
+
+    response = client.get("/images/%2e%2e%2fsecret.txt")
+    assert response.status_code in (400, 404)

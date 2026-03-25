@@ -146,6 +146,7 @@ def create_application(settings: Settings) -> FastAPI:
         llm_model=settings.llm_model,
         llm_max_tokens=settings.llm_max_tokens,
         user_timezone=settings.user_timezone,
+        image_storage_dir=settings.image_storage_dir,
     )
 
     # Mount webapp if secret is configured

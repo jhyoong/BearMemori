@@ -1,8 +1,10 @@
 import logging
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 
 from bearmemori.api.schemas import (
     BulkDeleteRequest,
@@ -35,6 +37,7 @@ def create_app(
     llm_model: str = "",
     llm_max_tokens: int = 4096,
     user_timezone: str = "UTC",
+    image_storage_dir: str = "",
 ) -> FastAPI:
     app = FastAPI(title="BearMemori", version="0.3.6")
 
@@ -264,5 +267,16 @@ def create_app(
             logger.info("Updated memory: %s", record_id)
 
         return {"updated": updated_count}
+
+    @app.get("/images/{filename}")
+    def get_image(filename: str):
+        if ".." in filename or "/" in filename:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        if not image_storage_dir:
+            raise HTTPException(status_code=404, detail="Image storage not configured")
+        file_path = Path(image_storage_dir) / filename
+        if not file_path.exists() or not file_path.is_file():
+            raise HTTPException(status_code=404, detail="Image not found")
+        return FileResponse(file_path, media_type="image/jpeg")
 
     return app
