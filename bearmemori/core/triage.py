@@ -1,14 +1,13 @@
 import json
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
 
 import httpx
 from pydantic import ValidationError
 
 from bearmemori.llm.parsing import extract_json
 from bearmemori.storage.models import EventFields, MemoryCategory, MemoryDraft
+from bearmemori.utils.time import get_server_time
 
 logger = logging.getLogger(__name__)
 
@@ -37,19 +36,6 @@ def _extract_from_response(content: str, reasoning: str) -> dict:
         content or reasoning or "",
         0,
     )
-
-
-def _get_server_time(user_timezone: str = "UTC") -> str:
-    """Generate a human-readable current time string."""
-    now_utc = datetime.now(UTC)
-    try:
-        tz = ZoneInfo(user_timezone)
-    except KeyError:
-        tz = UTC
-        user_timezone = "UTC"
-    now_local = now_utc.astimezone(tz)
-    tz_label = user_timezone if user_timezone != "UTC" else "UTC"
-    return now_local.strftime(f"%A, %B %d, %Y, %I:%M %p %z ({tz_label})")
 
 
 _TRIAGE_SYSTEM_TEMPLATE = """\
@@ -133,7 +119,7 @@ async def run_triage(
     user_timezone: str = "UTC",
 ) -> TriageResult:
     if current_time is None:
-        current_time = _get_server_time(user_timezone)
+        current_time = get_server_time(user_timezone)
 
     system_prompt = _TRIAGE_SYSTEM_TEMPLATE.format(current_time=current_time)
 

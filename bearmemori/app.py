@@ -85,6 +85,7 @@ def create_application(settings: Settings) -> FastAPI:
         base_url=settings.llm_base_url,
         model=settings.llm_model,
         api_key=settings.llm_api_key,
+        user_timezone=settings.user_timezone,
     )
 
     queue_manager = QueueManager(bus, max_size=settings.queue_max_size)
