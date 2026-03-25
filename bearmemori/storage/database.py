@@ -10,6 +10,16 @@ from bearmemori.storage.models import (
 )
 
 
+def _normalize_to_utc(dt_str: str) -> str:
+    """Parse an ISO 8601 datetime string and return it normalized to UTC."""
+    parsed = datetime.fromisoformat(dt_str)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    else:
+        parsed = parsed.astimezone(UTC)
+    return parsed.isoformat()
+
+
 class MemoryDatabase:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -126,7 +136,7 @@ class MemoryDatabase:
         event_status = None
         event_recurrence = None
         if record.event_fields:
-            event_dt = record.event_fields.datetime
+            event_dt = _normalize_to_utc(record.event_fields.datetime)
             event_status = record.event_fields.status
             event_recurrence = record.event_fields.recurrence
 
@@ -239,7 +249,7 @@ class MemoryDatabase:
         event_status = None
         event_recurrence = None
         if record.event_fields:
-            event_dt = record.event_fields.datetime
+            event_dt = _normalize_to_utc(record.event_fields.datetime)
             event_status = record.event_fields.status
             event_recurrence = record.event_fields.recurrence
 

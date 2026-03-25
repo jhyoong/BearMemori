@@ -82,7 +82,7 @@ def test_event_fields_roundtrip(db):
     db.create(record)
     result = db.get("mem_test1")
     assert result.event_fields is not None
-    assert result.event_fields.datetime == "2026-03-25T14:00:00"
+    assert result.event_fields.datetime == "2026-03-25T14:00:00+00:00"
     assert result.event_fields.recurrence == "weekly"
 
 
@@ -197,6 +197,86 @@ def test_image_path_defaults_to_none(db):
     result = db.get("mem_noimg")
     assert result is not None
     assert result.image_path is None
+
+
+def test_create_normalizes_event_datetime_to_utc(db):
+    """Event datetime with non-UTC offset should be stored as UTC."""
+    record = _make_record(
+        id="mem_tz1",
+        category=MemoryCategory.REMINDER,
+        event_fields=EventFields(
+            datetime="2026-03-25T23:34:00+08:00",
+            status="pending",
+        ),
+    )
+    db.create(record)
+    result = db.get("mem_tz1")
+    # +08:00 offset means 15:34 UTC
+    assert result.event_fields.datetime == "2026-03-25T15:34:00+00:00"
+
+
+def test_update_normalizes_event_datetime_to_utc(db):
+    """Event datetime should be normalized on update too."""
+    record = _make_record(
+        id="mem_tz2",
+        category=MemoryCategory.REMINDER,
+        event_fields=EventFields(
+            datetime="2026-03-25T12:00:00+00:00",
+            status="pending",
+        ),
+    )
+    db.create(record)
+
+    record.event_fields = EventFields(
+        datetime="2026-03-26T10:00:00+05:30",
+        status="pending",
+    )
+    db.update(record)
+    result = db.get("mem_tz2")
+    # +05:30 offset means 04:30 UTC
+    assert result.event_fields.datetime == "2026-03-26T04:30:00+00:00"
+
+
+def test_get_due_events_finds_non_utc_reminder(db):
+    """A reminder stored with non-UTC offset should be found by get_due_events after normalization."""
+    from unittest.mock import patch as mock_patch
+    from datetime import datetime as dt
+
+    # Event at 23:34 +08:00 = 15:34 UTC
+    record = _make_record(
+        id="mem_due_tz",
+        category=MemoryCategory.REMINDER,
+        event_fields=EventFields(
+            datetime="2026-03-25T23:34:00+08:00",
+            status="pending",
+        ),
+    )
+    db.create(record)
+
+    # Mock "now" to 16:00 UTC (after 15:34 UTC)
+    fake_now = dt(2026, 3, 25, 16, 0, 0, tzinfo=UTC)
+    with mock_patch("bearmemori.storage.database.datetime") as mock_dt:
+        mock_dt.now.return_value = fake_now
+        mock_dt.fromisoformat = dt.fromisoformat
+        due = db.get_due_events()
+
+    assert len(due) == 1
+    assert due[0].id == "mem_due_tz"
+
+
+def test_create_normalizes_naive_datetime(db):
+    """Naive datetime (no timezone) should be stored as-is with +00:00 suffix."""
+    record = _make_record(
+        id="mem_naive",
+        category=MemoryCategory.REMINDER,
+        event_fields=EventFields(
+            datetime="2026-03-25T15:00:00",
+            status="pending",
+        ),
+    )
+    db.create(record)
+    result = db.get("mem_naive")
+    assert result.event_fields.datetime == "2026-03-25T15:00:00+00:00"
 
 
 @pytest.fixture
