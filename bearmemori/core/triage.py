@@ -90,11 +90,12 @@ async def _llm_call(
     api_key: str,
     model: str,
     max_tokens: int = 4096,
+    timeout: float = 60.0,
 ) -> dict:
     async with httpx.AsyncClient(
         base_url=base_url,
         headers={"Authorization": f"Bearer {api_key}"},
-        timeout=30.0,
+        timeout=timeout,
     ) as client:
         response = await client.post(
             "/chat/completions",
@@ -114,6 +115,7 @@ async def run_triage(
     llm_api_key: str,
     llm_model: str,
     llm_max_tokens: int = 4096,
+    triage_timeout: float = 60.0,
     memory_hint: dict | None = None,
     current_time: str | None = None,
     user_timezone: str = "UTC",
@@ -141,7 +143,9 @@ async def run_triage(
     ]
 
     try:
-        response = await _llm_call(messages, llm_base_url, llm_api_key, llm_model, llm_max_tokens)
+        response = await _llm_call(
+            messages, llm_base_url, llm_api_key, llm_model, llm_max_tokens, triage_timeout
+        )
         message = response["choices"][0]["message"]
         logger.info("Triage LLM full message keys: %s", list(message.keys()))
         raw = message.get("content") or ""
@@ -155,7 +159,7 @@ async def run_triage(
         logger.warning("Triage LLM returned unparseable output: %s", e)
         return TriageResult(should_save=False)
     except httpx.HTTPError as e:
-        logger.error("Triage LLM call failed: %s", e)
+        logger.error("Triage LLM call failed (%s): %s", type(e).__name__, e)
         return TriageResult(should_save=False)
 
     if not data.get("should_save", False):

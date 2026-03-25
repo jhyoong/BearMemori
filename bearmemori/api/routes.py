@@ -37,6 +37,7 @@ def create_app(
     llm_api_key: str = "",
     llm_model: str = "",
     llm_max_tokens: int = 4096,
+    triage_timeout: float = 60.0,
     user_timezone: str = "UTC",
     image_storage_dir: str = "",
 ) -> FastAPI:
@@ -64,6 +65,7 @@ def create_app(
             llm_api_key=llm_api_key,
             llm_model=llm_model,
             llm_max_tokens=llm_max_tokens,
+            triage_timeout=triage_timeout,
             memory_hint=request.memory_hint,
             current_time=request.current_time,
             user_timezone=user_timezone,

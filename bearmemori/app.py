@@ -148,6 +148,7 @@ def create_application(settings: Settings) -> FastAPI:
         llm_api_key=settings.llm_api_key,
         llm_model=settings.llm_model,
         llm_max_tokens=settings.llm_max_tokens,
+        triage_timeout=settings.triage_timeout_seconds,
         user_timezone=settings.user_timezone,
         image_storage_dir=settings.image_storage_dir,
     )
