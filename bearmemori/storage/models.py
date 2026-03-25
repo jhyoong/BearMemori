@@ -48,6 +48,7 @@ class MemoryRecord(BaseModel):
     source: MemorySource | None = None
     metadata: dict = Field(default_factory=dict)
     needs_review: bool = False
+    image_path: str | None = None
 
     @classmethod
     def from_draft(cls, draft: MemoryDraft, record_id: str) -> MemoryRecord:
