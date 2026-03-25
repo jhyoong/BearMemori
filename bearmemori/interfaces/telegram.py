@@ -1,6 +1,6 @@
 import logging
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -46,7 +46,13 @@ class TelegramInterface:
         return update.effective_user.id == self._allowed_user_id
 
     def build(self) -> Application:
-        self._app = Application.builder().token(self._token).build()
+        async def post_init(application: Application) -> None:
+            await application.bot.set_my_commands([
+                BotCommand("start", "Welcome message"),
+                BotCommand("recall", "Retrieve a memory by ID"),
+            ])
+
+        self._app = Application.builder().token(self._token).post_init(post_init).build()
         self._app.add_handler(CallbackQueryHandler(self._handle_callback))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_text))
         self._app.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
