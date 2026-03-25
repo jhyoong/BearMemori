@@ -136,6 +136,34 @@ async def test_handle_memory_pending_sends_preview(interface):
 
 
 @pytest.mark.asyncio
+async def test_handle_memory_pending_sends_photo_when_image_present(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    event = MemoryPending(
+        pending_id="pend_img123",
+        preview_data={
+            "title": "Photo memory",
+            "category": "general",
+            "content": "A nice sunset",
+            "tags": ["photo"],
+        },
+        source_chat_id="42",
+        image_bytes=b"fake-jpeg-data",
+    )
+
+    await interface.handle_memory_pending(event)
+
+    mock_bot.send_photo.assert_called_once()
+    call_kwargs = mock_bot.send_photo.call_args.kwargs
+    assert call_kwargs["chat_id"] == 42
+    assert "Photo memory" in call_kwargs["caption"]
+    assert call_kwargs["reply_markup"] is not None
+    mock_bot.send_message.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_callback_save_emits_confirmed(interface, bus):
     confirmed = []
     bus.on(MemoryConfirmed, lambda e: confirmed.append(e))

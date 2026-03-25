@@ -161,11 +161,19 @@ class TelegramInterface:
             ]
         )
 
-        await self._app.bot.send_message(
-            chat_id=int(event.source_chat_id),
-            text=text,
-            reply_markup=keyboard,
-        )
+        if event.image_bytes:
+            await self._app.bot.send_photo(
+                chat_id=int(event.source_chat_id),
+                photo=event.image_bytes,
+                caption=text,
+                reply_markup=keyboard,
+            )
+        else:
+            await self._app.bot.send_message(
+                chat_id=int(event.source_chat_id),
+                text=text,
+                reply_markup=keyboard,
+            )
         self._pending_chat_ids[event.pending_id] = event.source_chat_id
 
     async def handle_send_message(self, event: SendMessage) -> None:

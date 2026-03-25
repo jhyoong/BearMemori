@@ -152,6 +152,7 @@ class Processor:
                 pending_id=pending_id,
                 preview_data=preview_data,
                 source_chat_id=chat_id,
+                image_bytes=image_bytes,
             )
         )
         logger.info("Pending memory %s: %s", pending_id, extraction.content[:80])
