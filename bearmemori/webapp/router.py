@@ -44,7 +44,7 @@ def create_webapp_router(
             return
         record = db.get(record_id)
         if record and record.image_path:
-            file_path = Path(image_storage_dir) / Path(record.image_path).name
+            file_path = Path(image_storage_dir) / record.image_path
             if file_path.exists():
                 file_path.unlink()
 

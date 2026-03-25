@@ -48,7 +48,7 @@ class ConfirmHandler:
             image_dir.mkdir(parents=True, exist_ok=True)
             image_file = image_dir / f"{record_id}.jpg"
             image_file.write_bytes(pending.image_bytes)
-            record.image_path = f"images/{record_id}.jpg"
+            record.image_path = f"{record_id}.jpg"
             logger.info("Saved image to %s", image_file)
         self._db.create(record)
         self._vector_store.add(record)

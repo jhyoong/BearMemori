@@ -46,7 +46,7 @@ def create_app(
             return
         record = db.get(record_id)
         if record and record.image_path:
-            file_path = Path(image_storage_dir) / Path(record.image_path).name
+            file_path = Path(image_storage_dir) / record.image_path
             if file_path.exists():
                 file_path.unlink()
                 logger.info("Deleted image: %s", file_path)
@@ -282,11 +282,11 @@ def create_app(
 
     @app.get("/images/{filename}")
     def get_image(filename: str):
-        if ".." in filename or "/" in filename:
-            raise HTTPException(status_code=400, detail="Invalid filename")
         if not image_storage_dir:
             raise HTTPException(status_code=404, detail="Image storage not configured")
-        file_path = Path(image_storage_dir) / filename
+        file_path = (Path(image_storage_dir) / filename).resolve()
+        if not str(file_path).startswith(str(Path(image_storage_dir).resolve())):
+            raise HTTPException(status_code=400, detail="Invalid filename")
         if not file_path.exists() or not file_path.is_file():
             raise HTTPException(status_code=404, detail="Image not found")
         return FileResponse(file_path, media_type="image/jpeg")

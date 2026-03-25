@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -120,6 +121,14 @@ class TelegramInterface:
             "Welcome to BearMemori. Send me text or images and I will remember them for you."
         )
 
+    @staticmethod
+    async def _update_callback_message(query, suffix: str) -> None:
+        """Update a callback message, handling both text and photo messages."""
+        if query.message.photo:
+            await query.message.edit_caption(caption=(query.message.caption or "") + suffix)
+        else:
+            await query.message.edit_text(query.message.text + suffix)
+
     async def _handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not self._is_authorized(update):
             return
@@ -131,15 +140,15 @@ class TelegramInterface:
 
         if action == "save":
             await self._bus.emit(MemoryConfirmed(pending_id=pending_id, source_chat_id=chat_id))
-            await query.message.edit_text(query.message.text + "\n\nSaved.")
+            await self._update_callback_message(query, "\n\nSaved.")
             await query.answer("Saved")
         elif action == "edit":
             self._edit_pending[chat_id] = pending_id
-            await query.message.edit_text(query.message.text + "\n\nSend your corrections.")
+            await self._update_callback_message(query, "\n\nSend your corrections.")
             await query.answer()
         elif action == "discard":
             await self._bus.emit(MemoryDiscarded(pending_id=pending_id, source_chat_id=chat_id))
-            await query.message.edit_text(query.message.text + "\n\nDiscarded.")
+            await self._update_callback_message(query, "\n\nDiscarded.")
             await query.answer("Discarded")
         elif action == "review":
             await self._bus.emit(
@@ -149,7 +158,7 @@ class TelegramInterface:
                     needs_review=True,
                 )
             )
-            await query.message.edit_text(query.message.text + "\n\nSaved for review.")
+            await self._update_callback_message(query, "\n\nSaved for review.")
             await query.answer("Saved for review")
 
         self._pending_chat_ids.pop(pending_id, None)
@@ -192,9 +201,7 @@ class TelegramInterface:
 
         # Send photo if image exists
         if record.image_path and self._image_storage_dir:
-            from pathlib import Path
-
-            image_file = Path(self._image_storage_dir) / Path(record.image_path).name
+            image_file = Path(self._image_storage_dir) / record.image_path
             if image_file.exists():
                 await self._app.bot.send_photo(
                     chat_id=int(chat_id),

@@ -175,6 +175,7 @@ async def test_callback_save_emits_confirmed(interface, bus):
     query = AsyncMock()
     query.data = "save:pend_abc123"
     query.message = AsyncMock()
+    query.message.photo = None
 
     update = _make_update()
     update.callback_query = query
@@ -198,6 +199,7 @@ async def test_callback_discard_emits_discarded(interface, bus):
     query = AsyncMock()
     query.data = "discard:pend_abc123"
     query.message = AsyncMock()
+    query.message.photo = None
 
     update = _make_update()
     update.callback_query = query
@@ -218,6 +220,7 @@ async def test_callback_edit_sets_edit_pending(interface):
     query = AsyncMock()
     query.data = "edit:pend_abc123"
     query.message = AsyncMock()
+    query.message.photo = None
 
     update = _make_update()
     update.callback_query = query
@@ -258,6 +261,7 @@ async def test_callback_review_emits_confirmed_with_needs_review(interface, bus)
     query = AsyncMock()
     query.data = "review:pend_abc123"
     query.message = AsyncMock()
+    query.message.photo = None
 
     update = _make_update()
     update.callback_query = query
@@ -283,6 +287,7 @@ async def test_callback_review_removes_buttons_and_updates_text(interface, bus):
     query.data = "review:pend_abc123"
     query.message = AsyncMock()
     query.message.text = "Memory Preview\n\nTitle: Test\nCategory: reminder\nContent: Test content"
+    query.message.photo = None
 
     update = _make_update()
     update.callback_query = query
@@ -356,7 +361,7 @@ async def test_recall_sends_photo_when_image_exists(interface, tmp_path):
         content="Beautiful sunset at the beach",
         created_at=datetime.now(UTC),
         tags=["photo"],
-        image_path="images/mem_img456.jpg",
+        image_path="mem_img456.jpg",
     )
     mock_db.get.return_value = record
 
