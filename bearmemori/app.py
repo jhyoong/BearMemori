@@ -154,7 +154,9 @@ def create_application(settings: Settings) -> FastAPI:
         webapp_auth = WebappAuthMiddleware(
             api, settings.webapp_secret, secure_cookie=settings.webapp_secure_cookie
         )
-        webapp_router = create_webapp_router(db, vector_store, webapp_auth)
+        webapp_router = create_webapp_router(
+            db, vector_store, webapp_auth, image_storage_dir=settings.image_storage_dir
+        )
         api.include_router(webapp_router)
         api.add_middleware(
             WebappAuthMiddleware,

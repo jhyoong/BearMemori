@@ -316,3 +316,93 @@ def test_get_image_path_traversal(client_with_images):
 
     response = client.get("/images/%2e%2e%2fsecret.txt")
     assert response.status_code in (400, 404)
+
+
+def test_delete_memory_removes_image(client_with_images, db, vector_store):
+    client, image_dir = client_with_images
+
+    # Create image file on disk
+    img_file = image_dir / "mem_img1.jpg"
+    img_file.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 10)
+
+    # Create memory record with image_path
+    record = MemoryRecord(
+        id="mem_imgtest1",
+        category=MemoryCategory.GENERAL,
+        title="Image Memory",
+        content="Has an image",
+        created_at=datetime.now(UTC),
+        tags=[],
+        image_path=str(img_file),
+    )
+    db.create(record)
+    vector_store.add(record)
+
+    assert img_file.exists()
+
+    response = client.delete("/memory/mem_imgtest1")
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
+    assert not img_file.exists()
+
+
+def test_bulk_delete_removes_images(client_with_images, db, vector_store):
+    client, image_dir = client_with_images
+
+    img1 = image_dir / "bulk_img1.jpg"
+    img2 = image_dir / "bulk_img2.jpg"
+    img1.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 10)
+    img2.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 10)
+
+    record1 = MemoryRecord(
+        id="mem_bulk_img1",
+        category=MemoryCategory.GENERAL,
+        title="Bulk Image 1",
+        content="Has an image",
+        created_at=datetime.now(UTC),
+        tags=[],
+        image_path=str(img1),
+    )
+    record2 = MemoryRecord(
+        id="mem_bulk_img2",
+        category=MemoryCategory.GENERAL,
+        title="Bulk Image 2",
+        content="Has an image",
+        created_at=datetime.now(UTC),
+        tags=[],
+        image_path=str(img2),
+    )
+    db.create(record1)
+    db.create(record2)
+    vector_store.add(record1)
+    vector_store.add(record2)
+
+    assert img1.exists()
+    assert img2.exists()
+
+    response = client.post(
+        "/memory/bulk/delete",
+        json={"record_ids": ["mem_bulk_img1", "mem_bulk_img2"]},
+    )
+    assert response.status_code == 200
+    assert response.json()["deleted"] == 2
+    assert not img1.exists()
+    assert not img2.exists()
+
+
+def test_delete_memory_no_image_path(client_with_images, db, vector_store):
+    """Deleting a memory with no image_path should succeed without error."""
+    client, _ = client_with_images
+    record = MemoryRecord(
+        id="mem_no_img",
+        category=MemoryCategory.GENERAL,
+        title="No Image",
+        content="No image attached",
+        created_at=datetime.now(UTC),
+        tags=[],
+    )
+    db.create(record)
+    vector_store.add(record)
+
+    response = client.delete("/memory/mem_no_img")
+    assert response.status_code == 200

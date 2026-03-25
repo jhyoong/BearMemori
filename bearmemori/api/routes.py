@@ -41,6 +41,16 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="BearMemori", version="0.3.6")
 
+    def _delete_image(record_id: str) -> None:
+        if not image_storage_dir:
+            return
+        record = db.get(record_id)
+        if record and record.image_path:
+            file_path = Path(image_storage_dir) / Path(record.image_path).name
+            if file_path.exists():
+                file_path.unlink()
+                logger.info("Deleted image: %s", file_path)
+
     @app.get("/health")
     def health():
         return {"status": "ok"}
@@ -168,6 +178,7 @@ def create_app(
 
     @app.delete("/memory/{record_id}")
     def delete_memory(record_id: str):
+        _delete_image(record_id)
         deleted = db.delete(record_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Memory not found")
@@ -233,6 +244,7 @@ def create_app(
     def bulk_delete(request: BulkDeleteRequest):
         deleted_count = 0
         for record_id in request.record_ids:
+            _delete_image(record_id)
             if db.delete(record_id):
                 vector_store.delete(record_id)
                 deleted_count += 1
