@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.7] - 2026-03-26
+
+### Added
+
+- **Image storage and handling**: Telegram photos now saved to disk with a secure `/media/{filename}` API endpoint for retrieval; memory detail page in webapp displays images inline
+- **Current time in LLM extraction prompt**: Server time injected into extract and triage prompts so the LLM can compute relative datetimes accurately (fixes wrong-year reminders)
+- **UTC datetime normalization**: All event datetimes automatically normalized to UTC on database write via new `bearmemori/utils/time.py` utility
+
+### Fixed
+
+- **Reminder year bug**: LLM was hallucinating past years (e.g. 2024) for reminders due to missing time context in the extraction prompt
+- **Missing `source_chat_id` for API-created reminders**: `/memory/confirm` endpoint now accepts optional `source_chat_id` so reminders created via the API can be delivered to the correct Telegram chat
+- **Timezone-aware reminder detection**: SQLite string comparison of datetimes with non-UTC offsets caused due reminders to be missed; all datetimes are now stored in UTC
+
+---
+
 ## [0.3.6] - 2026-03-24
 
 ### Added
@@ -171,6 +187,8 @@ Initial release of BearMemori, a personal memory management system.
 - Docker Compose full-stack deployment
 - Test suite with pytest and pytest-asyncio
 
+[0.3.7]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.7
+[0.3.6]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.6
 [0.3.5]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.5
 [0.3.4]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.4
 [0.3.3]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.3
