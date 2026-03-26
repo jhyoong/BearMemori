@@ -21,6 +21,7 @@ from bearmemori.storage.models import (
     MemoryCategory,
     MemoryDraft,
     MemoryRecord,
+    MemorySource,
 )
 from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
@@ -36,6 +37,7 @@ def create_app(
     llm_api_key: str = "",
     llm_model: str = "",
     llm_max_tokens: int = 4096,
+    triage_timeout: float = 60.0,
     user_timezone: str = "UTC",
     image_storage_dir: str = "",
 ) -> FastAPI:
@@ -63,6 +65,7 @@ def create_app(
             llm_api_key=llm_api_key,
             llm_model=llm_model,
             llm_max_tokens=llm_max_tokens,
+            triage_timeout=triage_timeout,
             memory_hint=request.memory_hint,
             current_time=request.current_time,
             user_timezone=user_timezone,
@@ -100,6 +103,13 @@ def create_app(
 
         record_id = f"mem_{uuid.uuid4().hex[:12]}"
         record = MemoryRecord.from_draft(pending.draft, record_id=record_id)
+
+        if request.source_chat_id:
+            record.source = MemorySource(
+                platform="telegram",
+                chat_id=request.source_chat_id,
+            )
+            record.metadata["source_chat_id"] = request.source_chat_id
 
         db.create(record)
         vector_store.add(record)

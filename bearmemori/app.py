@@ -85,6 +85,7 @@ def create_application(settings: Settings) -> FastAPI:
         base_url=settings.llm_base_url,
         model=settings.llm_model,
         api_key=settings.llm_api_key,
+        user_timezone=settings.user_timezone,
     )
 
     queue_manager = QueueManager(bus, max_size=settings.queue_max_size)
@@ -147,6 +148,7 @@ def create_application(settings: Settings) -> FastAPI:
         llm_api_key=settings.llm_api_key,
         llm_model=settings.llm_model,
         llm_max_tokens=settings.llm_max_tokens,
+        triage_timeout=settings.triage_timeout_seconds,
         user_timezone=settings.user_timezone,
         image_storage_dir=settings.image_storage_dir,
     )
@@ -157,7 +159,11 @@ def create_application(settings: Settings) -> FastAPI:
             api, settings.webapp_secret, secure_cookie=settings.webapp_secure_cookie
         )
         webapp_router = create_webapp_router(
-            db, vector_store, webapp_auth, image_storage_dir=settings.image_storage_dir
+            db,
+            vector_store,
+            webapp_auth,
+            image_storage_dir=settings.image_storage_dir,
+            user_timezone=settings.user_timezone,
         )
         api.include_router(webapp_router)
         api.add_middleware(

@@ -35,9 +35,8 @@
         <legend>Event / Reminder Fields</legend>
 
         <label for="event_datetime">Date &amp; Time</label>
-        <input type="text" id="event_datetime" name="event_datetime"
-               value="{{ memory.event_fields.datetime if memory.event_fields else '' }}"
-               placeholder="e.g., 2026-03-25T14:30:00">
+        <input type="datetime-local" id="event_datetime" name="event_datetime"
+               value="{{ memory.event_fields.datetime | event_datetime_input if memory.event_fields else '' }}">
 
         <label for="event_status">Status</label>
         <select id="event_status" name="event_status">

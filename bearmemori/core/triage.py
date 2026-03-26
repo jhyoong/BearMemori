@@ -1,14 +1,13 @@
 import json
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
 
 import httpx
 from pydantic import ValidationError
 
 from bearmemori.llm.parsing import extract_json
 from bearmemori.storage.models import EventFields, MemoryCategory, MemoryDraft
+from bearmemori.utils.time import get_server_time
 
 logger = logging.getLogger(__name__)
 
@@ -37,19 +36,6 @@ def _extract_from_response(content: str, reasoning: str) -> dict:
         content or reasoning or "",
         0,
     )
-
-
-def _get_server_time(user_timezone: str = "UTC") -> str:
-    """Generate a human-readable current time string."""
-    now_utc = datetime.now(UTC)
-    try:
-        tz = ZoneInfo(user_timezone)
-    except KeyError:
-        tz = UTC
-        user_timezone = "UTC"
-    now_local = now_utc.astimezone(tz)
-    tz_label = user_timezone if user_timezone != "UTC" else "UTC"
-    return now_local.strftime(f"%A, %B %d, %Y, %I:%M %p %z ({tz_label})")
 
 
 _TRIAGE_SYSTEM_TEMPLATE = """\
@@ -104,11 +90,12 @@ async def _llm_call(
     api_key: str,
     model: str,
     max_tokens: int = 4096,
+    timeout: float = 60.0,
 ) -> dict:
     async with httpx.AsyncClient(
         base_url=base_url,
         headers={"Authorization": f"Bearer {api_key}"},
-        timeout=30.0,
+        timeout=timeout,
     ) as client:
         response = await client.post(
             "/chat/completions",
@@ -128,12 +115,13 @@ async def run_triage(
     llm_api_key: str,
     llm_model: str,
     llm_max_tokens: int = 4096,
+    triage_timeout: float = 60.0,
     memory_hint: dict | None = None,
     current_time: str | None = None,
     user_timezone: str = "UTC",
 ) -> TriageResult:
     if current_time is None:
-        current_time = _get_server_time(user_timezone)
+        current_time = get_server_time(user_timezone)
 
     system_prompt = _TRIAGE_SYSTEM_TEMPLATE.format(current_time=current_time)
 
@@ -155,7 +143,9 @@ async def run_triage(
     ]
 
     try:
-        response = await _llm_call(messages, llm_base_url, llm_api_key, llm_model, llm_max_tokens)
+        response = await _llm_call(
+            messages, llm_base_url, llm_api_key, llm_model, llm_max_tokens, triage_timeout
+        )
         message = response["choices"][0]["message"]
         logger.info("Triage LLM full message keys: %s", list(message.keys()))
         raw = message.get("content") or ""
@@ -169,7 +159,7 @@ async def run_triage(
         logger.warning("Triage LLM returned unparseable output: %s", e)
         return TriageResult(should_save=False)
     except httpx.HTTPError as e:
-        logger.error("Triage LLM call failed: %s", e)
+        logger.error("Triage LLM call failed (%s): %s", type(e).__name__, e)
         return TriageResult(should_save=False)
 
     if not data.get("should_save", False):

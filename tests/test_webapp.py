@@ -341,7 +341,7 @@ def test_memory_update_saves_event_fields(authed_webapp_client, db):
     assert response.status_code == 302
     updated = db.get("mem_reminder3")
     assert updated.event_fields is not None
-    assert updated.event_fields.datetime == "2026-03-25T15:00"
+    assert updated.event_fields.datetime == "2026-03-25T15:00:00+00:00"
     assert updated.event_fields.status == "pending"
     assert updated.event_fields.recurrence == "every 8 hours"
 
@@ -379,6 +379,29 @@ def test_memory_update_clears_event_fields_when_empty(authed_webapp_client, db):
     assert response.status_code == 302
     updated = db.get("mem_reminder4")
     assert updated.event_fields is None
+
+
+def test_memory_list_shows_local_event_datetime(authed_webapp_client, db):
+    """Event datetime should be displayed in local timezone."""
+    from bearmemori.storage.models import EventFields
+
+    record = MemoryRecord(
+        id="mem_tz_display",
+        category=MemoryCategory.REMINDER,
+        title="TZ Test",
+        content="Test timezone display",
+        created_at=datetime.now(UTC),
+        tags=[],
+        event_fields=EventFields(
+            datetime="2026-03-25T15:00:00+00:00",
+            status="pending",
+        ),
+    )
+    db.create(record)
+    response = authed_webapp_client.get("/webapp/memories")
+    assert response.status_code == 200
+    # The default test timezone is UTC, so should show 15:00
+    assert "2026/03/25 15:00" in response.text
 
 
 def test_review_queue_with_memories(authed_webapp_client, db):

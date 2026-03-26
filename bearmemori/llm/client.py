@@ -5,6 +5,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from bearmemori.llm.parsing import extract_json
+from bearmemori.utils.time import get_server_time
 
 logger = logging.getLogger(__name__)
 
@@ -62,21 +63,29 @@ CLASSIFY_SYSTEM_PROMPT = (
     '- For followup: {"action": "followup", "question": "<your clarifying question>"}'
 )
 
-EXTRACT_SYSTEM_PROMPT = (
+_EXTRACT_SYSTEM_TEMPLATE = (
     "/no_think\n"
     "You are a memory extraction assistant. Extract structured memory data from the user input.\n"
     "If follow-up context is provided, use the full conversation to understand the memory.\n"
     "\n"
+    "Current date and time: {current_time}\n"
+    'When the user mentions relative times (e.g. "in 10 minutes", "tomorrow", "next week"), '
+    "use the current date and time above to compute the absolute "
+    "ISO 8601 datetime for event_fields.\n"
+    "\n"
     "You MUST respond with a single valid JSON object and nothing else.\n"
-    '{"content": "<clear summary of the memory>", "category": "<category>", '
+    '{{"content": "<clear summary of the memory>", "category": "<category>", '
     '"title": "<short descriptive title>", "tags": ["tag1", "tag2"], '
-    '"event_fields": null}\n'
+    '"event_fields": null}}\n'
     "Categories: profile, general, event, location, task, reminder\n"
     "\n"
     "For events, tasks, and reminders, set event_fields to:\n"
-    '{"datetime": "<ISO 8601 datetime>", "status": "pending", "recurrence": null}\n'
+    '{{"datetime": "<ISO 8601 datetime>", "status": "pending", "recurrence": null}}\n'
     "For non-event categories, set event_fields to null"
 )
+
+# Backward-compatible alias
+EXTRACT_SYSTEM_PROMPT = _EXTRACT_SYSTEM_TEMPLATE.format(current_time="(not provided)")
 
 FOLLOWUP_SYSTEM_PROMPT = (
     "You are a helpful assistant gathering information for a personal memory store.\n"
@@ -128,9 +137,16 @@ class _ClientWrapper:
 
 
 class LLMClient:
-    def __init__(self, base_url: str, model: str, api_key: str = "not-needed") -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        api_key: str = "not-needed",
+        user_timezone: str = "UTC",
+    ) -> None:
         self._client = _ClientWrapper(base_url=base_url, api_key=api_key)
         self._model = model
+        self._user_timezone = user_timezone
 
     async def classify_input(self, text: str) -> ClassificationResult:
         response = await self._client.chat.completions.create(
@@ -147,7 +163,9 @@ class LLMClient:
         return ClassificationResult(**data)
 
     async def extract_memory(self, text: str, context: dict | None) -> ExtractionResult:
-        messages = [{"role": "system", "content": EXTRACT_SYSTEM_PROMPT}]
+        current_time = get_server_time(self._user_timezone)
+        system_prompt = _EXTRACT_SYSTEM_TEMPLATE.format(current_time=current_time)
+        messages = [{"role": "system", "content": system_prompt}]
         if context and "messages" in context:
             messages.extend(context["messages"])
         messages.append({"role": "user", "content": text})

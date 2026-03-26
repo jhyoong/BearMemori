@@ -225,3 +225,44 @@ def test_classify_prompt_biases_toward_store():
     assert "prefer" in CLASSIFY_SYSTEM_PROMPT.lower()
     assert "store" in CLASSIFY_SYSTEM_PROMPT.lower()
     assert "unintelligible" in CLASSIFY_SYSTEM_PROMPT.lower()
+
+
+@pytest.mark.asyncio
+async def test_extract_memory_includes_current_time():
+    client = LLMClient(
+        base_url="http://localhost:11434/v1",
+        model="llama3",
+        api_key="not-needed",
+        user_timezone="Asia/Singapore",
+    )
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(
+            message=AsyncMock(
+                content=json.dumps(
+                    {
+                        "content": "Take meds",
+                        "category": "reminder",
+                        "title": "Take meds",
+                        "tags": ["health"],
+                        "event_fields": {
+                            "datetime": "2026-03-26T20:00:00+08:00",
+                            "status": "pending",
+                            "recurrence": None,
+                        },
+                    }
+                )
+            )
+        )
+    ]
+
+    with patch.object(
+        client._client.chat.completions, "create", return_value=mock_response
+    ) as mock_create:
+        await client.extract_memory("remind me to take meds at 8pm", None)
+
+    call_args = mock_create.call_args
+    messages = call_args.kwargs["messages"]
+    system_msg = messages[0]["content"]
+    assert "Current date and time:" in system_msg
+    assert "Asia/Singapore" in system_msg
