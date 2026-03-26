@@ -130,6 +130,7 @@ class Processor:
             content=extraction.content,
             event_fields=event_fields,
             tags=extraction.tags,
+            importance=extraction.importance,
             source=MemorySource(platform="telegram", chat_id=chat_id),
         )
 
@@ -144,6 +145,7 @@ class Processor:
             "category": extraction.category,
             "content": extraction.content,
             "tags": extraction.tags,
+            "importance": extraction.importance,
             "event_fields": extraction.event_fields,
         }
 

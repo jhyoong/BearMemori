@@ -21,6 +21,7 @@ from bearmemori.events.domain import (
     SendMessage,
 )
 from bearmemori.storage.database import MemoryDatabase
+from bearmemori.storage.models import MemoryCategory
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class TelegramInterface:
         allowed_user_id: int,
         db: MemoryDatabase | None = None,
         image_storage_dir: str = "",
+        vector_store=None,
     ) -> None:
         self._bus = bus
         self._token = token
@@ -42,6 +44,7 @@ class TelegramInterface:
         self._edit_pending: dict[str, str] = {}  # chat_id -> pending_id
         self._db = db
         self._image_storage_dir = image_storage_dir
+        self._vector_store = vector_store
 
     def _is_authorized(self, update: Update) -> bool:
         return update.effective_user.id == self._allowed_user_id
@@ -52,6 +55,9 @@ class TelegramInterface:
                 [
                     BotCommand("start", "Welcome message"),
                     BotCommand("recall", "Retrieve a memory by ID"),
+                    BotCommand("search", "Search your memories"),
+                    BotCommand("list", "List memories"),
+                    BotCommand("help", "Show available commands"),
                 ]
             )
 
@@ -61,6 +67,9 @@ class TelegramInterface:
         self._app.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
         self._app.add_handler(CommandHandler("start", self._handle_start))
         self._app.add_handler(CommandHandler("recall", self._handle_recall))
+        self._app.add_handler(CommandHandler("search", self._handle_search))
+        self._app.add_handler(CommandHandler("help", self._handle_help))
+        self._app.add_handler(CommandHandler("list", self._handle_list))
         return self._app
 
     async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -120,6 +129,21 @@ class TelegramInterface:
         await update.message.reply_text(
             "Welcome to BearMemori. Send me text or images and I will remember them for you."
         )
+
+    async def _handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not self._is_authorized(update):
+            return
+
+        text = (
+            "Available commands:\n\n"
+            "/start - Welcome message\n"
+            "/recall <memory_id> - Retrieve a memory by ID\n"
+            "/search <query> - Search your memories\n"
+            "/list [category] - List memories"
+            " (categories: profile, general, event, location, task, reminder)\n"
+            "/help - Show this help message"
+        )
+        await update.message.reply_text(text)
 
     @staticmethod
     async def _update_callback_message(query, suffix: str) -> None:
@@ -195,6 +219,7 @@ class TelegramInterface:
 
         tags_str = ", ".join(record.tags) if record.tags else ""
         text = f"Title: {record.title}\nCategory: {record.category.value}\n"
+        text += f"Importance: {record.importance}/10\n"
         if tags_str:
             text += f"Tags: {tags_str}\n"
         text += f"Content: {record.content}"
@@ -215,13 +240,108 @@ class TelegramInterface:
             text=text,
         )
 
+    async def _handle_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not self._is_authorized(update):
+            return
+
+        chat_id = str(update.effective_chat.id)
+
+        if not context.args:
+            await self._app.bot.send_message(
+                chat_id=int(chat_id),
+                text="Usage: /search <query>",
+            )
+            return
+
+        if not self._vector_store:
+            await self._app.bot.send_message(
+                chat_id=int(chat_id),
+                text="Search not available.",
+            )
+            return
+
+        query = " ".join(context.args)
+        results = self._vector_store.search(query=query, top_k=5)
+
+        if not results:
+            await self._app.bot.send_message(
+                chat_id=int(chat_id),
+                text="No memories found.",
+            )
+            return
+
+        lines = ["Search results:\n"]
+        for r in results:
+            doc = r["document"]
+            title = doc.split(":")[0] if ":" in doc else doc[:50]
+            category = r.get("metadata", {}).get("category", "unknown")
+            importance = r.get("metadata", {}).get("importance", 5)
+            content_preview = doc[:100] + "..." if len(doc) > 100 else doc
+            lines.append(f"[{category}] {title} ({importance}/10)")
+            lines.append(f"  {content_preview}\n")
+
+        await self._app.bot.send_message(
+            chat_id=int(chat_id),
+            text="\n".join(lines),
+        )
+
+    async def _handle_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not self._is_authorized(update):
+            return
+
+        chat_id = str(update.effective_chat.id)
+
+        if not self._db:
+            await self._app.bot.send_message(
+                chat_id=int(chat_id),
+                text="Database not available.",
+            )
+            return
+
+        if context.args:
+            category_str = context.args[0].lower()
+            try:
+                category = MemoryCategory(category_str)
+            except ValueError:
+                valid = ", ".join(c.value for c in MemoryCategory)
+                await self._app.bot.send_message(
+                    chat_id=int(chat_id),
+                    text=f"Invalid category. Valid categories: {valid}",
+                )
+                return
+            records = self._db.list_by_category(category)
+        else:
+            records = self._db.list_all()
+
+        if not records:
+            await self._app.bot.send_message(
+                chat_id=int(chat_id),
+                text="No memories found.",
+            )
+            return
+
+        lines = ["Memories:\n"]
+        for r in records[:10]:
+            lines.append(f"[{r.category.value}] {r.title} ({r.importance}/10)")
+            lines.append(f"  ID: {r.id}\n")
+
+        if len(records) > 10:
+            lines.append(f"... and {len(records) - 10} more")
+
+        await self._app.bot.send_message(
+            chat_id=int(chat_id),
+            text="\n".join(lines),
+        )
+
     async def handle_memory_pending(self, event: MemoryPending) -> None:
         if not self._app:
             return
 
         preview = event.preview_data
         tags_str = ", ".join(preview.get("tags", []))
+        importance = preview.get("importance", 5)
         text = f"Memory Preview\n\nTitle: {preview['title']}\nCategory: {preview['category']}\n"
+        text += f"Importance: {importance}/10\n"
         if tags_str:
             text += f"Tags: {tags_str}\n"
         text += f"Content: {preview['content']}"

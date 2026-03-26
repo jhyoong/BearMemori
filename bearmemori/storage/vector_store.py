@@ -28,6 +28,7 @@ class VectorStore:
         metadata = {
             "category": record.category.value,
             "created_at": record.created_at.isoformat(),
+            "importance": record.importance,
         }
         if record.event_fields:
             metadata["event_datetime"] = record.event_fields.datetime

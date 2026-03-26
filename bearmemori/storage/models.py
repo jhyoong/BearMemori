@@ -33,6 +33,7 @@ class MemoryDraft(BaseModel):
     content: str
     event_fields: EventFields | None = None
     tags: list[str] = Field(default_factory=list)
+    importance: int = 5
     source: MemorySource | None = None
 
 
@@ -45,6 +46,7 @@ class MemoryRecord(BaseModel):
     raw_input: str = ""
     event_fields: EventFields | None = None
     tags: list[str] = Field(default_factory=list)
+    importance: int = 5
     source: MemorySource | None = None
     metadata: dict = Field(default_factory=dict)
     needs_review: bool = False
@@ -60,6 +62,7 @@ class MemoryRecord(BaseModel):
             created_at=datetime.now(UTC),
             event_fields=draft.event_fields,
             tags=draft.tags,
+            importance=draft.importance,
             source=draft.source,
             needs_review=False,
         )

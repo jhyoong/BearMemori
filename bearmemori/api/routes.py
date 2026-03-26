@@ -129,13 +129,47 @@ def create_app(
 
     @app.get("/memory/retrieve")
     def retrieve_context(query_context: str, top_k: int = 5, event_days: int = 7):
-        semantic_results = vector_store.search(query=query_context, top_k=top_k)
+        # Fetch more candidates than needed for scoring
+        semantic_results = vector_store.search(query=query_context, top_k=top_k * 2)
         upcoming_events = db.get_upcoming_events(days=event_days)
 
+        # Score and rank by combined relevance + importance
+        scored = []
+        for r in semantic_results:
+            distance = r.get("distance", 1.0)
+            similarity = max(0.0, 1.0 - distance)
+            importance = r.get("metadata", {}).get("importance", 5) / 10.0
+            combined = 0.5 * similarity + 0.5 * importance
+            scored.append((combined, r))
+
+        # Sort by combined score descending
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        # Apply importance thresholds
+        filtered = []
+        for score, r in scored:
+            imp = r.get("metadata", {}).get("importance", 5)
+            distance = r.get("distance", 1.0)
+            similarity = max(0.0, 1.0 - distance)
+            # Skip low importance unless highly relevant
+            if imp <= 2 and similarity < 0.7:
+                continue
+            filtered.append(r)
+            if len(filtered) >= top_k:
+                break
+
+        # Always include high-importance memories with any relevance
+        high_imp = [
+            r
+            for _, r in scored
+            if r.get("metadata", {}).get("importance", 5) >= 8 and r not in filtered
+        ]
+        filtered.extend(high_imp[: max(0, top_k - len(filtered))])
+
         lines = []
-        if semantic_results:
+        if filtered:
             lines.append("## Relevant Memories")
-            for r in semantic_results:
+            for r in filtered:
                 lines.append(f"- {r['document']}")
 
         if upcoming_events:
@@ -146,7 +180,7 @@ def create_app(
 
         context_block = "\n".join(lines) if lines else ""
 
-        items = semantic_results + [
+        items = filtered + [
             {
                 "id": e.id,
                 "document": f"{e.title}: {e.content}",
@@ -242,6 +276,7 @@ def create_app(
             content=request.content,
             created_at=datetime.now(UTC),
             tags=request.tags or [],
+            importance=request.importance,
             needs_review=False,
         )
 
@@ -264,7 +299,7 @@ def create_app(
 
     @app.post("/memory/bulk/update")
     def bulk_update(request: BulkUpdateRequest):
-        allowed_fields = {"title", "content", "category", "tags", "needs_review"}
+        allowed_fields = {"title", "content", "category", "tags", "needs_review", "importance"}
         updated_count = 0
         for record_id in request.record_ids:
             record = db.get(record_id)

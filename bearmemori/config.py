@@ -26,3 +26,7 @@ class Settings(BaseSettings):
     webapp_secure_cookie: bool = False
     user_timezone: str = "UTC"
     image_storage_dir: str = "data/images"
+    importance_high_threshold: int = 8
+    importance_low_threshold: int = 2
+    importance_relevance_weight: float = 0.5
+    importance_weight: float = 0.5
