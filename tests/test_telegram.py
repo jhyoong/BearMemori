@@ -420,6 +420,75 @@ async def test_handle_help_returns_command_list(interface):
 
 
 @pytest.mark.asyncio
+async def test_search_returns_results(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    from unittest.mock import MagicMock as SyncMock
+
+    mock_vs = SyncMock()
+    interface._vector_store = mock_vs
+    mock_vs.search.return_value = [
+        {
+            "id": "mem_abc123",
+            "document": "Pizza preference: I like pepperoni pizza",
+            "metadata": {"category": "general", "importance": 7},
+            "distance": 0.3,
+        },
+    ]
+
+    update = _make_update()
+    context = MagicMock()
+    context.args = ["pizza"]
+
+    await interface._handle_search(update, context)
+
+    mock_bot.send_message.assert_called_once()
+    call_kwargs = mock_bot.send_message.call_args.kwargs
+    assert "Pizza preference" in call_kwargs["text"]
+    assert "7/10" in call_kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_search_no_query_shows_usage(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    update = _make_update()
+    context = MagicMock()
+    context.args = []
+
+    await interface._handle_search(update, context)
+
+    mock_bot.send_message.assert_called_once()
+    assert "usage" in mock_bot.send_message.call_args.kwargs["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_search_no_results(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    from unittest.mock import MagicMock as SyncMock
+
+    mock_vs = SyncMock()
+    interface._vector_store = mock_vs
+    mock_vs.search.return_value = []
+
+    update = _make_update()
+    context = MagicMock()
+    context.args = ["nonexistent"]
+
+    await interface._handle_search(update, context)
+
+    mock_bot.send_message.assert_called_once()
+    assert "no memories found" in mock_bot.send_message.call_args.kwargs["text"].lower()
+
+
+@pytest.mark.asyncio
 async def test_handle_reminder_due_empty_chat_id(interface):
     """Reminder with empty source_chat_id should be skipped, not crash."""
     mock_bot = AsyncMock()
