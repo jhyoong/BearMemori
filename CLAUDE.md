@@ -14,6 +14,7 @@ bearmemori/
   llm/          # OpenAI-compatible client (targets local LLM endpoint), response parsing
   storage/      # SQLite + FTS5 (database.py), ChromaDB vectors (vector_store.py), pending store
   api/          # FastAPI REST API (routes.py, schemas.py)
+  utils/        # Shared utilities (time.py -- UTC datetime normalization)
   webapp/       # HTMX webapp (router.py, auth.py, templates/, static/)
 ```
 

@@ -78,6 +78,7 @@ FastAPI REST API (:8100)
 | `/memory/{id}` | GET | Get a single memory |
 | `/memory/{id}` | PUT | Update memory fields |
 | `/memory/{id}` | DELETE | Delete a memory |
+| `/media/{filename}` | GET | Serve a stored image file |
 
 ## Setup
 
@@ -233,6 +234,8 @@ bearmemori/
     vector_store.py    # ChromaDB wrapper
     pending_store.py   # In-memory pending store with TTL
     models.py          # MemoryRecord, MemoryDraft, MemoryCategory, etc.
+  utils/
+    time.py            # UTC datetime normalization helpers
   webapp/
     auth.py            # Shared-secret auth middleware
     router.py          # Webapp routes (login, CRUD, bulk, review queue)
