@@ -276,6 +276,7 @@ def create_app(
             content=request.content,
             created_at=datetime.now(UTC),
             tags=request.tags or [],
+            importance=request.importance,
             needs_review=False,
         )
 
@@ -298,7 +299,7 @@ def create_app(
 
     @app.post("/memory/bulk/update")
     def bulk_update(request: BulkUpdateRequest):
-        allowed_fields = {"title", "content", "category", "tags", "needs_review"}
+        allowed_fields = {"title", "content", "category", "tags", "needs_review", "importance"}
         updated_count = 0
         for record_id in request.record_ids:
             record = db.get(record_id)

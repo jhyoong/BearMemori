@@ -221,7 +221,9 @@ class TelegramInterface:
 
         preview = event.preview_data
         tags_str = ", ".join(preview.get("tags", []))
+        importance = preview.get("importance", 5)
         text = f"Memory Preview\n\nTitle: {preview['title']}\nCategory: {preview['category']}\n"
+        text += f"Importance: {importance}/10\n"
         if tags_str:
             text += f"Tags: {tags_str}\n"
         text += f"Content: {preview['content']}"

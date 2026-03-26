@@ -24,6 +24,7 @@ class UpdateMemoryRequest(BaseModel):
     category: str | None = None
     tags: list[str] | None = None
     needs_review: bool | None = None
+    importance: int | None = None
 
 
 class CreateMemoryRequest(BaseModel):
@@ -31,6 +32,7 @@ class CreateMemoryRequest(BaseModel):
     title: str
     content: str
     tags: list[str] = Field(default_factory=list)
+    importance: int = 5
 
 
 class BulkDeleteRequest(BaseModel):
