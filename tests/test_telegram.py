@@ -592,6 +592,42 @@ async def test_list_invalid_category(interface):
 
 
 @pytest.mark.asyncio
+async def test_recall_shows_importance(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    from datetime import UTC, datetime
+    from unittest.mock import MagicMock as SyncMock
+
+    from bearmemori.storage.models import MemoryCategory, MemoryRecord
+
+    mock_db = SyncMock()
+    interface._db = mock_db
+
+    record = MemoryRecord(
+        id="mem_imp_recall",
+        category=MemoryCategory.GENERAL,
+        title="Important memory",
+        content="Very important content",
+        created_at=datetime.now(UTC),
+        importance=9,
+        tags=["critical"],
+    )
+    mock_db.get.return_value = record
+
+    update = _make_update()
+    context = MagicMock()
+    context.args = ["mem_imp_recall"]
+
+    await interface._handle_recall(update, context)
+
+    mock_bot.send_message.assert_called_once()
+    call_kwargs = mock_bot.send_message.call_args.kwargs
+    assert "9/10" in call_kwargs["text"] or "Importance: 9" in call_kwargs["text"]
+
+
+@pytest.mark.asyncio
 async def test_handle_reminder_due_empty_chat_id(interface):
     """Reminder with empty source_chat_id should be skipped, not crash."""
     mock_bot = AsyncMock()

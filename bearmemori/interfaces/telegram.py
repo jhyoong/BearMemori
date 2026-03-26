@@ -219,6 +219,7 @@ class TelegramInterface:
 
         tags_str = ", ".join(record.tags) if record.tags else ""
         text = f"Title: {record.title}\nCategory: {record.category.value}\n"
+        text += f"Importance: {record.importance}/10\n"
         if tags_str:
             text += f"Tags: {tags_str}\n"
         text += f"Content: {record.content}"
