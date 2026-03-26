@@ -52,6 +52,9 @@ class TelegramInterface:
                 [
                     BotCommand("start", "Welcome message"),
                     BotCommand("recall", "Retrieve a memory by ID"),
+                    BotCommand("search", "Search your memories"),
+                    BotCommand("list", "List memories"),
+                    BotCommand("help", "Show available commands"),
                 ]
             )
 
@@ -61,6 +64,7 @@ class TelegramInterface:
         self._app.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
         self._app.add_handler(CommandHandler("start", self._handle_start))
         self._app.add_handler(CommandHandler("recall", self._handle_recall))
+        self._app.add_handler(CommandHandler("help", self._handle_help))
         return self._app
 
     async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -120,6 +124,21 @@ class TelegramInterface:
         await update.message.reply_text(
             "Welcome to BearMemori. Send me text or images and I will remember them for you."
         )
+
+    async def _handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not self._is_authorized(update):
+            return
+
+        text = (
+            "Available commands:\n\n"
+            "/start - Welcome message\n"
+            "/recall <memory_id> - Retrieve a memory by ID\n"
+            "/search <query> - Search your memories\n"
+            "/list [category] - List memories"
+            " (categories: profile, general, event, location, task, reminder)\n"
+            "/help - Show this help message"
+        )
+        await update.message.reply_text(text)
 
     @staticmethod
     async def _update_callback_message(query, suffix: str) -> None:

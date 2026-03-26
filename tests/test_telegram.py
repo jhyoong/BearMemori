@@ -399,6 +399,27 @@ async def test_recall_not_found(interface):
 
 
 @pytest.mark.asyncio
+async def test_handle_help_returns_command_list(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    update = _make_update()
+    update.message.reply_text = AsyncMock()
+    context = MagicMock()
+
+    await interface._handle_help(update, context)
+
+    update.message.reply_text.assert_called_once()
+    text = update.message.reply_text.call_args[0][0]
+    assert "/start" in text
+    assert "/recall" in text
+    assert "/search" in text
+    assert "/list" in text
+    assert "/help" in text
+
+
+@pytest.mark.asyncio
 async def test_handle_reminder_due_empty_chat_id(interface):
     """Reminder with empty source_chat_id should be skipped, not crash."""
     mock_bot = AsyncMock()
