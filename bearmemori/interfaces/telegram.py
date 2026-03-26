@@ -21,6 +21,7 @@ from bearmemori.events.domain import (
     SendMessage,
 )
 from bearmemori.storage.database import MemoryDatabase
+from bearmemori.storage.models import MemoryCategory
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ class TelegramInterface:
         self._app.add_handler(CommandHandler("recall", self._handle_recall))
         self._app.add_handler(CommandHandler("search", self._handle_search))
         self._app.add_handler(CommandHandler("help", self._handle_help))
+        self._app.add_handler(CommandHandler("list", self._handle_list))
         return self._app
 
     async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -276,6 +278,54 @@ class TelegramInterface:
             content_preview = doc[:100] + "..." if len(doc) > 100 else doc
             lines.append(f"[{category}] {title} ({importance}/10)")
             lines.append(f"  {content_preview}\n")
+
+        await self._app.bot.send_message(
+            chat_id=int(chat_id),
+            text="\n".join(lines),
+        )
+
+    async def _handle_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not self._is_authorized(update):
+            return
+
+        chat_id = str(update.effective_chat.id)
+
+        if not self._db:
+            await self._app.bot.send_message(
+                chat_id=int(chat_id),
+                text="Database not available.",
+            )
+            return
+
+        if context.args:
+            category_str = context.args[0].lower()
+            try:
+                category = MemoryCategory(category_str)
+            except ValueError:
+                valid = ", ".join(c.value for c in MemoryCategory)
+                await self._app.bot.send_message(
+                    chat_id=int(chat_id),
+                    text=f"Invalid category. Valid categories: {valid}",
+                )
+                return
+            records = self._db.list_by_category(category)
+        else:
+            records = self._db.list_all()
+
+        if not records:
+            await self._app.bot.send_message(
+                chat_id=int(chat_id),
+                text="No memories found.",
+            )
+            return
+
+        lines = ["Memories:\n"]
+        for r in records[:10]:
+            lines.append(f"[{r.category.value}] {r.title} ({r.importance}/10)")
+            lines.append(f"  ID: {r.id}\n")
+
+        if len(records) > 10:
+            lines.append(f"... and {len(records) - 10} more")
 
         await self._app.bot.send_message(
             chat_id=int(chat_id),

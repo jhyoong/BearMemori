@@ -489,6 +489,109 @@ async def test_search_no_results(interface):
 
 
 @pytest.mark.asyncio
+async def test_list_all_memories(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    from datetime import UTC, datetime
+    from unittest.mock import MagicMock as SyncMock
+
+    from bearmemori.storage.models import MemoryCategory, MemoryRecord
+
+    mock_db = SyncMock()
+    interface._db = mock_db
+    mock_db.list_all.return_value = [
+        MemoryRecord(
+            id="mem_list1",
+            category=MemoryCategory.GENERAL,
+            title="First memory",
+            content="Content one",
+            created_at=datetime.now(UTC),
+            importance=7,
+        ),
+        MemoryRecord(
+            id="mem_list2",
+            category=MemoryCategory.EVENT,
+            title="Second memory",
+            content="Content two",
+            created_at=datetime.now(UTC),
+            importance=3,
+        ),
+    ]
+
+    update = _make_update()
+    context = MagicMock()
+    context.args = []
+
+    await interface._handle_list(update, context)
+
+    mock_bot.send_message.assert_called_once()
+    call_kwargs = mock_bot.send_message.call_args.kwargs
+    assert "First memory" in call_kwargs["text"]
+    assert "Second memory" in call_kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_list_by_category(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    from datetime import UTC, datetime
+    from unittest.mock import MagicMock as SyncMock
+
+    from bearmemori.storage.models import MemoryCategory, MemoryRecord
+
+    mock_db = SyncMock()
+    interface._db = mock_db
+    mock_db.list_by_category.return_value = [
+        MemoryRecord(
+            id="mem_cat1",
+            category=MemoryCategory.EVENT,
+            title="Event memory",
+            content="An event",
+            created_at=datetime.now(UTC),
+            importance=6,
+        ),
+    ]
+
+    update = _make_update()
+    context = MagicMock()
+    context.args = ["event"]
+
+    await interface._handle_list(update, context)
+
+    mock_bot.send_message.assert_called_once()
+    call_kwargs = mock_bot.send_message.call_args.kwargs
+    assert "Event memory" in call_kwargs["text"]
+    mock_db.list_by_category.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_list_invalid_category(interface):
+    mock_bot = AsyncMock()
+    interface._app = MagicMock()
+    interface._app.bot = mock_bot
+
+    from unittest.mock import MagicMock as SyncMock
+
+    mock_db = SyncMock()
+    interface._db = mock_db
+
+    update = _make_update()
+    context = MagicMock()
+    context.args = ["invalid_cat"]
+
+    await interface._handle_list(update, context)
+
+    mock_bot.send_message.assert_called_once()
+    call_kwargs = mock_bot.send_message.call_args.kwargs
+    text_lower = call_kwargs["text"].lower()
+    assert "valid categories" in text_lower or "profile" in text_lower
+
+
+@pytest.mark.asyncio
 async def test_handle_reminder_due_empty_chat_id(interface):
     """Reminder with empty source_chat_id should be skipped, not crash."""
     mock_bot = AsyncMock()
