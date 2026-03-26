@@ -44,6 +44,7 @@ class ExtractionResult(BaseModel):
     category: str
     title: str
     tags: list[str]
+    importance: int = 5
     event_fields: dict | None = None
 
 
@@ -73,10 +74,16 @@ _EXTRACT_SYSTEM_TEMPLATE = (
     "use the current date and time above to compute the absolute "
     "ISO 8601 datetime for event_fields.\n"
     "\n"
+    "Assign an importance score from 1-10:\n"
+    "  1-3: Trivial/ephemeral (casual observations, low-value notes)\n"
+    "  4-6: Useful but not critical (general facts, routine tasks)\n"
+    "  7-9: Important (key personal info, significant events, recurring tasks)\n"
+    "  10: Critical (health info, credentials, life events)\n"
+    "\n"
     "You MUST respond with a single valid JSON object and nothing else.\n"
     '{{"content": "<clear summary of the memory>", "category": "<category>", '
     '"title": "<short descriptive title>", "tags": ["tag1", "tag2"], '
-    '"event_fields": null}}\n'
+    '"importance": <1-10>, "event_fields": null}}\n'
     "Categories: profile, general, event, location, task, reminder\n"
     "\n"
     "For events, tasks, and reminders, set event_fields to:\n"
@@ -99,12 +106,29 @@ DESCRIBE_IMAGE_SYSTEM_PROMPT = (
     "You are a memory extraction assistant. "
     "Describe the image and extract structured memory data.\n"
     "\n"
+    "Assign an importance score from 1-10:\n"
+    "  1-3: Trivial/ephemeral\n"
+    "  4-6: Useful but not critical\n"
+    "  7-9: Important\n"
+    "  10: Critical\n"
+    "\n"
     "You MUST respond with a single valid JSON object and nothing else.\n"
     '{"content": "<description of what the image shows>", "category": "<category>", '
     '"title": "<short descriptive title>", "tags": ["tag1", "tag2"], '
-    '"event_fields": null}\n'
+    '"importance": <1-10>, "event_fields": null}\n'
     "Categories: profile, general, event, location, task, reminder"
 )
+
+
+def _clamp_importance(data: dict) -> dict:
+    """Clamp importance to 1-10, defaulting to 5 if missing."""
+    raw = data.get("importance", 5)
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        val = 5
+    data["importance"] = max(1, min(10, val))
+    return data
 
 
 class _AsyncCompletionsWrapper:
@@ -178,6 +202,7 @@ class LLMClient:
         raw = _get_content(response.choices[0].message)
         logger.debug("Extract raw output: %s", raw)
         data = extract_json(raw)
+        data = _clamp_importance(data)
         logger.debug("Extracted data event_fields: %s", data.get("event_fields"))
         return ExtractionResult(**data)
 
@@ -215,4 +240,5 @@ class LLMClient:
         raw = _get_content(response.choices[0].message)
         logger.debug("Describe image raw output: %s", raw)
         data = extract_json(raw)
+        data = _clamp_importance(data)
         return ExtractionResult(**data)
