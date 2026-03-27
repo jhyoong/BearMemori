@@ -58,9 +58,15 @@ Categories:
 You MUST respond with a single valid JSON object and nothing else. No explanation, \
 no commentary, no markdown formatting.
 
+Importance (1-10 integer):
+- 1-3: Low importance (trivial facts, casual mentions)
+- 4-6: Medium importance (useful information, general preferences)
+- 7-8: High importance (key personal facts, significant events, strong preferences)
+- 9-10: Critical importance (core identity, health/safety, major life events)
+
 If the conversation contains memory-worthy information:
 {{"should_save": true, "category": "<category>", "title": "<short title>", \
-"content": "<key information>", "tags": ["tag1", "tag2"], "event_fields": null}}
+"content": "<key information>", "tags": ["tag1", "tag2"], "importance": <1-10>, "event_fields": null}}
 
 For events/tasks/reminders, set event_fields to:
 {{"datetime": "ISO 8601", "status": "pending", "recurrence": null}}
@@ -170,11 +176,14 @@ async def run_triage(
         if data.get("event_fields"):
             event_fields = EventFields(**data["event_fields"])
 
+        importance = max(1, min(10, int(data.get("importance", 5))))
+
         draft = MemoryDraft(
             category=MemoryCategory(data["category"]),
             title=data["title"],
             content=data["content"],
             tags=data.get("tags", []),
+            importance=importance,
             event_fields=event_fields,
         )
         return TriageResult(should_save=True, draft=draft)
