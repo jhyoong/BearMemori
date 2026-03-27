@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.8] - 2026-03-27
+
+### Added
+
+- **Memory importance field**: Memories now have an importance score (1-10) assigned by the LLM during extraction, with user override via API and webapp; high-importance memories are surfaced preferentially in context retrieval
+- **Importance-weighted context retrieval**: Vector search now combines semantic similarity with importance score, filtering low-importance memories unless highly relevant
+- **Telegram /help command**: Shows available bot commands and usage instructions
+- **Telegram /search command**: Search memories by query directly from Telegram via vector store
+- **Telegram /list command**: List recent memories with optional category filtering from Telegram
+- **Importance display**: Importance score shown in Telegram memory previews and /recall output
+
+### Changed
+
+- **Context retrieval scoring**: `retrieve_context` now uses weighted combination of similarity and importance instead of pure similarity ranking
+- **Config**: Added `importance_weight` and `importance_threshold` settings for tuning context retrieval behavior
+
+---
+
 ## [0.3.7] - 2026-03-26
 
 ### Added
@@ -187,6 +205,7 @@ Initial release of BearMemori, a personal memory management system.
 - Docker Compose full-stack deployment
 - Test suite with pytest and pytest-asyncio
 
+[0.3.8]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.8
 [0.3.7]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.7
 [0.3.6]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.6
 [0.3.5]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.5
