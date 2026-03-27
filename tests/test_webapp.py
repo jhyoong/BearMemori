@@ -404,6 +404,101 @@ def test_memory_list_shows_local_event_datetime(authed_webapp_client, db):
     assert "2026/03/25 15:00" in response.text
 
 
+def test_memory_detail_shows_importance(authed_webapp_client, db):
+    record = MemoryRecord(
+        id="mem_imp1",
+        category=MemoryCategory.GENERAL,
+        title="Important Memory",
+        content="Very important content",
+        created_at=datetime.now(UTC),
+        tags=[],
+        importance=8,
+    )
+    db.create(record)
+    response = authed_webapp_client.get("/webapp/memories/mem_imp1")
+    assert response.status_code == 200
+    assert 'name="importance"' in response.text
+    assert 'value="8"' in response.text
+
+
+def test_memory_update_saves_importance(authed_webapp_client, db):
+    record = MemoryRecord(
+        id="mem_imp2",
+        category=MemoryCategory.GENERAL,
+        title="Original",
+        content="Content",
+        created_at=datetime.now(UTC),
+        tags=[],
+        importance=5,
+    )
+    db.create(record)
+    response = authed_webapp_client.post(
+        "/webapp/memories/mem_imp2",
+        data={
+            "title": "Original",
+            "category": "general",
+            "content": "Content",
+            "tags": "",
+            "importance": "9",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    updated = db.get("mem_imp2")
+    assert updated.importance == 9
+
+
+def test_memory_update_clamps_importance(authed_webapp_client, db):
+    record = MemoryRecord(
+        id="mem_imp3",
+        category=MemoryCategory.GENERAL,
+        title="Clamp Test",
+        content="Content",
+        created_at=datetime.now(UTC),
+        tags=[],
+        importance=5,
+    )
+    db.create(record)
+    # Test above max
+    response = authed_webapp_client.post(
+        "/webapp/memories/mem_imp3",
+        data={
+            "title": "Clamp Test",
+            "category": "general",
+            "content": "Content",
+            "tags": "",
+            "importance": "15",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert db.get("mem_imp3").importance == 10
+
+
+def test_create_memory_with_importance(authed_webapp_client, db):
+    response = authed_webapp_client.post(
+        "/webapp/memories/new",
+        data={
+            "title": "New Important Memory",
+            "category": "general",
+            "content": "Content",
+            "tags": "",
+            "importance": "7",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    memories = db.list_all()
+    assert len(memories) == 1
+    assert memories[0].importance == 7
+
+
+def test_create_memory_page_shows_importance_field(authed_webapp_client):
+    response = authed_webapp_client.get("/webapp/memories/new")
+    assert response.status_code == 200
+    assert 'name="importance"' in response.text
+
+
 def test_review_queue_with_memories(authed_webapp_client, db):
     record = MemoryRecord(
         id="mem_review1",

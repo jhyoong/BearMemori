@@ -117,6 +117,7 @@ def create_webapp_router(
         category: str = Form(...),
         content: str = Form(...),
         tags: str = Form(""),
+        importance: int = Form(5),
     ):
         record_id = f"mem_{uuid.uuid4().hex[:12]}"
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
@@ -127,6 +128,7 @@ def create_webapp_router(
             content=content,
             created_at=datetime.now(UTC),
             tags=tag_list,
+            importance=max(1, min(10, importance)),
         )
         db.create(record)
         vector_store.add(record)
@@ -205,6 +207,7 @@ def create_webapp_router(
         content: str = Form(...),
         tags: str = Form(""),
         needs_review: bool = Form(False),
+        importance: int = Form(5),
         event_datetime: str = Form(""),
         event_status: str = Form("pending"),
         event_recurrence: str = Form(""),
@@ -218,6 +221,7 @@ def create_webapp_router(
         record.content = content
         record.tags = [t.strip() for t in tags.split(",") if t.strip()]
         record.needs_review = needs_review
+        record.importance = max(1, min(10, importance))
         if event_datetime:
             record.event_fields = EventFields(
                 datetime=event_datetime,
