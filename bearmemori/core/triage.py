@@ -66,7 +66,8 @@ Importance (1-10 integer):
 
 If the conversation contains memory-worthy information:
 {{"should_save": true, "category": "<category>", "title": "<short title>", \
-"content": "<key information>", "tags": ["tag1", "tag2"], "importance": <1-10>, "event_fields": null}}
+"content": "<key information>", "tags": ["tag1", "tag2"], \
+"importance": <1-10>, "event_fields": null}}
 
 For events/tasks/reminders, set event_fields to:
 {{"datetime": "ISO 8601", "status": "pending", "recurrence": null}}
