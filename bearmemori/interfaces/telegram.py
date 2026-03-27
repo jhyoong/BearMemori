@@ -1,7 +1,15 @@
 import logging
 from pathlib import Path
 
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    BotCommand,
+    BotCommandScopeAllChatAdministrators,
+    BotCommandScopeAllGroupChats,
+    BotCommandScopeAllPrivateChats,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
+)
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -51,6 +59,14 @@ class TelegramInterface:
 
     def build(self) -> Application:
         async def post_init(application: Application) -> None:
+            # Clear commands from specific scopes that may have been set by a previous bot
+            for scope in [
+                BotCommandScopeAllPrivateChats(),
+                BotCommandScopeAllGroupChats(),
+                BotCommandScopeAllChatAdministrators(),
+            ]:
+                await application.bot.delete_my_commands(scope=scope)
+
             await application.bot.set_my_commands(
                 [
                     BotCommand("start", "Welcome message"),
