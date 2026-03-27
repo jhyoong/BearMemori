@@ -1,6 +1,6 @@
 [project]
 name = "bearmemori"
-version = "0.3.7"
+version = "0.3.8"
 description = "Personal memory store with LLM processing"
 requires-python = ">=3.12"
 dependencies = [
