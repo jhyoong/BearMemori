@@ -59,6 +59,17 @@ def create_app(
 
     @app.post("/memory/triage")
     async def triage_conversation(request: TriageRequest):
+        logger.info(
+            "Triage request: conversation_len=%d, memory_hint=%s, current_time=%s",
+            len(request.conversation),
+            request.memory_hint,
+            request.current_time,
+        )
+        if request.conversation:
+            logger.info(
+                "Triage last message: %s",
+                request.conversation[-1].get("content", "")[:200],
+            )
         result = await run_triage(
             request.conversation,
             llm_base_url=llm_base_url,

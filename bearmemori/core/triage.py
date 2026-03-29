@@ -39,7 +39,6 @@ def _extract_from_response(content: str, reasoning: str) -> dict:
 
 
 _TRIAGE_SYSTEM_TEMPLATE = """\
-/no_think
 You are a memory triage agent. Given a conversation, decide if any information \
 is worth saving as a long-term memory.
 
@@ -75,10 +74,15 @@ For events/tasks/reminders, set event_fields to:
 If nothing is worth saving:
 {{"should_save": false}}
 
+IMPORTANT: Reminders and events are always worth saving. A reminder about a
+future action (e.g., "pack my bag in 10 minutes") is valuable user
+information - do NOT treat it as trivial. Set importance 5-8 for
+reminders, 6-9 for events/tasks.
+
 Be selective. Only save genuinely useful, specific information. Do not save:
 - Greetings or small talk
 - Questions without answers
-- Temporary or trivial information
+- Truly trivial information (e.g., casual mentions without context)
 """
 
 # Backward-compatible alias for code that references TRIAGE_SYSTEM_PROMPT directly
@@ -170,6 +174,10 @@ async def run_triage(
         return TriageResult(should_save=False)
 
     if not data.get("should_save", False):
+        logger.info(
+            "Triage decision: should_save=False (from LLM data: %s)",
+            data,
+        )
         return TriageResult(should_save=False)
 
     try:
@@ -186,6 +194,12 @@ async def run_triage(
             tags=data.get("tags", []),
             importance=importance,
             event_fields=event_fields,
+        )
+        logger.info(
+            "Triage decision: should_save=True, category=%s, title=%s, importance=%d",
+            draft.category,
+            draft.title,
+            draft.importance,
         )
         return TriageResult(should_save=True, draft=draft)
     except (ValueError, KeyError, ValidationError) as e:
