@@ -87,3 +87,31 @@ async def test_triage_with_memory_hint():
     assert result.should_save is True
     assert result.draft.event_fields is not None
     assert result.draft.event_fields.datetime == "2026-03-22T09:00:00"
+
+
+@pytest.mark.asyncio
+async def test_triage_high_confidence_skips_should_save():
+    """When memory_hint has confidence='high', triage should always save."""
+    response_data = {
+        "category": "reminder",
+        "title": "Pack bag",
+        "content": "Pack bag in 10 minutes",
+        "tags": ["reminder"],
+        "importance": 6,
+        "event_fields": {"datetime": "2026-03-30T15:10:00", "status": "pending"},
+    }
+    with patch(
+        "bearmemori.core.triage._llm_call",
+        return_value={"choices": [{"message": {"content": json.dumps(response_data)}}]},
+    ):
+        result = await run_triage(
+            [{"role": "user", "content": "Remind me to pack my bag in 10 minutes"}],
+            llm_base_url="http://localhost:11434/v1",
+            llm_api_key="test",
+            llm_model="test",
+            memory_hint={"likely_category": "reminder", "confidence": "high"},
+        )
+    assert result.should_save is True
+    assert result.draft is not None
+    assert result.draft.category == MemoryCategory.REMINDER
+    assert result.draft.title == "Pack bag"
