@@ -82,7 +82,10 @@ def create_app(
             user_timezone=user_timezone,
         )
         if not result.should_save or result.draft is None:
-            return {"should_save": False}
+            response = {"should_save": False}
+            if result.reason:
+                response["reason"] = result.reason
+            return response
 
         pending_id = pending_store.add(result.draft)
         logger.info("Triage proposed memory: %s", pending_id)

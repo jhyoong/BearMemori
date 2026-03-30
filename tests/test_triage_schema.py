@@ -18,3 +18,41 @@ def test_triage_request_current_time_defaults_to_none():
         conversation=[{"role": "user", "content": "hello"}],
     )
     assert req.current_time is None
+
+
+def test_triage_response_includes_reason_when_not_saved():
+    """The triage API should return a reason when should_save is False."""
+    from unittest.mock import patch, AsyncMock
+    from fastapi.testclient import TestClient
+    from bearmemori.core.triage import TriageResult
+
+    from bearmemori.api.routes import create_app
+    from bearmemori.storage.database import MemoryDatabase
+    from bearmemori.storage.vector_store import VectorStore
+    from bearmemori.storage.pending_store import PendingStore
+
+    db = MemoryDatabase(":memory:")
+    vs = VectorStore.__new__(VectorStore)
+    ps = PendingStore()
+
+    app = create_app(
+        db, vs, ps,
+        llm_base_url="http://localhost/v1",
+        llm_api_key="test",
+        llm_model="test",
+    )
+    client = TestClient(app)
+
+    with patch(
+        "bearmemori.api.routes.run_triage",
+        new_callable=AsyncMock,
+        return_value=TriageResult(should_save=False, reason="llm_decided_no"),
+    ):
+        resp = client.post("/memory/triage", json={
+            "conversation": [{"role": "user", "content": "hello"}],
+        })
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["should_save"] is False
+    assert data["reason"] == "llm_decided_no"
