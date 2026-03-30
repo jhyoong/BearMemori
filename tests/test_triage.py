@@ -155,3 +155,22 @@ async def test_triage_high_confidence_falls_back_on_extraction_failure():
     assert result.should_save is True
     assert result.draft is not None
     assert result.draft.category == MemoryCategory.REMINDER
+
+
+def test_triage_prompt_contains_when_in_doubt_save():
+    """The full triage prompt should bias toward saving."""
+    from bearmemori.core.triage import _TRIAGE_SYSTEM_TEMPLATE
+    assert "when in doubt" in _TRIAGE_SYSTEM_TEMPLATE.lower()
+    assert "Be selective" not in _TRIAGE_SYSTEM_TEMPLATE
+
+
+def test_triage_prompt_contains_multi_turn_guidance():
+    """The full triage prompt should guide multi-turn synthesis."""
+    from bearmemori.core.triage import _TRIAGE_SYSTEM_TEMPLATE
+    assert "multiple messages" in _TRIAGE_SYSTEM_TEMPLATE
+
+
+def test_triage_prompt_contains_mixed_topic_guidance():
+    """The full triage prompt should guide mixed-topic focus."""
+    from bearmemori.core.triage import _TRIAGE_SYSTEM_TEMPLATE
+    assert "multiple unrelated topics" in _TRIAGE_SYSTEM_TEMPLATE

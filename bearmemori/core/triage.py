@@ -79,7 +79,17 @@ future action (e.g., "pack my bag in 10 minutes") is valuable user
 information - do NOT treat it as trivial. Set importance 5-8 for
 reminders, 6-9 for events/tasks.
 
-Be selective. Only save genuinely useful, specific information. Do not save:
+When in doubt, lean toward saving. It is better to save something \
+the user can dismiss than to lose information they wanted kept.
+
+The conversation may contain information spread across multiple messages. \
+Synthesize the full conversation to extract the complete memory, not just \
+the last message.
+
+If the conversation covers multiple unrelated topics, focus on the most \
+recent topic that contains memory-worthy information.
+
+Save specific, actionable information. Skip only:
 - Greetings or small talk
 - Questions without answers
 - Truly trivial information (e.g., casual mentions without context)
