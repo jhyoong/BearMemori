@@ -115,3 +115,43 @@ async def test_triage_high_confidence_skips_should_save():
     assert result.draft is not None
     assert result.draft.category == MemoryCategory.REMINDER
     assert result.draft.title == "Pack bag"
+
+
+@pytest.mark.asyncio
+async def test_triage_high_confidence_falls_back_on_extraction_failure():
+    """When extraction-only fails, should fall back to full triage prompt."""
+    extraction_response = {"choices": [{"message": {"content": "not json at all"}}]}
+    full_triage_response_data = {
+        "should_save": True,
+        "category": "reminder",
+        "title": "Pack bag",
+        "content": "Pack bag in 10 minutes",
+        "tags": ["reminder"],
+        "importance": 6,
+        "event_fields": {"datetime": "2026-03-30T15:10:00", "status": "pending"},
+    }
+    full_triage_response = {
+        "choices": [{"message": {"content": json.dumps(full_triage_response_data)}}]
+    }
+
+    call_count = 0
+
+    async def mock_llm_call(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return extraction_response  # First call: extraction fails
+        return full_triage_response  # Second call: full triage succeeds
+
+    with patch("bearmemori.core.triage._llm_call", side_effect=mock_llm_call):
+        result = await run_triage(
+            [{"role": "user", "content": "Remind me to pack my bag in 10 minutes"}],
+            llm_base_url="http://localhost:11434/v1",
+            llm_api_key="test",
+            llm_model="test",
+            memory_hint={"likely_category": "reminder", "confidence": "high"},
+        )
+    assert call_count == 2  # Both extraction and full triage were called
+    assert result.should_save is True
+    assert result.draft is not None
+    assert result.draft.category == MemoryCategory.REMINDER
