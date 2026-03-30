@@ -259,14 +259,14 @@ async def _run_full_triage(
         data = _extract_from_response(raw, reasoning)
     except (json.JSONDecodeError, KeyError, IndexError) as e:
         logger.warning("Triage LLM returned unparseable output: %s", e)
-        return TriageResult(should_save=False)
+        return TriageResult(should_save=False, reason="extraction_failed")
     except httpx.HTTPError as e:
         logger.error("Triage LLM call failed (%s): %s", type(e).__name__, e)
-        return TriageResult(should_save=False)
+        return TriageResult(should_save=False, reason="extraction_failed")
 
     if not data.get("should_save", False):
         logger.info("Triage decision: should_save=False (from LLM data: %s)", data)
-        return TriageResult(should_save=False)
+        return TriageResult(should_save=False, reason="llm_decided_no")
 
     try:
         draft = _build_draft(data)
@@ -279,7 +279,7 @@ async def _run_full_triage(
         return TriageResult(should_save=True, draft=draft)
     except (ValueError, KeyError, ValidationError) as e:
         logger.warning("Triage produced invalid draft: %s", e)
-        return TriageResult(should_save=False)
+        return TriageResult(should_save=False, reason="validation_failed")
 
 
 async def run_triage(
