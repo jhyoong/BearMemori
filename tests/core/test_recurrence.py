@@ -1,12 +1,12 @@
 from datetime import UTC, datetime
 
-import pytest
-
-from bearmemori.core.recurrence import CalendarOccurrence, expand_occurrences
+from bearmemori.core.recurrence import expand_occurrences
 from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
 
 
-def _make_record(event_dt: str, recurrence: str | None = None, status: str = "pending") -> MemoryRecord:
+def _make_record(
+    event_dt: str, recurrence: str | None = None, status: str = "pending"
+) -> MemoryRecord:
     return MemoryRecord(
         id="mem_test001",
         category=MemoryCategory.EVENT,
@@ -45,7 +45,9 @@ def test_expand_no_event_fields():
         content="content",
         created_at=datetime.now(UTC),
     )
-    result = expand_occurrences(record, datetime(2026, 4, 1, tzinfo=UTC), datetime(2026, 4, 30, tzinfo=UTC))
+    result = expand_occurrences(
+        record, datetime(2026, 4, 1, tzinfo=UTC), datetime(2026, 4, 30, tzinfo=UTC)
+    )
     assert result == []
 
 

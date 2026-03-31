@@ -19,7 +19,7 @@ class CalendarOccurrence(BaseModel):
 
 
 def expand_occurrences(
-    record: "MemoryRecord",
+    record: MemoryRecord,
     start: datetime,
     end: datetime,
 ) -> list[CalendarOccurrence]:
@@ -45,7 +45,7 @@ def expand_occurrences(
 
 
 def _expand_recurring(
-    record: "MemoryRecord",
+    record: MemoryRecord,
     start: datetime,
     end: datetime,
 ) -> list[CalendarOccurrence]:
