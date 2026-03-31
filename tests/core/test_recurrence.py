@@ -58,3 +58,49 @@ def test_expand_non_recurring_done_status():
     result = expand_occurrences(record, start, end)
     assert len(result) == 1
     assert result[0].status == "done"
+
+
+def test_expand_weekly_recurring_in_range():
+    # Every Tuesday starting 2026-04-07
+    record = _make_record("2026-04-07T10:00:00+00:00", recurrence="FREQ=WEEKLY;BYDAY=TU")
+    start = datetime(2026, 4, 1, tzinfo=UTC)
+    end = datetime(2026, 4, 30, 23, 59, 59, tzinfo=UTC)
+    result = expand_occurrences(record, start, end)
+    # Tuesdays in April 2026: Apr 7, 14, 21, 28
+    assert len(result) == 4
+    assert all(occ.is_recurring for occ in result)
+    assert all(occ.status == "pending" for occ in result)
+    assert result[0].occurrence_dt.day == 7
+    assert result[1].occurrence_dt.day == 14
+    assert result[2].occurrence_dt.day == 21
+    assert result[3].occurrence_dt.day == 28
+
+
+def test_expand_recurring_with_completed_occurrences():
+    record = _make_record("2026-04-07T10:00:00+00:00", recurrence="FREQ=WEEKLY;BYDAY=TU")
+    record.metadata["completed_occurrences"] = ["2026-04-07", "2026-04-14"]
+    start = datetime(2026, 4, 1, tzinfo=UTC)
+    end = datetime(2026, 4, 30, 23, 59, 59, tzinfo=UTC)
+    result = expand_occurrences(record, start, end)
+    assert len(result) == 4
+    assert result[0].status == "done"
+    assert result[1].status == "done"
+    assert result[2].status == "pending"
+    assert result[3].status == "pending"
+
+
+def test_expand_recurring_invalid_rrule_returns_empty():
+    record = _make_record("2026-04-07T10:00:00+00:00", recurrence="NOT_A_VALID_RRULE")
+    start = datetime(2026, 4, 1, tzinfo=UTC)
+    end = datetime(2026, 4, 30, 23, 59, 59, tzinfo=UTC)
+    result = expand_occurrences(record, start, end)
+    assert result == []
+
+
+def test_expand_recurring_no_occurrences_in_range():
+    # Every year on Jan 1, range is April
+    record = _make_record("2026-01-01T10:00:00+00:00", recurrence="FREQ=YEARLY")
+    start = datetime(2026, 4, 1, tzinfo=UTC)
+    end = datetime(2026, 4, 30, 23, 59, 59, tzinfo=UTC)
+    result = expand_occurrences(record, start, end)
+    assert result == []

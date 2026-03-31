@@ -49,8 +49,32 @@ def _expand_recurring(
     start: datetime,
     end: datetime,
 ) -> list[CalendarOccurrence]:
-    # Placeholder -- implemented in Task 3
-    return []
+    from dateutil import rrule as rrulelib
+
+    completed = set(record.metadata.get("completed_occurrences", []))
+    base_dt = datetime.fromisoformat(record.event_fields.datetime)
+
+    try:
+        rule = rrulelib.rrulestr(record.event_fields.recurrence, dtstart=base_dt)
+    except Exception:
+        return []
+
+    occurrences = []
+    for occ_dt in rule.between(start, end, inc=True):
+        occ_date_str = occ_dt.date().isoformat()
+        status = "done" if occ_date_str in completed else "pending"
+        occurrences.append(
+            CalendarOccurrence(
+                memory_id=record.id,
+                title=record.title,
+                category=record.category.value,
+                occurrence_dt=occ_dt,
+                status=status,
+                is_recurring=True,
+            )
+        )
+
+    return occurrences
 
 
 def parse_rrule_to_form(rrule_str: str) -> dict:
