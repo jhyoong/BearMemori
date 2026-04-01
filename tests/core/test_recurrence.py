@@ -1,6 +1,10 @@
 from datetime import UTC, datetime
 
-from bearmemori.core.recurrence import expand_occurrences
+from bearmemori.core.recurrence import (
+    build_rrule_from_form,
+    expand_occurrences,
+    parse_rrule_to_form,
+)
 from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
 
 
@@ -104,3 +108,49 @@ def test_expand_recurring_no_occurrences_in_range():
     end = datetime(2026, 4, 30, 23, 59, 59, tzinfo=UTC)
     result = expand_occurrences(record, start, end)
     assert result == []
+
+
+def test_parse_rrule_weekly_byday():
+    result = parse_rrule_to_form("FREQ=WEEKLY;BYDAY=TU,TH;INTERVAL=2")
+    assert result["freq"] == "weekly"
+    assert result["interval"] == 2
+    assert set(result["byday"]) == {"TU", "TH"}
+
+
+def test_parse_rrule_monthly():
+    result = parse_rrule_to_form("FREQ=MONTHLY;BYMONTHDAY=15")
+    assert result["freq"] == "monthly"
+    assert result["bymonthday"] == "15"
+
+
+def test_parse_rrule_empty():
+    result = parse_rrule_to_form("")
+    assert result["freq"] == ""
+
+
+def test_build_rrule_weekly():
+    result = build_rrule_from_form(freq="weekly", interval=1, byday=["MO", "WE", "FR"])
+    assert result == "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+
+
+def test_build_rrule_monthly_with_until():
+    result = build_rrule_from_form(
+        freq="monthly", interval=1, bymonthday="1", until="20261231T000000Z"
+    )
+    assert result == "FREQ=MONTHLY;BYMONTHDAY=1;UNTIL=20261231T000000Z"
+
+
+def test_build_rrule_empty_freq_returns_empty():
+    result = build_rrule_from_form(freq="")
+    assert result == ""
+
+
+def test_rrule_round_trip():
+    original = "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU"
+    form = parse_rrule_to_form(original)
+    rebuilt = build_rrule_from_form(
+        freq=form["freq"],
+        interval=form["interval"],
+        byday=form["byday"],
+    )
+    assert rebuilt == original

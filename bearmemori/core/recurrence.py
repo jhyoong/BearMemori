@@ -78,10 +78,57 @@ def _expand_recurring(
 
 
 def parse_rrule_to_form(rrule_str: str) -> dict:
-    # Placeholder -- implemented in Task 4
-    return {}
+    """Parse an RRULE string into form field values."""
+    if not rrule_str:
+        return {
+            "freq": "",
+            "interval": 1,
+            "byday": [],
+            "bymonthday": "",
+            "until": "",
+            "count": "",
+        }
+
+    parts: dict[str, str] = {}
+    for part in rrule_str.split(";"):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            parts[k.upper()] = v
+
+    return {
+        "freq": parts.get("FREQ", "").lower(),
+        "interval": int(parts.get("INTERVAL", 1)),
+        "byday": parts.get("BYDAY", "").split(",") if parts.get("BYDAY") else [],
+        "bymonthday": parts.get("BYMONTHDAY", ""),
+        "until": parts.get("UNTIL", ""),
+        "count": parts.get("COUNT", ""),
+    }
 
 
-def build_rrule_from_form(**kwargs) -> str:
-    # Placeholder -- implemented in Task 4
-    return ""
+def build_rrule_from_form(
+    freq: str,
+    interval: int = 1,
+    byday: list[str] | None = None,
+    bymonthday: str = "",
+    until: str = "",
+    count: str = "",
+) -> str:
+    """Build an RRULE string from form field values."""
+    if not freq:
+        return ""
+
+    parts = [f"FREQ={freq.upper()}"]
+    if interval and int(interval) > 1:
+        parts.append(f"INTERVAL={int(interval)}")
+    if byday:
+        filtered = [d for d in byday if d]
+        if filtered:
+            parts.append(f"BYDAY={','.join(filtered)}")
+    if bymonthday:
+        parts.append(f"BYMONTHDAY={bymonthday}")
+    if until:
+        parts.append(f"UNTIL={until}")
+    elif count:
+        parts.append(f"COUNT={count}")
+
+    return ";".join(parts)
