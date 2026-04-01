@@ -110,7 +110,19 @@ def create_webapp_router(
 
     @r.get("/memories/new", response_class=HTMLResponse)
     async def create_memory_page(request: Request):
-        return templates.TemplateResponse(request, "create.html", {"categories": CATEGORIES})
+        from bearmemori.core.recurrence import parse_rrule_to_form
+
+        event_dt = request.query_params.get("event_datetime", "")
+        return templates.TemplateResponse(
+            request,
+            "create.html",
+            {
+                "categories": CATEGORIES,
+                "rrule_form": parse_rrule_to_form(""),
+                "event_datetime_value": event_dt,
+                "event_status": "pending",
+            },
+        )
 
     @r.post("/memories/new")
     async def create_memory_submit(
@@ -120,7 +132,24 @@ def create_webapp_router(
         content: str = Form(...),
         tags: str = Form(""),
         importance: int = Form(5),
+        event_datetime: str = Form(""),
+        event_status: str = Form("pending"),
+        rrule_freq: str = Form(""),
+        rrule_interval: int = Form(1),
+        rrule_byday: list[str] = Form(default=[]),
+        rrule_bymonthday: str = Form(""),
+        rrule_until: str = Form(""),
     ):
+        from bearmemori.core.recurrence import build_rrule_from_form
+
+        until_rrule = f"{rrule_until.replace('-', '')}T000000Z" if rrule_until else ""
+        recurrence = build_rrule_from_form(
+            freq=rrule_freq,
+            interval=rrule_interval,
+            byday=rrule_byday,
+            bymonthday=rrule_bymonthday,
+            until=until_rrule,
+        )
         record_id = f"mem_{uuid.uuid4().hex[:12]}"
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
         record = MemoryRecord(
@@ -132,8 +161,18 @@ def create_webapp_router(
             tags=tag_list,
             importance=max(1, min(10, importance)),
         )
+        if event_datetime:
+            record.event_fields = EventFields(
+                datetime=event_datetime,
+                status="pending",
+                recurrence=recurrence if recurrence else None,
+            )
         db.create(record)
         vector_store.add(record)
+
+        return_to = request.query_params.get("return", "")
+        if return_to == "calendar":
+            return RedirectResponse(url="/webapp/calendar", status_code=302)
         return RedirectResponse(url="/webapp/memories", status_code=302)
 
     @r.get("/review", response_class=HTMLResponse)
@@ -191,13 +230,27 @@ def create_webapp_router(
     # Parameterized routes last to avoid capturing "new", "bulk", etc. as record_id
     @r.get("/memories/{record_id}", response_class=HTMLResponse)
     async def memory_detail(request: Request, record_id: str):
+        from bearmemori.core.recurrence import parse_rrule_to_form
+
         record = db.get(record_id)
         if not record:
             return RedirectResponse(url="/webapp/memories", status_code=302)
+        rrule_form = parse_rrule_to_form(
+            record.event_fields.recurrence if record.event_fields else ""
+        )
+        event_dt_value = ""
+        if record.event_fields:
+            event_dt_value = _format_event_dt_input(record.event_fields.datetime)
         return templates.TemplateResponse(
             request,
             "memory_detail.html",
-            {"memory": record, "categories": CATEGORIES},
+            {
+                "memory": record,
+                "categories": CATEGORIES,
+                "rrule_form": rrule_form,
+                "event_datetime_value": event_dt_value,
+                "event_status": record.event_fields.status if record.event_fields else "pending",
+            },
         )
 
     @r.post("/memories/{record_id}")
@@ -212,11 +265,26 @@ def create_webapp_router(
         importance: int = Form(5),
         event_datetime: str = Form(""),
         event_status: str = Form("pending"),
-        event_recurrence: str = Form(""),
+        rrule_freq: str = Form(""),
+        rrule_interval: int = Form(1),
+        rrule_byday: list[str] = Form(default=[]),
+        rrule_bymonthday: str = Form(""),
+        rrule_until: str = Form(""),
     ):
+        from bearmemori.core.recurrence import build_rrule_from_form
+
         record = db.get(record_id)
         if not record:
             return RedirectResponse(url="/webapp/memories", status_code=302)
+
+        until_rrule = f"{rrule_until.replace('-', '')}T000000Z" if rrule_until else ""
+        recurrence = build_rrule_from_form(
+            freq=rrule_freq,
+            interval=rrule_interval,
+            byday=rrule_byday,
+            bymonthday=rrule_bymonthday,
+            until=until_rrule,
+        )
 
         record.title = title
         record.category = MemoryCategory(category)
@@ -228,12 +296,16 @@ def create_webapp_router(
             record.event_fields = EventFields(
                 datetime=event_datetime,
                 status=event_status if event_status in ("pending", "done") else "pending",
-                recurrence=event_recurrence if event_recurrence else None,
+                recurrence=recurrence if recurrence else None,
             )
         else:
             record.event_fields = None
         db.update(record)
         vector_store.update(record)
+
+        return_to = request.query_params.get("return", "")
+        if return_to == "calendar":
+            return RedirectResponse(url="/webapp/calendar", status_code=302)
         return RedirectResponse(url=f"/webapp/memories/{record_id}", status_code=302)
 
     @r.delete("/memories/{record_id}")

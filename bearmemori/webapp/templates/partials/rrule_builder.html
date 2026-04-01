@@ -1,0 +1,64 @@
+{# Expects: rrule_form dict, event_datetime_value string, event_status string #}
+<fieldset>
+    <legend>Schedule</legend>
+
+    <label>Date &amp; Time
+        <input type="datetime-local" name="event_datetime" id="event_datetime"
+               value="{{ event_datetime_value or '' }}">
+    </label>
+
+    <label>Recurrence
+        <select name="rrule_freq" id="rrule_freq" onchange="toggleRruleFields()">
+            <option value="">None</option>
+            <option value="daily"   {% if rrule_form.freq == 'daily'   %}selected{% endif %}>Daily</option>
+            <option value="weekly"  {% if rrule_form.freq == 'weekly'  %}selected{% endif %}>Weekly</option>
+            <option value="monthly" {% if rrule_form.freq == 'monthly' %}selected{% endif %}>Monthly</option>
+            <option value="yearly"  {% if rrule_form.freq == 'yearly'  %}selected{% endif %}>Yearly</option>
+        </select>
+    </label>
+
+    <div id="rrule_interval_row">
+        <label>Interval (every N)
+            <input type="number" name="rrule_interval" min="1" value="{{ rrule_form.interval or 1 }}">
+        </label>
+    </div>
+
+    <div id="rrule_byday_row" style="display:none;">
+        <label>Days of week</label>
+        <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+            {% for code, label in [('MO','Mon'),('TU','Tue'),('WE','Wed'),('TH','Thu'),('FR','Fri'),('SA','Sat'),('SU','Sun')] %}
+            <label style="display:inline-flex; align-items:center; gap:0.25rem;">
+                <input type="checkbox" name="rrule_byday" value="{{ code }}"
+                       {% if code in (rrule_form.byday or []) %}checked{% endif %}>
+                {{ label }}
+            </label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div id="rrule_bymonthday_row" style="display:none;">
+        <label>Day of month
+            <input type="number" name="rrule_bymonthday" min="1" max="31"
+                   value="{{ rrule_form.bymonthday or '' }}">
+        </label>
+    </div>
+
+    <div id="rrule_end_row" style="display:none;">
+        <label>End date (optional)
+            <input type="date" name="rrule_until" value="{{ rrule_form.until[:8] if rrule_form.until else '' }}">
+        </label>
+    </div>
+
+    <input type="hidden" name="event_status" value="{{ event_status or 'pending' }}">
+</fieldset>
+
+<script>
+function toggleRruleFields() {
+    var freq = document.getElementById('rrule_freq').value;
+    document.getElementById('rrule_interval_row').style.display = freq ? '' : 'none';
+    document.getElementById('rrule_byday_row').style.display = freq === 'weekly' ? '' : 'none';
+    document.getElementById('rrule_bymonthday_row').style.display = freq === 'monthly' ? '' : 'none';
+    document.getElementById('rrule_end_row').style.display = freq ? '' : 'none';
+}
+toggleRruleFields();
+</script>
