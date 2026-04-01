@@ -45,7 +45,7 @@
 
     <div id="rrule_end_row" style="display:none;">
         <label>End date (optional)
-            <input type="date" name="rrule_until" value="{{ rrule_form.until[:8] if rrule_form.until else '' }}">
+            <input type="date" name="rrule_until" value="{{ rrule_form.until[0:4] + '-' + rrule_form.until[4:6] + '-' + rrule_form.until[6:8] if rrule_form.until else '' }}">
         </label>
     </div>
 

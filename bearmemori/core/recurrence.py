@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -28,6 +28,8 @@ def expand_occurrences(
 
     if not record.event_fields.recurrence:
         occ_dt = datetime.fromisoformat(record.event_fields.datetime)
+        if occ_dt.tzinfo is None:
+            occ_dt = occ_dt.replace(tzinfo=UTC)
         if start <= occ_dt <= end:
             return [
                 CalendarOccurrence(
@@ -53,6 +55,8 @@ def _expand_recurring(
 
     completed = set(record.metadata.get("completed_occurrences", []))
     base_dt = datetime.fromisoformat(record.event_fields.datetime)
+    if base_dt.tzinfo is None:
+        base_dt = base_dt.replace(tzinfo=UTC)
 
     try:
         rule = rrulelib.rrulestr(record.event_fields.recurrence, dtstart=base_dt)

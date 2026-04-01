@@ -497,13 +497,23 @@ def create_webapp_router(
         week_start: str = Form(""),
     ):
         record = db.get(memory_id)
-        if record:
-            completed = list(record.metadata.get("completed_occurrences", []))
-            if occurrence_date in completed:
-                completed.remove(occurrence_date)
+        if record and record.event_fields:
+            if record.event_fields.recurrence:
+                # Recurring: toggle the specific occurrence date
+                completed = list(record.metadata.get("completed_occurrences", []))
+                if occurrence_date in completed:
+                    completed.remove(occurrence_date)
+                else:
+                    completed.append(occurrence_date)
+                record.metadata["completed_occurrences"] = completed
             else:
-                completed.append(occurrence_date)
-            record.metadata["completed_occurrences"] = completed
+                # Non-recurring: toggle status directly
+                new_status = "done" if record.event_fields.status == "pending" else "pending"
+                record.event_fields = EventFields(
+                    datetime=record.event_fields.datetime,
+                    status=new_status,
+                    recurrence=None,
+                )
             db.update(record)
 
         today = datetime.now(UTC)
