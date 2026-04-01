@@ -1,4 +1,6 @@
+import calendar as cal_module
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -240,5 +242,197 @@ def create_webapp_router(
         db.delete(record_id)
         vector_store.delete(record_id)
         return ""  # HTMX removes the element
+
+    def _build_calendar_context(view: str, year: int, month: int, week_start_str: str | None):
+        from bearmemori.core.recurrence import expand_occurrences
+
+        today = datetime.now(UTC).date()
+
+        if view == "week":
+            from datetime import date, timedelta
+
+            if week_start_str:
+                ws = date.fromisoformat(week_start_str)
+            else:
+                ws = today - timedelta(days=today.weekday())
+            we = ws + timedelta(days=6)
+            start_dt = datetime(ws.year, ws.month, ws.day, tzinfo=UTC)
+            end_dt = datetime(we.year, we.month, we.day, 23, 59, 59, tzinfo=UTC)
+
+            prev_ws = (ws - timedelta(days=7)).isoformat()
+            next_ws = (ws + timedelta(days=7)).isoformat()
+
+            records = db.get_events_in_range(start_dt, end_dt)
+            all_occs = []
+            for rec in records:
+                all_occs.extend(expand_occurrences(rec, start_dt, end_dt))
+
+            by_date = defaultdict(list)
+            for occ in all_occs:
+                local_iso = utc_to_local_iso(occ.occurrence_dt.isoformat(), user_timezone)
+                occ_date = datetime.fromisoformat(local_iso).date().isoformat()
+                by_date[occ_date].append({
+                    "memory_id": occ.memory_id,
+                    "title": occ.title,
+                    "category": occ.category,
+                    "time": datetime.fromisoformat(local_iso).strftime("%H:%M"),
+                    "status": occ.status,
+                    "is_recurring": occ.is_recurring,
+                    "occurrence_date": occ.occurrence_dt.date().isoformat(),
+                })
+
+            days = []
+            for i in range(7):
+                from datetime import timedelta as td
+
+                d = ws + td(days=i)
+                days.append({
+                    "date": d.isoformat(),
+                    "label": d.strftime("%a %-d"),
+                    "occurrences": by_date.get(d.isoformat(), []),
+                })
+
+            return {
+                "view": "week",
+                "week_start": ws.isoformat(),
+                "days": days,
+                "prev_url": f"/webapp/calendar/grid?view=week&week_start={prev_ws}",
+                "next_url": f"/webapp/calendar/grid?view=week&week_start={next_ws}",
+                "today": today.isoformat(),
+            }
+
+        else:  # month view
+            from datetime import date
+
+            y = year or today.year
+            m = month or today.month
+            first_day = date(y, m, 1)
+            last_day = date(y, m, cal_module.monthrange(y, m)[1])
+            start_dt = datetime(y, m, 1, tzinfo=UTC)
+            end_dt = datetime(last_day.year, last_day.month, last_day.day, 23, 59, 59, tzinfo=UTC)
+
+            if m == 1:
+                prev_url = f"/webapp/calendar/grid?view=month&year={y - 1}&month=12"
+            else:
+                prev_url = f"/webapp/calendar/grid?view=month&year={y}&month={m - 1}"
+            if m == 12:
+                next_url = f"/webapp/calendar/grid?view=month&year={y + 1}&month=1"
+            else:
+                next_url = f"/webapp/calendar/grid?view=month&year={y}&month={m + 1}"
+
+            records = db.get_events_in_range(start_dt, end_dt)
+            all_occs = []
+            for rec in records:
+                all_occs.extend(expand_occurrences(rec, start_dt, end_dt))
+
+            by_date = defaultdict(list)
+            for occ in all_occs:
+                local_iso = utc_to_local_iso(occ.occurrence_dt.isoformat(), user_timezone)
+                occ_date = datetime.fromisoformat(local_iso).date().isoformat()
+                by_date[occ_date].append({
+                    "memory_id": occ.memory_id,
+                    "title": occ.title,
+                    "category": occ.category,
+                    "time": datetime.fromisoformat(local_iso).strftime("%H:%M"),
+                    "status": occ.status,
+                    "is_recurring": occ.is_recurring,
+                    "occurrence_date": occ.occurrence_dt.date().isoformat(),
+                })
+
+            weeks = []
+            cal = cal_module.monthcalendar(y, m)
+            for week in cal:
+                week_days = []
+                for day_num in week:
+                    if day_num == 0:
+                        week_days.append(None)
+                    else:
+                        d = date(y, m, day_num)
+                        week_days.append({
+                            "date": d.isoformat(),
+                            "day": day_num,
+                            "in_month": True,
+                            "occurrences": by_date.get(d.isoformat(), []),
+                        })
+                weeks.append(week_days)
+
+            return {
+                "view": "month",
+                "year": y,
+                "month": m,
+                "month_name": first_day.strftime("%B %Y"),
+                "weeks": weeks,
+                "prev_url": prev_url,
+                "next_url": next_url,
+                "today": today.isoformat(),
+            }
+
+    @r.get("/calendar", response_class=HTMLResponse)
+    async def calendar_page(
+        request: Request,
+        view: str = "month",
+        year: int = 0,
+        month: int = 0,
+        week_start: str | None = None,
+    ):
+        today = datetime.now(UTC)
+        ctx = _build_calendar_context(
+            view,
+            year or today.year,
+            month or today.month,
+            week_start,
+        )
+        year_val = ctx.get("year", "")
+        month_val = ctx.get("month", "")
+        ctx["current_view_url"] = (
+            f"/webapp/calendar/grid?view={view}&year={year_val}&month={month_val}"
+        )
+        return templates.TemplateResponse(request, "calendar.html", ctx)
+
+    @r.get("/calendar/grid", response_class=HTMLResponse)
+    async def calendar_grid(
+        request: Request,
+        view: str = "month",
+        year: int = 0,
+        month: int = 0,
+        week_start: str | None = None,
+    ):
+        today = datetime.now(UTC)
+        ctx = _build_calendar_context(
+            view,
+            year or today.year,
+            month or today.month,
+            week_start,
+        )
+        return templates.TemplateResponse(request, "partials/calendar_grid.html", ctx)
+
+    @r.post("/calendar/occurrence/toggle", response_class=HTMLResponse)
+    async def toggle_occurrence(
+        request: Request,
+        memory_id: str = Form(...),
+        occurrence_date: str = Form(...),
+        view: str = Form("month"),
+        year: int = Form(0),
+        month: int = Form(0),
+        week_start: str = Form(""),
+    ):
+        record = db.get(memory_id)
+        if record:
+            completed = list(record.metadata.get("completed_occurrences", []))
+            if occurrence_date in completed:
+                completed.remove(occurrence_date)
+            else:
+                completed.append(occurrence_date)
+            record.metadata["completed_occurrences"] = completed
+            db.update(record)
+
+        today = datetime.now(UTC)
+        ctx = _build_calendar_context(
+            view,
+            year or today.year,
+            month or today.month,
+            week_start or None,
+        )
+        return templates.TemplateResponse(request, "partials/calendar_grid.html", ctx)
 
     return r
