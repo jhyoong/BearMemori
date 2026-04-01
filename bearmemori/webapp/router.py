@@ -343,26 +343,30 @@ def create_webapp_router(
             for occ in all_occs:
                 local_iso = utc_to_local_iso(occ.occurrence_dt.isoformat(), user_timezone)
                 occ_date = datetime.fromisoformat(local_iso).date().isoformat()
-                by_date[occ_date].append({
-                    "memory_id": occ.memory_id,
-                    "title": occ.title,
-                    "category": occ.category,
-                    "time": datetime.fromisoformat(local_iso).strftime("%H:%M"),
-                    "status": occ.status,
-                    "is_recurring": occ.is_recurring,
-                    "occurrence_date": occ.occurrence_dt.date().isoformat(),
-                })
+                by_date[occ_date].append(
+                    {
+                        "memory_id": occ.memory_id,
+                        "title": occ.title,
+                        "category": occ.category,
+                        "time": datetime.fromisoformat(local_iso).strftime("%H:%M"),
+                        "status": occ.status,
+                        "is_recurring": occ.is_recurring,
+                        "occurrence_date": occ.occurrence_dt.date().isoformat(),
+                    }
+                )
 
             days = []
             for i in range(7):
                 from datetime import timedelta as td
 
                 d = ws + td(days=i)
-                days.append({
-                    "date": d.isoformat(),
-                    "label": d.strftime("%a %-d"),
-                    "occurrences": by_date.get(d.isoformat(), []),
-                })
+                days.append(
+                    {
+                        "date": d.isoformat(),
+                        "label": d.strftime("%a %-d"),
+                        "occurrences": by_date.get(d.isoformat(), []),
+                    }
+                )
 
             return {
                 "view": "week",
@@ -401,15 +405,17 @@ def create_webapp_router(
             for occ in all_occs:
                 local_iso = utc_to_local_iso(occ.occurrence_dt.isoformat(), user_timezone)
                 occ_date = datetime.fromisoformat(local_iso).date().isoformat()
-                by_date[occ_date].append({
-                    "memory_id": occ.memory_id,
-                    "title": occ.title,
-                    "category": occ.category,
-                    "time": datetime.fromisoformat(local_iso).strftime("%H:%M"),
-                    "status": occ.status,
-                    "is_recurring": occ.is_recurring,
-                    "occurrence_date": occ.occurrence_dt.date().isoformat(),
-                })
+                by_date[occ_date].append(
+                    {
+                        "memory_id": occ.memory_id,
+                        "title": occ.title,
+                        "category": occ.category,
+                        "time": datetime.fromisoformat(local_iso).strftime("%H:%M"),
+                        "status": occ.status,
+                        "is_recurring": occ.is_recurring,
+                        "occurrence_date": occ.occurrence_dt.date().isoformat(),
+                    }
+                )
 
             weeks = []
             cal = cal_module.monthcalendar(y, m)
@@ -420,12 +426,14 @@ def create_webapp_router(
                         week_days.append(None)
                     else:
                         d = date(y, m, day_num)
-                        week_days.append({
-                            "date": d.isoformat(),
-                            "day": day_num,
-                            "in_month": True,
-                            "occurrences": by_date.get(d.isoformat(), []),
-                        })
+                        week_days.append(
+                            {
+                                "date": d.isoformat(),
+                                "day": day_num,
+                                "in_month": True,
+                                "occurrences": by_date.get(d.isoformat(), []),
+                            }
+                        )
                 weeks.append(week_days)
 
             return {
