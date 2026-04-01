@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -76,12 +76,14 @@ async def test_check_marks_event_done(scheduler, mock_db):
 
 @pytest.mark.asyncio
 async def test_check_recurring_fires_and_tracks_occurrence(scheduler, bus, mock_db):
-    # Use a valid RRULE with a base dt in the past 25h window
+    # Use FREQ=DAILY with base_dt 2 hours ago — always within the 25h window
+    base_dt = datetime.now(UTC) - timedelta(hours=2)
+    occ_date_str = base_dt.date().isoformat()
     record = _make_record(
         event_fields=EventFields(
-            datetime="2026-03-31T10:00:00+00:00",
+            datetime=base_dt.isoformat(),
             status="pending",
-            recurrence="FREQ=WEEKLY;BYDAY=TU",
+            recurrence="FREQ=DAILY",
         ),
         metadata={},
     )
@@ -98,7 +100,7 @@ async def test_check_recurring_fires_and_tracks_occurrence(scheduler, bus, mock_
     updated = mock_db.update.call_args[0][0]
     # Status stays pending for recurring records
     assert updated.event_fields.status == "pending"
-    assert "2026-03-31" in updated.metadata.get("completed_occurrences", [])
+    assert occ_date_str in updated.metadata.get("completed_occurrences", [])
 
 
 @pytest.mark.asyncio

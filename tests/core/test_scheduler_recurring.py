@@ -28,8 +28,9 @@ def bus():
 
 @pytest.mark.asyncio
 async def test_recurring_fires_due_occurrence_and_marks_completed(db, bus):
-    # Weekly on Tuesday, base dt is last Tuesday (already due)
-    past_tuesday = datetime(2026, 3, 31, 10, 0, 0, tzinfo=UTC)  # a Tuesday
+    # Daily recurrence with base_dt 2 hours ago — always within the 25h window
+    base_dt = datetime.now(UTC) - timedelta(hours=2)
+    occ_date_str = base_dt.date().isoformat()
     record = MemoryRecord(
         id="mem_rec001",
         category=MemoryCategory.REMINDER,
@@ -37,9 +38,9 @@ async def test_recurring_fires_due_occurrence_and_marks_completed(db, bus):
         content="Do the standup",
         created_at=datetime.now(UTC),
         event_fields=EventFields(
-            datetime=past_tuesday.isoformat(),
+            datetime=base_dt.isoformat(),
             status="pending",
-            recurrence="FREQ=WEEKLY;BYDAY=TU",
+            recurrence="FREQ=DAILY",
         ),
     )
     db.create(record)
@@ -55,12 +56,13 @@ async def test_recurring_fires_due_occurrence_and_marks_completed(db, bus):
     # Record should have completed_occurrences set, status still pending
     updated = db.get("mem_rec001")
     assert updated.event_fields.status == "pending"
-    assert "2026-03-31" in updated.metadata.get("completed_occurrences", [])
+    assert occ_date_str in updated.metadata.get("completed_occurrences", [])
 
 
 @pytest.mark.asyncio
 async def test_recurring_does_not_refire_completed_occurrence(db, bus):
-    past_tuesday = datetime(2026, 3, 31, 10, 0, 0, tzinfo=UTC)
+    base_dt = datetime.now(UTC) - timedelta(hours=2)
+    occ_date_str = base_dt.date().isoformat()
     record = MemoryRecord(
         id="mem_rec002",
         category=MemoryCategory.REMINDER,
@@ -68,11 +70,11 @@ async def test_recurring_does_not_refire_completed_occurrence(db, bus):
         content="Do the standup",
         created_at=datetime.now(UTC),
         event_fields=EventFields(
-            datetime=past_tuesday.isoformat(),
+            datetime=base_dt.isoformat(),
             status="pending",
-            recurrence="FREQ=WEEKLY;BYDAY=TU",
+            recurrence="FREQ=DAILY",
         ),
-        metadata={"completed_occurrences": ["2026-03-31"]},
+        metadata={"completed_occurrences": [occ_date_str]},
     )
     db.create(record)
 
