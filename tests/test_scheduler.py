@@ -75,23 +75,30 @@ async def test_check_marks_event_done(scheduler, mock_db):
 
 
 @pytest.mark.asyncio
-async def test_check_preserves_recurrence_when_marking_done(scheduler, mock_db):
+async def test_check_recurring_fires_and_tracks_occurrence(scheduler, bus, mock_db):
+    # Use a valid RRULE with a base dt in the past 25h window
     record = _make_record(
         event_fields=EventFields(
-            datetime="2026-03-21T10:00:00",
+            datetime="2026-03-31T10:00:00+00:00",
             status="pending",
-            recurrence="daily",
-        )
+            recurrence="FREQ=WEEKLY;BYDAY=TU",
+        ),
+        metadata={},
     )
     mock_db.get_due_events.return_value = [record]
 
+    fired = []
+    bus.on(ReminderDue, lambda e: fired.append(e))
+
     await scheduler.check_reminders()
 
+    assert len(fired) == 1
+    assert fired[0].memory_id == "rem-1"
     mock_db.update.assert_called_once()
     updated = mock_db.update.call_args[0][0]
-    assert updated.event_fields.status == "done"
-    assert updated.event_fields.recurrence == "daily"
-    assert updated.event_fields.datetime == "2026-03-21T10:00:00"
+    # Status stays pending for recurring records
+    assert updated.event_fields.status == "pending"
+    assert "2026-03-31" in updated.metadata.get("completed_occurrences", [])
 
 
 @pytest.mark.asyncio
