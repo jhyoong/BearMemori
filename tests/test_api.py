@@ -662,8 +662,11 @@ def test_list_memories_pagination_last_page(client, db, vector_store):
 def test_list_memories_pagination_with_category(client, db, vector_store):
     for i in range(3):
         _seed_memory(
-            db, vector_store, id=f"mem_cat{i}",
-            category=MemoryCategory.TASK, title=f"Task {i}",
+            db,
+            vector_store,
+            id=f"mem_cat{i}",
+            category=MemoryCategory.TASK,
+            title=f"Task {i}",
         )
     _seed_memory(db, vector_store, id="mem_other", category=MemoryCategory.GENERAL)
     r = client.get("/memory/list?category=task&limit=2&offset=0")

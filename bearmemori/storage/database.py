@@ -214,7 +214,8 @@ class MemoryDatabase:
             ).fetchall()
         else:
             rows = self._conn.execute(
-                "SELECT * FROM memories WHERE needs_review = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM memories WHERE needs_review = ?"
+                " ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 (1 if needs_review else 0, limit, offset),
             ).fetchall()
         return [self._row_to_record(r) for r in rows]
