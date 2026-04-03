@@ -18,6 +18,7 @@ from bearmemori.api.schemas import (
 from bearmemori.core.triage import run_triage
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import (
+    EventFields,
     MemoryCategory,
     MemoryDraft,
     MemoryRecord,
@@ -343,6 +344,14 @@ def create_app(
                 detail=f"Invalid category: {request.category}",
             )
 
+        event_fields = None
+        if request.event_datetime is not None:
+            event_fields = EventFields(
+                datetime=request.event_datetime,
+                status=request.event_status,
+                recurrence=request.event_recurrence,
+            )
+
         record_id = f"mem_{uuid.uuid4().hex[:12]}"
         record = MemoryRecord(
             id=record_id,
@@ -353,6 +362,7 @@ def create_app(
             tags=request.tags or [],
             importance=request.importance,
             needs_review=False,
+            event_fields=event_fields,
         )
 
         db.create(record)

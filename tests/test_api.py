@@ -214,6 +214,73 @@ def test_create_memory_direct(client):
     assert data["status"] == "created"
 
 
+def test_create_memory_with_event_fields(client, db):
+    response = client.post(
+        "/memory/create",
+        json={
+            "category": "reminder",
+            "title": "Call dentist",
+            "content": "Schedule cleaning",
+            "event_datetime": "2026-04-10T14:00:00+00:00",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    record_id = data["record_id"]
+    record = db.get(record_id)
+    assert record.event_fields is not None
+    assert "2026-04-10" in record.event_fields.datetime
+    assert record.event_fields.status == "pending"
+    assert record.event_fields.recurrence is None
+
+
+def test_create_memory_with_event_recurrence(client, db):
+    response = client.post(
+        "/memory/create",
+        json={
+            "category": "task",
+            "title": "Weekly review",
+            "content": "Review tasks",
+            "event_datetime": "2026-04-07T09:00:00+00:00",
+            "event_status": "pending",
+            "event_recurrence": "FREQ=WEEKLY;BYDAY=MO",
+        },
+    )
+    assert response.status_code == 200
+    record = db.get(response.json()["record_id"])
+    assert record.event_fields is not None
+    assert record.event_fields.recurrence == "FREQ=WEEKLY;BYDAY=MO"
+
+
+def test_create_memory_invalid_event_status(client):
+    response = client.post(
+        "/memory/create",
+        json={
+            "category": "reminder",
+            "title": "Bad status",
+            "content": "Test",
+            "event_datetime": "2026-04-10T14:00:00+00:00",
+            "event_status": "invalid",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_memory_no_event_fields_unchanged(client, db):
+    """Creating without event fields still works as before."""
+    response = client.post(
+        "/memory/create",
+        json={
+            "category": "general",
+            "title": "Plain memory",
+            "content": "No events",
+        },
+    )
+    assert response.status_code == 200
+    record = db.get(response.json()["record_id"])
+    assert record.event_fields is None
+
+
 def test_bulk_delete(client, db, sample_record):
     record2 = sample_record.model_copy(update={"id": "mem_second123"})
     db.create(sample_record)

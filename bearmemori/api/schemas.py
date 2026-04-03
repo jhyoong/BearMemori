@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -33,6 +35,9 @@ class CreateMemoryRequest(BaseModel):
     content: str
     tags: list[str] = Field(default_factory=list)
     importance: int = 5
+    event_datetime: str | None = None
+    event_status: Literal["pending", "done"] = "pending"
+    event_recurrence: str | None = None
 
 
 class BulkDeleteRequest(BaseModel):
