@@ -279,6 +279,52 @@ def test_create_normalizes_naive_datetime(db):
     assert result.event_fields.datetime == "2026-03-25T15:00:00+00:00"
 
 
+def test_count_all(db):
+    assert db.count_all() == 0
+    db.create(_make_record(id="mem_c1"))
+    db.create(_make_record(id="mem_c2"))
+    assert db.count_all() == 2
+
+
+def test_count_needs_review(db):
+    assert db.count_needs_review() == 0
+    db.create(_make_record(id="mem_nr1", needs_review=True))
+    db.create(_make_record(id="mem_nr2", needs_review=False))
+    db.create(_make_record(id="mem_nr3", needs_review=True))
+    assert db.count_needs_review() == 2
+
+
+def test_count_recent(db):
+    result = db.count_recent(hours=24)
+    assert result == {"created": 0, "updated": 0}
+    db.create(_make_record(id="mem_r1"))
+    db.create(_make_record(id="mem_r2"))
+    result = db.count_recent(hours=24)
+    assert result["created"] == 2
+    assert result["updated"] == 2
+
+
+def test_list_recently_updated(db):
+    now = datetime.now(UTC)
+    db.create(_make_record(id="mem_lu1"))
+    db.create(_make_record(id="mem_lu2"))
+    since = now - timedelta(hours=1)
+    results = db.list_recently_updated(since=since, limit=50)
+    assert len(results) == 2
+    future = now + timedelta(hours=1)
+    results = db.list_recently_updated(since=future, limit=50)
+    assert len(results) == 0
+
+
+def test_list_recently_updated_respects_limit(db):
+    db.create(_make_record(id="mem_lim1"))
+    db.create(_make_record(id="mem_lim2"))
+    db.create(_make_record(id="mem_lim3"))
+    since = datetime.now(UTC) - timedelta(hours=1)
+    results = db.list_recently_updated(since=since, limit=2)
+    assert len(results) == 2
+
+
 @pytest.fixture
 def sample_record():
     return _make_record()

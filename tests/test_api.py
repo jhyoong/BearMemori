@@ -408,6 +408,159 @@ def test_delete_memory_no_image_path(client_with_images, db, vector_store):
     assert response.status_code == 200
 
 
+def test_due_events(client, db, vector_store):
+    past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_due1",
+        category=MemoryCategory.REMINDER,
+        title="Overdue reminder",
+        content="Should have happened",
+        event_fields=EventFields(datetime=past, status="pending"),
+    )
+    future = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_future1",
+        category=MemoryCategory.EVENT,
+        title="Future event",
+        content="Not due yet",
+        event_fields=EventFields(datetime=future, status="pending"),
+    )
+    r = client.get("/memory/events/due")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["events"]) == 1
+    assert data["events"][0]["id"] == "mem_due1"
+
+
+def test_due_events_empty(client):
+    r = client.get("/memory/events/due")
+    assert r.status_code == 200
+    assert r.json()["events"] == []
+
+
+def test_recent_memories(client, db, vector_store):
+    _seed_memory(db, vector_store, id="mem_recent1")
+    since = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    r = client.get(f"/memory/recent?since={since}")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["count"] == 1
+    assert len(data["memories"]) == 1
+
+
+def test_recent_memories_future_since(client, db, vector_store):
+    _seed_memory(db, vector_store, id="mem_recent2")
+    future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    r = client.get(f"/memory/recent?since={future}")
+    assert r.status_code == 200
+    assert r.json()["count"] == 0
+
+
+def test_recent_memories_missing_since(client):
+    r = client.get("/memory/recent")
+    assert r.status_code == 422
+
+
+def test_recent_memories_invalid_since(client):
+    r = client.get("/memory/recent?since=not-a-date")
+    assert r.status_code == 400
+
+
+def test_briefing_empty(client):
+    r = client.get("/memory/briefing")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["due_now"]["count"] == 0
+    assert data["due_now"]["items"] == []
+    assert data["upcoming_events"]["count"] == 0
+    assert data["upcoming_events"]["items"] == []
+    assert data["needs_review"]["count"] == 0
+    assert data["total_memories"] == 0
+    assert data["recent_activity"]["created_last_24h"] == 0
+    assert data["recent_activity"]["updated_last_24h"] == 0
+
+
+def test_briefing_with_data(client, db, vector_store):
+    past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_b_due",
+        category=MemoryCategory.REMINDER,
+        title="Overdue",
+        content="Past due",
+        event_fields=EventFields(datetime=past, status="pending"),
+    )
+    future = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_b_upcoming",
+        category=MemoryCategory.EVENT,
+        title="Future",
+        content="Coming up",
+        event_fields=EventFields(datetime=future, status="pending"),
+    )
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_b_review",
+        category=MemoryCategory.GENERAL,
+        title="Review me",
+        content="Needs review",
+        needs_review=True,
+    )
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_b_regular",
+        category=MemoryCategory.PROFILE,
+        title="Regular",
+        content="Just a memory",
+    )
+
+    r = client.get("/memory/briefing")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["due_now"]["count"] == 1
+    assert data["upcoming_events"]["count"] == 1
+    assert data["needs_review"]["count"] == 1
+    assert data["total_memories"] == 4
+    assert data["recent_activity"]["created_last_24h"] == 4
+
+
+def test_briefing_custom_event_days(client, db, vector_store):
+    future = (datetime.now(UTC) + timedelta(days=3)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_b_3day",
+        category=MemoryCategory.EVENT,
+        title="3 day event",
+        content="In 3 days",
+        event_fields=EventFields(datetime=future, status="pending"),
+    )
+    far_future = (datetime.now(UTC) + timedelta(days=10)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_b_10day",
+        category=MemoryCategory.EVENT,
+        title="10 day event",
+        content="In 10 days",
+        event_fields=EventFields(datetime=far_future, status="pending"),
+    )
+
+    r = client.get("/memory/briefing?event_days=5")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["upcoming_events"]["count"] == 1
+
+
 def test_confirm_with_source_chat_id(client, db):
     draft = {
         "category": "reminder",

@@ -281,6 +281,36 @@ class MemoryDatabase:
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
+    def count_all(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) FROM memories").fetchone()
+        return row[0]
+
+    def count_needs_review(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) FROM memories WHERE needs_review = 1").fetchone()
+        return row[0]
+
+    def count_recent(self, hours: int = 24) -> dict:
+        cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
+        row = self._conn.execute(
+            """SELECT
+                   SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN updated_at >= ? THEN 1 ELSE 0 END)
+               FROM memories""",
+            (cutoff, cutoff),
+        ).fetchone()
+        return {"created": row[0] or 0, "updated": row[1] or 0}
+
+    def list_recently_updated(self, since: datetime, limit: int = 50) -> list[MemoryRecord]:
+        since_iso = since.isoformat()
+        rows = self._conn.execute(
+            """SELECT * FROM memories
+               WHERE updated_at >= ?
+               ORDER BY updated_at DESC
+               LIMIT ?""",
+            (since_iso, limit),
+        ).fetchall()
+        return [self._row_to_record(r) for r in rows]
+
     def update(self, record: MemoryRecord) -> None:
         event_dt = None
         event_status = None

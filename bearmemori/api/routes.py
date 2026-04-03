@@ -227,6 +227,11 @@ def create_app(
         events = db.get_upcoming_events(days=days)
         return {"events": [e.model_dump(mode="json") for e in events]}
 
+    @app.get("/memory/events/due")
+    def get_due_events():
+        events = db.get_due_events()
+        return {"events": [e.model_dump(mode="json") for e in events]}
+
     @app.get("/memory/list")
     def list_memories(category: str | None = None, needs_review: bool | None = None):
         if category is not None:
@@ -243,6 +248,45 @@ def create_app(
         if needs_review is not None:
             records = [r for r in records if r.needs_review == needs_review]
         return {"memories": [r.model_dump(mode="json") for r in records]}
+
+    @app.get("/memory/recent")
+    def get_recent_memories(since: str, limit: int = 50):
+        try:
+            since_dt = datetime.fromisoformat(since.replace(" ", "+"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid 'since' datetime format")
+        memories = db.list_recently_updated(since=since_dt, limit=limit)
+        return {
+            "memories": [m.model_dump(mode="json") for m in memories],
+            "count": len(memories),
+        }
+
+    @app.get("/memory/briefing")
+    def get_briefing(event_days: int = 7):
+        due = db.get_due_events()
+        upcoming = db.get_upcoming_events(days=event_days)
+        review_count = db.count_needs_review()
+        total = db.count_all()
+        recent = db.count_recent(hours=24)
+
+        return {
+            "due_now": {
+                "count": len(due),
+                "items": [e.model_dump(mode="json") for e in due],
+            },
+            "upcoming_events": {
+                "count": len(upcoming),
+                "items": [e.model_dump(mode="json") for e in upcoming],
+            },
+            "needs_review": {
+                "count": review_count,
+            },
+            "total_memories": total,
+            "recent_activity": {
+                "created_last_24h": recent["created"],
+                "updated_last_24h": recent["updated"],
+            },
+        }
 
     @app.get("/memory/{record_id}")
     def get_memory(record_id: str):
