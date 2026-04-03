@@ -1,0 +1,92 @@
+{% if view == "month" %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+    <a href="#" hx-get="{{ prev_url }}" hx-target="#calendar-grid" hx-swap="innerHTML" role="button" class="secondary">&#8249; Prev</a>
+    <strong>{{ month_name }}</strong>
+    <a href="#" hx-get="{{ next_url }}" hx-target="#calendar-grid" hx-swap="innerHTML" role="button" class="secondary">Next &#8250;</a>
+</div>
+
+<table style="width:100%; table-layout:fixed; border-collapse:collapse;">
+    <thead>
+        <tr>
+            {% for day_name in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
+            <th style="text-align:center; padding:0.25rem; border:1px solid var(--pico-muted-border-color);">{{ day_name }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for week in weeks %}
+        <tr>
+            {% for day in week %}
+            {% if day is none %}
+            <td style="border:1px solid var(--pico-muted-border-color); height:6rem; vertical-align:top; padding:0.25rem;"></td>
+            {% else %}
+            <td style="border:1px solid var(--pico-muted-border-color); height:6rem; vertical-align:top; padding:0.25rem; {% if day.date == today %}background: var(--pico-primary-background);{% endif %}">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <small><strong>{{ day.day }}</strong></small>
+                    <a href="/webapp/memories/new?event_datetime={{ day.date }}T00:00&return=calendar" style="font-size:0.7rem; text-decoration:none;">+</a>
+                </div>
+                {% for occ in day.occurrences %}
+                <form hx-post="/webapp/calendar/occurrence/toggle" hx-target="#calendar-grid" hx-swap="innerHTML" style="margin:0; padding:0;">
+                    <input type="hidden" name="memory_id" value="{{ occ.memory_id }}">
+                    <input type="hidden" name="occurrence_date" value="{{ occ.occurrence_date }}">
+                    <input type="hidden" name="view" value="month">
+                    <input type="hidden" name="year" value="{{ year }}">
+                    <input type="hidden" name="month" value="{{ month }}">
+                    <button type="submit" style="
+                        display:block; width:100%; text-align:left; padding:0.1rem 0.25rem;
+                        margin-bottom:0.1rem; font-size:0.7rem; border-radius:3px; cursor:pointer;
+                        border:none;
+                        background: {% if occ.category == 'reminder' %}var(--pico-color-amber-500){% elif occ.category == 'task' %}var(--pico-color-blue-500){% else %}var(--pico-color-green-500){% endif %};
+                        opacity: {% if occ.status == 'done' %}0.5{% else %}1{% endif %};
+                        text-decoration: {% if occ.status == 'done' %}line-through{% else %}none{% endif %};
+                        color: #fff;
+                    " title="{{ occ.time }} - {{ occ.title }}">
+                        {{ occ.time }} {{ occ.title|truncate(20, true) }}
+                    </button>
+                </form>
+                {% endfor %}
+            </td>
+            {% endif %}
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% else %}
+{# Week view #}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+    <a href="#" hx-get="{{ prev_url }}" hx-target="#calendar-grid" hx-swap="innerHTML" role="button" class="secondary">&#8249; Prev</a>
+    <strong>Week of {{ days[0].date }}</strong>
+    <a href="#" hx-get="{{ next_url }}" hx-target="#calendar-grid" hx-swap="innerHTML" role="button" class="secondary">Next &#8250;</a>
+</div>
+
+<div style="display:grid; grid-template-columns: repeat(7, 1fr); gap:0.5rem;">
+    {% for day in days %}
+    <div>
+        <div style="text-align:center; padding:0.25rem; border-bottom:1px solid var(--pico-muted-border-color); {% if day.date == today %}font-weight:bold; color:var(--pico-primary);{% endif %}">
+            {{ day.label }}<br>
+            <a href="/webapp/memories/new?event_datetime={{ day.date }}T00:00&return=calendar" style="font-size:0.7rem; text-decoration:none;">+</a>
+        </div>
+        {% for occ in day.occurrences %}
+        <form hx-post="/webapp/calendar/occurrence/toggle" hx-target="#calendar-grid" hx-swap="innerHTML" style="margin:0.25rem 0; padding:0;">
+            <input type="hidden" name="memory_id" value="{{ occ.memory_id }}">
+            <input type="hidden" name="occurrence_date" value="{{ occ.occurrence_date }}">
+            <input type="hidden" name="view" value="week">
+            <input type="hidden" name="week_start" value="{{ week_start }}">
+            <button type="submit" style="
+                display:block; width:100%; text-align:left; padding:0.25rem 0.4rem;
+                font-size:0.75rem; border-radius:4px; cursor:pointer; border:none;
+                background: {% if occ.category == 'reminder' %}var(--pico-color-amber-500){% elif occ.category == 'task' %}var(--pico-color-blue-500){% else %}var(--pico-color-green-500){% endif %};
+                opacity: {% if occ.status == 'done' %}0.5{% else %}1{% endif %};
+                text-decoration: {% if occ.status == 'done' %}line-through{% else %}none{% endif %};
+                color: #fff;
+            " title="{{ occ.time }} - {{ occ.title }}">
+                <small>{{ occ.time }}</small><br>{{ occ.title|truncate(25, true) }}
+            </button>
+        </form>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}

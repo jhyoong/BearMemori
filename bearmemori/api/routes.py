@@ -206,7 +206,24 @@ def create_app(
         return {"context_block": context_block, "items": items}
 
     @app.get("/memory/events/upcoming")
-    def get_upcoming_events(days: int = 7):
+    def get_upcoming_events(days: int = 7, start: str | None = None, end: str | None = None):
+        from bearmemori.core.recurrence import expand_occurrences
+
+        if start and end:
+            try:
+                start_dt = datetime.fromisoformat(start)
+                end_dt = datetime.fromisoformat(end)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid start or end datetime format")
+            records = db.get_events_in_range(start_dt, end_dt)
+            occurrences = []
+            for r in records:
+                occurrences.extend(expand_occurrences(r, start_dt, end_dt))
+            return {
+                "events": [e.model_dump(mode="json") for e in records],
+                "occurrences": [o.model_dump(mode="json") for o in occurrences],
+            }
+
         events = db.get_upcoming_events(days=days)
         return {"events": [e.model_dump(mode="json") for e in events]}
 

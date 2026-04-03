@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Calendar - BearMemori{% endblock %}
+{% block content %}
+<h2>Calendar</h2>
+
+<div style="display:flex; gap:1rem; align-items:center; margin-bottom:1rem;">
+    <div role="group">
+        <a href="/webapp/calendar?view=month" role="button" {% if view == 'month' %}class="contrast"{% else %}class="secondary"{% endif %}>Month</a>
+        <a href="/webapp/calendar?view=week" role="button" {% if view == 'week' %}class="contrast"{% else %}class="secondary"{% endif %}>Week</a>
+    </div>
+</div>
+
+<div id="calendar-grid">
+    {% include "partials/calendar_grid.html" %}
+</div>
+{% endblock %}

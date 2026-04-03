@@ -334,7 +334,8 @@ def test_memory_update_saves_event_fields(authed_webapp_client, db):
             "tags": "health",
             "event_datetime": "2026-03-25T15:00",
             "event_status": "pending",
-            "event_recurrence": "every 8 hours",
+            "rrule_freq": "daily",
+            "rrule_interval": "1",
         },
         follow_redirects=False,
     )
@@ -343,7 +344,7 @@ def test_memory_update_saves_event_fields(authed_webapp_client, db):
     assert updated.event_fields is not None
     assert updated.event_fields.datetime == "2026-03-25T15:00:00+00:00"
     assert updated.event_fields.status == "pending"
-    assert updated.event_fields.recurrence == "every 8 hours"
+    assert updated.event_fields.recurrence == "FREQ=DAILY"
 
 
 def test_memory_update_clears_event_fields_when_empty(authed_webapp_client, db):

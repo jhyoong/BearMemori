@@ -260,6 +260,27 @@ class MemoryDatabase:
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
+    def get_events_in_range(self, start: datetime, end: datetime) -> list[MemoryRecord]:
+        start_iso = start.isoformat()
+        end_iso = end.isoformat()
+        rows = self._conn.execute(
+            """SELECT * FROM memories
+               WHERE category IN ('event', 'reminder', 'task')
+                 AND (
+                   (event_recurrence IS NULL
+                    AND event_datetime IS NOT NULL
+                    AND event_datetime >= ?
+                    AND event_datetime <= ?)
+                   OR
+                   (event_recurrence IS NOT NULL
+                    AND event_datetime <= ?
+                    AND (event_status IS NULL OR event_status = 'pending'))
+                 )
+               ORDER BY event_datetime ASC""",
+            (start_iso, end_iso, end_iso),
+        ).fetchall()
+        return [self._row_to_record(r) for r in rows]
+
     def update(self, record: MemoryRecord) -> None:
         event_dt = None
         event_status = None
