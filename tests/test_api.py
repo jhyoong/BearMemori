@@ -442,6 +442,34 @@ def test_due_events_empty(client):
     assert r.json()["events"] == []
 
 
+def test_recent_memories(client, db, vector_store):
+    _seed_memory(db, vector_store, id="mem_recent1")
+    since = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    r = client.get(f"/memory/recent?since={since}")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["count"] == 1
+    assert len(data["memories"]) == 1
+
+
+def test_recent_memories_future_since(client, db, vector_store):
+    _seed_memory(db, vector_store, id="mem_recent2")
+    future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    r = client.get(f"/memory/recent?since={future}")
+    assert r.status_code == 200
+    assert r.json()["count"] == 0
+
+
+def test_recent_memories_missing_since(client):
+    r = client.get("/memory/recent")
+    assert r.status_code == 422
+
+
+def test_recent_memories_invalid_since(client):
+    r = client.get("/memory/recent?since=not-a-date")
+    assert r.status_code == 400
+
+
 def test_confirm_with_source_chat_id(client, db):
     draft = {
         "category": "reminder",

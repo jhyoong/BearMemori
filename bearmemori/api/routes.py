@@ -249,6 +249,18 @@ def create_app(
             records = [r for r in records if r.needs_review == needs_review]
         return {"memories": [r.model_dump(mode="json") for r in records]}
 
+    @app.get("/memory/recent")
+    def get_recent_memories(since: str, limit: int = 50):
+        try:
+            since_dt = datetime.fromisoformat(since.replace(" ", "+"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid 'since' datetime format")
+        memories = db.list_recently_updated(since=since_dt, limit=limit)
+        return {
+            "memories": [m.model_dump(mode="json") for m in memories],
+            "count": len(memories),
+        }
+
     @app.get("/memory/{record_id}")
     def get_memory(record_id: str):
         record = db.get(record_id)
