@@ -408,6 +408,40 @@ def test_delete_memory_no_image_path(client_with_images, db, vector_store):
     assert response.status_code == 200
 
 
+def test_due_events(client, db, vector_store):
+    past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_due1",
+        category=MemoryCategory.REMINDER,
+        title="Overdue reminder",
+        content="Should have happened",
+        event_fields=EventFields(datetime=past, status="pending"),
+    )
+    future = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_future1",
+        category=MemoryCategory.EVENT,
+        title="Future event",
+        content="Not due yet",
+        event_fields=EventFields(datetime=future, status="pending"),
+    )
+    r = client.get("/memory/events/due")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["events"]) == 1
+    assert data["events"][0]["id"] == "mem_due1"
+
+
+def test_due_events_empty(client):
+    r = client.get("/memory/events/due")
+    assert r.status_code == 200
+    assert r.json()["events"] == []
+
+
 def test_confirm_with_source_chat_id(client, db):
     draft = {
         "category": "reminder",

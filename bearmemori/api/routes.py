@@ -227,6 +227,11 @@ def create_app(
         events = db.get_upcoming_events(days=days)
         return {"events": [e.model_dump(mode="json") for e in events]}
 
+    @app.get("/memory/events/due")
+    def get_due_events():
+        events = db.get_due_events()
+        return {"events": [e.model_dump(mode="json") for e in events]}
+
     @app.get("/memory/list")
     def list_memories(category: str | None = None, needs_review: bool | None = None):
         if category is not None:
