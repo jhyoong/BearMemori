@@ -35,3 +35,26 @@
         {% endif %}
     </tbody>
 </table>
+{% if total_pages is defined and total_pages > 1 %}
+<nav aria-label="Page navigation">
+  <ul style="display:flex;list-style:none;gap:0.5rem;padding:0;margin:1rem 0;">
+    {% if page > 1 %}
+    <li>
+      <a href="?page={{ page - 1 }}{% if category %}&category={{ category }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+         hx-get="/webapp/memories?page={{ page - 1 }}{% if category %}&category={{ category }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+         hx-target="#memory-table-container"
+         hx-swap="innerHTML">&laquo; Prev</a>
+    </li>
+    {% endif %}
+    <li>Page {{ page }} of {{ total_pages }} ({{ total }} memories)</li>
+    {% if page < total_pages %}
+    <li>
+      <a href="?page={{ page + 1 }}{% if category %}&category={{ category }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+         hx-get="/webapp/memories?page={{ page + 1 }}{% if category %}&category={{ category }}{% endif %}{% if q %}&q={{ q }}{% endif %}"
+         hx-target="#memory-table-container"
+         hx-swap="innerHTML">Next &raquo;</a>
+    </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
