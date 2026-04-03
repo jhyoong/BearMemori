@@ -261,6 +261,33 @@ def create_app(
             "count": len(memories),
         }
 
+    @app.get("/memory/briefing")
+    def get_briefing(event_days: int = 7):
+        due = db.get_due_events()
+        upcoming = db.get_upcoming_events(days=event_days)
+        review_count = db.count_needs_review()
+        total = db.count_all()
+        recent = db.count_recent(hours=24)
+
+        return {
+            "due_now": {
+                "count": len(due),
+                "items": [e.model_dump(mode="json") for e in due],
+            },
+            "upcoming_events": {
+                "count": len(upcoming),
+                "items": [e.model_dump(mode="json") for e in upcoming],
+            },
+            "needs_review": {
+                "count": review_count,
+            },
+            "total_memories": total,
+            "recent_activity": {
+                "created_last_24h": recent["created"],
+                "updated_last_24h": recent["updated"],
+            },
+        }
+
     @app.get("/memory/{record_id}")
     def get_memory(record_id: str):
         record = db.get(record_id)
