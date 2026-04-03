@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+
+from bearmemori.utils.time import ensure_utc
 
 if TYPE_CHECKING:
     from bearmemori.storage.models import MemoryRecord
@@ -27,9 +29,7 @@ def expand_occurrences(
         return []
 
     if not record.event_fields.recurrence:
-        occ_dt = datetime.fromisoformat(record.event_fields.datetime)
-        if occ_dt.tzinfo is None:
-            occ_dt = occ_dt.replace(tzinfo=UTC)
+        occ_dt = ensure_utc(datetime.fromisoformat(record.event_fields.datetime))
         if start <= occ_dt <= end:
             return [
                 CalendarOccurrence(
@@ -54,9 +54,7 @@ def _expand_recurring(
     from dateutil import rrule as rrulelib
 
     completed = set(record.metadata.get("completed_occurrences", []))
-    base_dt = datetime.fromisoformat(record.event_fields.datetime)
-    if base_dt.tzinfo is None:
-        base_dt = base_dt.replace(tzinfo=UTC)
+    base_dt = ensure_utc(datetime.fromisoformat(record.event_fields.datetime))
 
     try:
         rule = rrulelib.rrulestr(record.event_fields.recurrence, dtstart=base_dt)
@@ -122,8 +120,8 @@ def build_rrule_from_form(
         return ""
 
     parts = [f"FREQ={freq.upper()}"]
-    if interval and int(interval) > 1:
-        parts.append(f"INTERVAL={int(interval)}")
+    if interval and interval > 1:
+        parts.append(f"INTERVAL={interval}")
     if byday:
         filtered = [d for d in byday if d]
         if filtered:
@@ -131,6 +129,9 @@ def build_rrule_from_form(
     if bymonthday:
         parts.append(f"BYMONTHDAY={bymonthday}")
     if until:
+        # Accept ISO date (YYYY-MM-DD) or pre-formatted RRULE UNTIL value
+        if "-" in until:
+            until = f"{until.replace('-', '')}T000000Z"
         parts.append(f"UNTIL={until}")
     elif count:
         parts.append(f"COUNT={count}")

@@ -15,6 +15,13 @@ def get_server_time(user_timezone: str = "UTC") -> str:
     return now_local.strftime(f"%A, %B %d, %Y, %I:%M %p %z ({tz_label})")
 
 
+def ensure_utc(dt: datetime) -> datetime:
+    """Return a UTC-aware datetime; assume naive datetimes are UTC."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
+
 def utc_to_local_iso(utc_iso: str, user_timezone: str = "UTC") -> str:
     """Convert a UTC ISO 8601 string to local timezone ISO string for display."""
     try:

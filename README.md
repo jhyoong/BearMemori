@@ -40,9 +40,11 @@ FastAPI REST API (:8100)
   |                                        |
   +-- SQLite (relational storage, FTS5 keyword search)
   +-- ChromaDB (vector embeddings, semantic search)
-  +-- ReminderScheduler (polls for due events)
+  +-- ReminderScheduler (polls for due events and fires notifications)
+  +-- RecurrenceManager (expands recurring events)
   +-- Telegram interface (direct input/notification)
   +-- Webapp (/webapp/) -- HTMX + Jinja2 memory management UI
+  +-- ImageStorage (uploaded media files)
 ```
 
 ### Storage
@@ -58,6 +60,8 @@ FastAPI REST API (:8100)
 - **Processor** -- classify/extract pipeline for direct Telegram input
 - **Triage Subagent** -- conversation-level LLM evaluation for the REST API
 - **Reminder Scheduler** -- polls for due events and fires notifications
+- **Recurrence Manager** -- expands recurring events into individual calendar occurrences
+- **Cleanup Task** -- periodically removes expired pending memories
 
 ## API Endpoints
 
@@ -78,7 +82,7 @@ FastAPI REST API (:8100)
 | `/memory/{id}` | GET | Get a single memory |
 | `/memory/{id}` | PUT | Update memory fields |
 | `/memory/{id}` | DELETE | Delete a memory |
-| `/media/{filename}` | GET | Serve a stored image file |
+| `/images/{filename}` | GET | Serve a stored image file |
 
 ## Setup
 
@@ -109,6 +113,8 @@ Required settings:
 |---------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Your Telegram bot token from BotFather |
 | `TELEGRAM_ALLOWED_USER_ID` | Your Telegram user ID (restricts access to one user) |
+| `API_PORT` | HTTP API port (default: 8100) |
+| `IMAGE_STORAGE_DIR` | Directory for storing uploaded images (default: data/images) |
 
 Optional but recommended:
 
@@ -125,10 +131,11 @@ uv run python -m bearmemori
 ```
 
 This starts:
-- The FastAPI server on the configured port (default 8100)
+- The FastAPI server on the configured port (default 8100, see `API_PORT`)
 - The Telegram bot (polling mode)
 - The reminder scheduler
 - The internal processing queue
+- The pending memory cleanup task
 
 ### Run with Docker
 
@@ -179,6 +186,7 @@ Once set, the webapp is available at `http://localhost:8100/webapp/login`. Enter
 | New Memory | `/webapp/memories/new` | Create a memory directly (no LLM processing) |
 | Edit Memory | `/webapp/memories/{id}` | Edit title, content, category, tags, review flag, and event fields (datetime, status, recurrence) |
 | Review Queue | `/webapp/review` | View memories marked "Review Later", approve or delete in bulk |
+| Calendar | `/webapp/calendar` | View upcoming events and recurring occurrences in calendar format |
 
 The webapp uses HTMX for interactivity -- filtering, bulk actions, and inline deletes work without full page reloads. Auth is cookie-based with httponly and samesite-strict flags.
 
@@ -219,6 +227,7 @@ bearmemori/
     confirm.py         # Confirm/discard handler for pending memories
     scheduler.py       # Reminder polling scheduler
     cleanup.py         # Pending memory auto-cleanup
+    recurrence.py      # Recurring event expansion (RRULE parsing)
     models.py          # QueueItem model
   events/
     bus.py             # Event bus (pub/sub)
@@ -246,6 +255,7 @@ tests/
   test_app.py          # Application factory tests
   test_cleanup.py      # Pending cleanup tests
   test_config.py       # Config loading tests
+  test_config_timezone.py # Config timezone tests
   test_confirm.py      # Confirm handler tests
   test_event_bus.py    # Event bus tests
   test_followup.py     # Follow-up manager tests
@@ -255,14 +265,28 @@ tests/
   test_pending_store.py # Pending store tests
   test_processor.py    # Processor pipeline tests
   test_queue.py        # Queue manager tests
+  test_routes_triage_time.py # Triage time handling tests
   test_scheduler.py    # Reminder scheduler tests
   test_storage.py      # SQLite database tests
   test_telegram.py     # Telegram interface tests
   test_triage.py       # Triage subagent tests
+  test_triage_schema.py # Triage schema validation tests
+  test_triage_time.py  # Triage time zone tests
   test_vector_store.py # ChromaDB vector store tests
   test_webapp.py       # Webapp route and CRUD tests
   test_webapp_auth.py  # Webapp auth middleware tests
+  api/
+    test_routes.py     # API route tests
+  core/
+    test_recurrence.py # Recurrence expansion tests
+    test_scheduler_recurring.py # Scheduler recurring event tests
+  storage/
+    test_database_calendar.py # Calendar/database tests
 ```
+
+## Version
+
+Current version: 0.3.8
 
 ## License
 

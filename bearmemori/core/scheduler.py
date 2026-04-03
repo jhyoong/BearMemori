@@ -52,10 +52,11 @@ class ReminderScheduler:
         occurrences = expand_occurrences(record, window_start, now)
 
         fired = False
+        completed = list(record.metadata.get("completed_occurrences", []))
+        source_chat_id = self._get_chat_id(record)
         for occ in occurrences:
             if occ.status == "done":
                 continue
-            source_chat_id = self._get_chat_id(record)
             await self._bus.emit(
                 ReminderDue(
                     memory_id=record.id,
@@ -64,16 +65,16 @@ class ReminderScheduler:
                     remind_at_iso=occ.occurrence_dt.isoformat(),
                 )
             )
-            completed = list(record.metadata.get("completed_occurrences", []))
             occ_date_str = occ.occurrence_dt.date().isoformat()
             if occ_date_str not in completed:
                 completed.append(occ_date_str)
-            record.metadata["completed_occurrences"] = completed
-            self._db.update(record)
             fired = True
             logger.info("Fired recurring reminder %s occurrence %s", record.id, occ_date_str)
 
-        if not fired:
+        if fired:
+            record.metadata["completed_occurrences"] = completed
+            self._db.update(record)
+        else:
             logger.debug("Recurring reminder %s has no unfired due occurrences", record.id)
 
     def _get_chat_id(self, record) -> str:

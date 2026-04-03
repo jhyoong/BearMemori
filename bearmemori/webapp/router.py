@@ -142,13 +142,12 @@ def create_webapp_router(
     ):
         from bearmemori.core.recurrence import build_rrule_from_form
 
-        until_rrule = f"{rrule_until.replace('-', '')}T000000Z" if rrule_until else ""
         recurrence = build_rrule_from_form(
             freq=rrule_freq,
             interval=rrule_interval,
             byday=rrule_byday,
             bymonthday=rrule_bymonthday,
-            until=until_rrule,
+            until=rrule_until,
         )
         record_id = f"mem_{uuid.uuid4().hex[:12]}"
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
@@ -277,13 +276,12 @@ def create_webapp_router(
         if not record:
             return RedirectResponse(url="/webapp/memories", status_code=302)
 
-        until_rrule = f"{rrule_until.replace('-', '')}T000000Z" if rrule_until else ""
         recurrence = build_rrule_from_form(
             freq=rrule_freq,
             interval=rrule_interval,
             byday=rrule_byday,
             bymonthday=rrule_bymonthday,
-            until=until_rrule,
+            until=rrule_until,
         )
 
         record.title = title
@@ -315,14 +313,37 @@ def create_webapp_router(
         vector_store.delete(record_id)
         return ""  # HTMX removes the element
 
-    def _build_calendar_context(view: str, year: int, month: int, week_start_str: str | None):
+    def _occurrences_by_date(start_dt: datetime, end_dt: datetime) -> dict[str, list]:
         from bearmemori.core.recurrence import expand_occurrences
+
+        records = db.get_events_in_range(start_dt, end_dt)
+        all_occs = []
+        for rec in records:
+            all_occs.extend(expand_occurrences(rec, start_dt, end_dt))
+
+        by_date: dict[str, list] = defaultdict(list)
+        for occ in all_occs:
+            local_iso = utc_to_local_iso(occ.occurrence_dt.isoformat(), user_timezone)
+            local_dt = datetime.fromisoformat(local_iso)
+            by_date[local_dt.date().isoformat()].append(
+                {
+                    "memory_id": occ.memory_id,
+                    "title": occ.title,
+                    "category": occ.category,
+                    "time": local_dt.strftime("%H:%M"),
+                    "status": occ.status,
+                    "is_recurring": occ.is_recurring,
+                    "occurrence_date": occ.occurrence_dt.date().isoformat(),
+                }
+            )
+        return by_date
+
+    def _build_calendar_context(view: str, year: int, month: int, week_start_str: str | None):
+        from datetime import date, timedelta
 
         today = datetime.now(UTC).date()
 
         if view == "week":
-            from datetime import date, timedelta
-
             if week_start_str:
                 ws = date.fromisoformat(week_start_str)
             else:
@@ -334,32 +355,11 @@ def create_webapp_router(
             prev_ws = (ws - timedelta(days=7)).isoformat()
             next_ws = (ws + timedelta(days=7)).isoformat()
 
-            records = db.get_events_in_range(start_dt, end_dt)
-            all_occs = []
-            for rec in records:
-                all_occs.extend(expand_occurrences(rec, start_dt, end_dt))
-
-            by_date = defaultdict(list)
-            for occ in all_occs:
-                local_iso = utc_to_local_iso(occ.occurrence_dt.isoformat(), user_timezone)
-                occ_date = datetime.fromisoformat(local_iso).date().isoformat()
-                by_date[occ_date].append(
-                    {
-                        "memory_id": occ.memory_id,
-                        "title": occ.title,
-                        "category": occ.category,
-                        "time": datetime.fromisoformat(local_iso).strftime("%H:%M"),
-                        "status": occ.status,
-                        "is_recurring": occ.is_recurring,
-                        "occurrence_date": occ.occurrence_dt.date().isoformat(),
-                    }
-                )
+            by_date = _occurrences_by_date(start_dt, end_dt)
 
             days = []
             for i in range(7):
-                from datetime import timedelta as td
-
-                d = ws + td(days=i)
+                d = ws + timedelta(days=i)
                 days.append(
                     {
                         "date": d.isoformat(),
@@ -378,8 +378,6 @@ def create_webapp_router(
             }
 
         else:  # month view
-            from datetime import date
-
             y = year or today.year
             m = month or today.month
             first_day = date(y, m, 1)
@@ -396,26 +394,7 @@ def create_webapp_router(
             else:
                 next_url = f"/webapp/calendar/grid?view=month&year={y}&month={m + 1}"
 
-            records = db.get_events_in_range(start_dt, end_dt)
-            all_occs = []
-            for rec in records:
-                all_occs.extend(expand_occurrences(rec, start_dt, end_dt))
-
-            by_date = defaultdict(list)
-            for occ in all_occs:
-                local_iso = utc_to_local_iso(occ.occurrence_dt.isoformat(), user_timezone)
-                occ_date = datetime.fromisoformat(local_iso).date().isoformat()
-                by_date[occ_date].append(
-                    {
-                        "memory_id": occ.memory_id,
-                        "title": occ.title,
-                        "category": occ.category,
-                        "time": datetime.fromisoformat(local_iso).strftime("%H:%M"),
-                        "status": occ.status,
-                        "is_recurring": occ.is_recurring,
-                        "occurrence_date": occ.occurrence_dt.date().isoformat(),
-                    }
-                )
+            by_date = _occurrences_by_date(start_dt, end_dt)
 
             weeks = []
             cal = cal_module.monthcalendar(y, m)
