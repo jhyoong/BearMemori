@@ -291,13 +291,14 @@ class MemoryDatabase:
 
     def count_recent(self, hours: int = 24) -> dict:
         cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
-        created = self._conn.execute(
-            "SELECT COUNT(*) FROM memories WHERE created_at >= ?", (cutoff,)
-        ).fetchone()[0]
-        updated = self._conn.execute(
-            "SELECT COUNT(*) FROM memories WHERE updated_at >= ?", (cutoff,)
-        ).fetchone()[0]
-        return {"created": created, "updated": updated}
+        row = self._conn.execute(
+            """SELECT
+                   SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN updated_at >= ? THEN 1 ELSE 0 END)
+               FROM memories""",
+            (cutoff, cutoff),
+        ).fetchone()
+        return {"created": row[0] or 0, "updated": row[1] or 0}
 
     def list_recently_updated(self, since: datetime, limit: int = 50) -> list[MemoryRecord]:
         since_iso = since.isoformat()
