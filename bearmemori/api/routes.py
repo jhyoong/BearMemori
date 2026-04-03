@@ -234,7 +234,14 @@ def create_app(
         return {"events": [e.model_dump(mode="json") for e in events]}
 
     @app.get("/memory/list")
-    def list_memories(category: str | None = None, needs_review: bool | None = None):
+    def list_memories(
+        category: str | None = None,
+        needs_review: bool | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ):
+        limit = min(limit, 200)
+
         if category is not None:
             try:
                 cat = MemoryCategory(category)
@@ -243,12 +250,21 @@ def create_app(
                     status_code=400,
                     detail=f"Invalid category: {category}",
                 )
-            records = db.list_by_category(cat)
+            records = db.list_by_category(cat, offset=offset, limit=limit)
+            total = db.count_by_category(cat)
         else:
-            records = db.list_all()
+            records = db.list_all(offset=offset, limit=limit)
+            total = db.count_all()
+
         if needs_review is not None:
             records = [r for r in records if r.needs_review == needs_review]
-        return {"memories": [r.model_dump(mode="json") for r in records]}
+
+        return {
+            "memories": [r.model_dump(mode="json") for r in records],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
 
     @app.get("/memory/recent")
     def get_recent_memories(since: str, limit: int = 50):
