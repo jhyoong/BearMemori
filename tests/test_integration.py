@@ -61,7 +61,7 @@ def test_triage_confirm_retrieve_flow(full_stack):
     assert "coffee" in r.json()["context_block"].lower()
 
     # 4. Search
-    r = client.post("/memory/search", json={"query": "coffee"})
+    r = client.get("/memory/search", params={"query": "coffee"})
     assert len(r.json()["results"]) >= 1
 
     # 5. Get by ID

@@ -72,7 +72,7 @@ FastAPI REST API (:8100)
 | `/memory/pending` | POST | Create pending memory directly |
 | `/memory/pending/{id}` | DELETE | Dismiss a pending memory |
 | `/memory/confirm` | POST | Confirm pending memory to permanent storage |
-| `/memory/search` | POST | Semantic search with optional category filter |
+| `/memory/search` | GET | Semantic search with optional category filter |
 | `/memory/retrieve` | GET | Hybrid retrieval (semantic + upcoming events) |
 | `/memory/list` | GET | List memories, optional category and `needs_review` filter |
 | `/memory/events/upcoming` | GET | Upcoming events within day window |

@@ -78,35 +78,51 @@ def create_webapp_router(
         request: Request,
         q: str | None = None,
         category: str | None = None,
+        page: int = 1,
+        per_page: int = 50,
     ):
-        if category:
-            memories = db.list_by_category(MemoryCategory(category))
-        else:
-            memories = db.list_all()
+        per_page = min(per_page, 200)
+        offset = (page - 1) * per_page
 
         if q:
+            if category:
+                all_memories = db.list_by_category(MemoryCategory(category))
+            else:
+                all_memories = db.list_all()
             search_results = db.search_keyword(q, limit=100)
             search_ids = {m.id for m in search_results}
-            memories = [m for m in memories if m.id in search_ids]
+            filtered = [m for m in all_memories if m.id in search_ids]
+            total = len(filtered)
+            memories = filtered[offset : offset + per_page]
+        elif category:
+            memories = db.list_by_category(MemoryCategory(category), offset=offset, limit=per_page)
+            total = db.count_by_category(MemoryCategory(category))
+        else:
+            memories = db.list_all(offset=offset, limit=per_page)
+            total = db.count_all()
+
+        total_pages = max(1, (total + per_page - 1) // per_page)
+
+        context = {
+            "memories": memories,
+            "categories": CATEGORIES,
+            "q": q,
+            "category": category,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+        }
 
         # Check if HTMX request (partial swap)
         if request.headers.get("HX-Request"):
             return templates.TemplateResponse(
                 request,
                 "partials/memory_table.html",
-                {"memories": memories},
+                context,
             )
 
-        return templates.TemplateResponse(
-            request,
-            "memories.html",
-            {
-                "memories": memories,
-                "categories": CATEGORIES,
-                "q": q,
-                "category": category,
-            },
-        )
+        return templates.TemplateResponse(request, "memories.html", context)
 
     @r.get("/memories/new", response_class=HTMLResponse)
     async def create_memory_page(request: Request):

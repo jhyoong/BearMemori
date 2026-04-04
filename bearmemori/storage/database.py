@@ -204,20 +204,28 @@ class MemoryDatabase:
         self._conn.commit()
         return cursor.rowcount
 
-    def list_all(self, needs_review: bool | None = None) -> list[MemoryRecord]:
+    def list_all(
+        self, needs_review: bool | None = None, offset: int = 0, limit: int = 50
+    ) -> list[MemoryRecord]:
         if needs_review is None:
-            rows = self._conn.execute("SELECT * FROM memories ORDER BY created_at DESC").fetchall()
+            rows = self._conn.execute(
+                "SELECT * FROM memories ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
         else:
             rows = self._conn.execute(
-                "SELECT * FROM memories WHERE needs_review = ? ORDER BY created_at DESC",
-                (1 if needs_review else 0,),
+                "SELECT * FROM memories WHERE needs_review = ?"
+                " ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (1 if needs_review else 0, limit, offset),
             ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
-    def list_by_category(self, category: MemoryCategory) -> list[MemoryRecord]:
+    def list_by_category(
+        self, category: MemoryCategory, offset: int = 0, limit: int = 50
+    ) -> list[MemoryRecord]:
         rows = self._conn.execute(
-            "SELECT * FROM memories WHERE category = ? ORDER BY created_at DESC",
-            (category.value,),
+            "SELECT * FROM memories WHERE category = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (category.value, limit, offset),
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
@@ -299,6 +307,12 @@ class MemoryDatabase:
             (cutoff, cutoff),
         ).fetchone()
         return {"created": row[0] or 0, "updated": row[1] or 0}
+
+    def count_by_category(self, category: MemoryCategory) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE category = ?", (category.value,)
+        ).fetchone()
+        return row[0]
 
     def list_recently_updated(self, since: datetime, limit: int = 50) -> list[MemoryRecord]:
         since_iso = since.isoformat()

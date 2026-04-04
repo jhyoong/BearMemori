@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -10,12 +12,6 @@ class TriageRequest(BaseModel):
 class ConfirmRequest(BaseModel):
     pending_id: str
     source_chat_id: str | None = None
-
-
-class SearchRequest(BaseModel):
-    query: str
-    category: str | None = None
-    top_k: int = 5
 
 
 class UpdateMemoryRequest(BaseModel):
@@ -33,6 +29,9 @@ class CreateMemoryRequest(BaseModel):
     content: str
     tags: list[str] = Field(default_factory=list)
     importance: int = 5
+    event_datetime: str | None = None
+    event_status: Literal["pending", "done"] = "pending"
+    event_recurrence: str | None = None
 
 
 class BulkDeleteRequest(BaseModel):

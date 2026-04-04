@@ -105,7 +105,7 @@ def test_delete_memory(client, db, vector_store):
 
 def test_search(client, db, vector_store):
     _seed_memory(db, vector_store)
-    r = client.post("/memory/search", json={"query": "coffee", "top_k": 5})
+    r = client.get("/memory/search", params={"query": "coffee", "top_k": 5})
     assert r.status_code == 200
     assert "results" in r.json()
 
@@ -212,6 +212,73 @@ def test_create_memory_direct(client):
     data = response.json()
     assert "record_id" in data
     assert data["status"] == "created"
+
+
+def test_create_memory_with_event_fields(client, db):
+    response = client.post(
+        "/memory/create",
+        json={
+            "category": "reminder",
+            "title": "Call dentist",
+            "content": "Schedule cleaning",
+            "event_datetime": "2026-04-10T14:00:00+00:00",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    record_id = data["record_id"]
+    record = db.get(record_id)
+    assert record.event_fields is not None
+    assert "2026-04-10" in record.event_fields.datetime
+    assert record.event_fields.status == "pending"
+    assert record.event_fields.recurrence is None
+
+
+def test_create_memory_with_event_recurrence(client, db):
+    response = client.post(
+        "/memory/create",
+        json={
+            "category": "task",
+            "title": "Weekly review",
+            "content": "Review tasks",
+            "event_datetime": "2026-04-07T09:00:00+00:00",
+            "event_status": "pending",
+            "event_recurrence": "FREQ=WEEKLY;BYDAY=MO",
+        },
+    )
+    assert response.status_code == 200
+    record = db.get(response.json()["record_id"])
+    assert record.event_fields is not None
+    assert record.event_fields.recurrence == "FREQ=WEEKLY;BYDAY=MO"
+
+
+def test_create_memory_invalid_event_status(client):
+    response = client.post(
+        "/memory/create",
+        json={
+            "category": "reminder",
+            "title": "Bad status",
+            "content": "Test",
+            "event_datetime": "2026-04-10T14:00:00+00:00",
+            "event_status": "invalid",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_memory_no_event_fields_unchanged(client, db):
+    """Creating without event fields still works as before."""
+    response = client.post(
+        "/memory/create",
+        json={
+            "category": "general",
+            "title": "Plain memory",
+            "content": "No events",
+        },
+    )
+    assert response.status_code == 200
+    record = db.get(response.json()["record_id"])
+    assert record.event_fields is None
 
 
 def test_bulk_delete(client, db, sample_record):
@@ -559,6 +626,74 @@ def test_briefing_custom_event_days(client, db, vector_store):
     assert r.status_code == 200
     data = r.json()
     assert data["upcoming_events"]["count"] == 1
+
+
+def test_list_memories_pagination(client, db, vector_store):
+    for i in range(5):
+        _seed_memory(db, vector_store, id=f"mem_page{i}", title=f"Memory {i}")
+    r = client.get("/memory/list?limit=2&offset=0")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["memories"]) == 2
+    assert data["total"] == 5
+    assert data["offset"] == 0
+    assert data["limit"] == 2
+
+
+def test_list_memories_pagination_offset(client, db, vector_store):
+    for i in range(5):
+        _seed_memory(db, vector_store, id=f"mem_off{i}", title=f"Memory {i}")
+    r = client.get("/memory/list?limit=2&offset=2")
+    data = r.json()
+    assert len(data["memories"]) == 2
+    assert data["total"] == 5
+    assert data["offset"] == 2
+
+
+def test_list_memories_pagination_last_page(client, db, vector_store):
+    for i in range(5):
+        _seed_memory(db, vector_store, id=f"mem_last{i}", title=f"Memory {i}")
+    r = client.get("/memory/list?limit=2&offset=4")
+    data = r.json()
+    assert len(data["memories"]) == 1
+    assert data["total"] == 5
+
+
+def test_list_memories_pagination_with_category(client, db, vector_store):
+    for i in range(3):
+        _seed_memory(
+            db,
+            vector_store,
+            id=f"mem_cat{i}",
+            category=MemoryCategory.TASK,
+            title=f"Task {i}",
+        )
+    _seed_memory(db, vector_store, id="mem_other", category=MemoryCategory.GENERAL)
+    r = client.get("/memory/list?category=task&limit=2&offset=0")
+    data = r.json()
+    assert len(data["memories"]) == 2
+    assert data["total"] == 3
+
+
+def test_list_memories_default_pagination(client, db, vector_store):
+    """Without explicit limit/offset, response still includes pagination metadata."""
+    _seed_memory(db, vector_store, id="mem_def1")
+    r = client.get("/memory/list")
+    data = r.json()
+    assert "total" in data
+    assert "offset" in data
+    assert "limit" in data
+    assert data["total"] == 1
+    assert data["offset"] == 0
+    assert data["limit"] == 50
+
+
+def test_list_memories_limit_capped(client, db, vector_store):
+    """Limit above 200 is capped to 200."""
+    _seed_memory(db, vector_store, id="mem_cap1")
+    r = client.get("/memory/list?limit=500")
+    data = r.json()
+    assert data["limit"] == 200
 
 
 def test_confirm_with_source_chat_id(client, db):

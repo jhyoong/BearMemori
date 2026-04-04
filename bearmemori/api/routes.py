@@ -11,13 +11,13 @@ from bearmemori.api.schemas import (
     BulkUpdateRequest,
     ConfirmRequest,
     CreateMemoryRequest,
-    SearchRequest,
     TriageRequest,
     UpdateMemoryRequest,
 )
 from bearmemori.core.triage import run_triage
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import (
+    EventFields,
     MemoryCategory,
     MemoryDraft,
     MemoryRecord,
@@ -132,12 +132,12 @@ def create_app(
         logger.info("Confirmed memory: %s -> %s", request.pending_id, record_id)
         return {"record_id": record_id, "status": "confirmed"}
 
-    @app.post("/memory/search")
-    def search_memories(request: SearchRequest):
+    @app.get("/memory/search")
+    def search_memories(query: str, category: str | None = None, top_k: int = 5):
         results = vector_store.search(
-            query=request.query,
-            top_k=request.top_k,
-            category=request.category,
+            query=query,
+            top_k=top_k,
+            category=category,
         )
         return {"results": results}
 
@@ -233,7 +233,14 @@ def create_app(
         return {"events": [e.model_dump(mode="json") for e in events]}
 
     @app.get("/memory/list")
-    def list_memories(category: str | None = None, needs_review: bool | None = None):
+    def list_memories(
+        category: str | None = None,
+        needs_review: bool | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ):
+        limit = min(limit, 200)
+
         if category is not None:
             try:
                 cat = MemoryCategory(category)
@@ -242,12 +249,21 @@ def create_app(
                     status_code=400,
                     detail=f"Invalid category: {category}",
                 )
-            records = db.list_by_category(cat)
+            records = db.list_by_category(cat, offset=offset, limit=limit)
+            total = db.count_by_category(cat)
         else:
-            records = db.list_all()
+            records = db.list_all(offset=offset, limit=limit)
+            total = db.count_all()
+
         if needs_review is not None:
             records = [r for r in records if r.needs_review == needs_review]
-        return {"memories": [r.model_dump(mode="json") for r in records]}
+
+        return {
+            "memories": [r.model_dump(mode="json") for r in records],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
 
     @app.get("/memory/recent")
     def get_recent_memories(since: str, limit: int = 50):
@@ -343,6 +359,14 @@ def create_app(
                 detail=f"Invalid category: {request.category}",
             )
 
+        event_fields = None
+        if request.event_datetime is not None:
+            event_fields = EventFields(
+                datetime=request.event_datetime,
+                status=request.event_status,
+                recurrence=request.event_recurrence,
+            )
+
         record_id = f"mem_{uuid.uuid4().hex[:12]}"
         record = MemoryRecord(
             id=record_id,
@@ -353,6 +377,7 @@ def create_app(
             tags=request.tags or [],
             importance=request.importance,
             needs_review=False,
+            event_fields=event_fields,
         )
 
         db.create(record)
