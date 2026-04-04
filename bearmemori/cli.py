@@ -172,6 +172,10 @@ def cmd_update(
     tags: str | None,
     importance: int | None,
     needs_review: bool | None,
+    event_status: str | None,
+    event_datetime: str | None,
+    event_recurrence: str | None,
+    occurrence_date: str | None,
 ) -> int:
     body: dict = {}
     if title is not None:
@@ -186,6 +190,14 @@ def cmd_update(
         body["importance"] = importance
     if needs_review is not None:
         body["needs_review"] = needs_review
+    if event_status is not None:
+        body["event_status"] = event_status
+    if event_datetime is not None:
+        body["event_datetime"] = event_datetime
+    if event_recurrence is not None:
+        body["event_recurrence"] = event_recurrence
+    if occurrence_date is not None:
+        body["occurrence_date"] = occurrence_date
     if not body:
         print(json.dumps({"error": "No updates provided"}), file=sys.stderr)
         return 1
@@ -289,6 +301,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument(
         "--needs-review", type=_parse_bool, default=None, help="Set needs_review flag"
     )
+    p_update.add_argument(
+        "--event-status", choices=["pending", "done"], default=None, help="Set event status"
+    )
+    p_update.add_argument("--event-datetime", default=None, help="New event datetime (ISO 8601)")
+    p_update.add_argument("--event-recurrence", default=None, help="New recurrence rule (RRULE)")
+    p_update.add_argument(
+        "--occurrence-date", default=None, help="Specific occurrence date (YYYY-MM-DD) for recurring events"
+    )
 
     p_triage = subparsers.add_parser("triage", help="Run triage on a conversation")
     p_triage.add_argument("--conversation", required=True, help="Conversation JSON array")
@@ -330,6 +350,10 @@ def main() -> None:
             args.tags,
             args.importance,
             args.needs_review,
+            args.event_status,
+            args.event_datetime,
+            args.event_recurrence,
+            args.occurrence_date,
         ),
         "triage": lambda: cmd_triage(
             base_url, args.conversation, args.memory_hint, args.current_time
