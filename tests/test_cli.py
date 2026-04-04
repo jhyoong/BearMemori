@@ -349,6 +349,18 @@ class TestTriageCommand:
             assert body["conversation"] == [{"role": "user", "content": "test"}]
 
 
+class TestMain:
+    def test_main_dispatches_health(self):
+        with patch("bearmemori.cli.api_request", return_value={"status": "ok"}):
+            with patch("sys.argv", ["bearmemori", "health"]):
+                with patch("sys.stdout", StringIO()):
+                    with pytest.raises(SystemExit) as exc_info:
+                        from bearmemori.cli import main
+
+                        main()
+                    assert exc_info.value.code == 0
+
+
 class TestServeCommand:
     def test_parse_serve_defaults(self):
         parser = build_parser()
