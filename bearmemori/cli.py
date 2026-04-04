@@ -215,6 +215,74 @@ def cmd_triage(
     return 0
 
 
+def cmd_serve(port: int | None, host: str, no_telegram: bool) -> int:
+    import asyncio
+    import logging
+    from typing import cast
+
+    import uvicorn
+
+    from bearmemori.app import Application, create_application
+    from bearmemori.config import Settings
+    from bearmemori.events.domain import InputReceived
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    )
+    logger = logging.getLogger("bearmemori")
+
+    async def processing_loop(application: Application) -> None:
+        logger.info("Processing loop started")
+        while True:
+            item = await application.queue_manager.get_next()
+            try:
+                followup_event = InputReceived(
+                    input_type=item.input_type,
+                    content=item.content,
+                    source_chat_id=item.source_chat_id,
+                )
+                followup_input = application.followup_manager.check_followup(followup_event)
+                if followup_input:
+                    item.context = followup_input.context
+                await application.processor.process_item(item)
+            except Exception:
+                logger.exception("Error processing item from %s", item.source_chat_id)
+
+    async def run() -> None:
+        settings = Settings()
+        actual_port = port if port is not None else settings.api_port
+        api = create_application(settings)
+        application = cast(Application, api.state.application)
+
+        asyncio.create_task(processing_loop(application))
+        asyncio.create_task(application.scheduler.run())
+        asyncio.create_task(application.cleanup_task.run())
+
+        config = uvicorn.Config(api, host=host, port=actual_port, log_level="info")
+        server = uvicorn.Server(config)
+
+        if no_telegram:
+            logger.info("BearMemori is running on %s:%d (Telegram disabled)", host, actual_port)
+            await server.serve()
+        else:
+            telegram_app = application.telegram.build()
+            async with telegram_app:
+                if telegram_app.post_init:
+                    await telegram_app.post_init(telegram_app)
+                await telegram_app.start()
+                await telegram_app.updater.start_polling()
+                logger.info("BearMemori is running on %s:%d", host, actual_port)
+                try:
+                    await server.serve()
+                finally:
+                    await telegram_app.updater.stop()
+                    await telegram_app.stop()
+
+    asyncio.run(run())
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bearmemori",
@@ -274,6 +342,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_triage.add_argument("--memory-hint", default=None, help="Memory hint JSON object")
     p_triage.add_argument("--current-time", default=None, help="Current time (ISO format)")
 
+    p_serve = subparsers.add_parser("serve", help="Start the BearMemori server")
+    p_serve.add_argument("--port", type=int, default=None, help="API port (default: from settings)")
+    p_serve.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
+    p_serve.add_argument("--no-telegram", action="store_true", help="Start without Telegram bot")
+
     return parser
 
 
@@ -308,6 +381,7 @@ def main() -> None:
         "triage": lambda: cmd_triage(
             base_url, args.conversation, args.memory_hint, args.current_time
         ),
+        "serve": lambda: cmd_serve(args.port, args.host, args.no_telegram),
     }
 
     handler = commands.get(args.command)

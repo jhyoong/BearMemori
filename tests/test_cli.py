@@ -347,3 +347,22 @@ class TestTriageCommand:
             assert code == 0
             body = mock_req.call_args.kwargs["body"]
             assert body["conversation"] == [{"role": "user", "content": "test"}]
+
+
+class TestServeCommand:
+    def test_parse_serve_defaults(self):
+        parser = build_parser()
+        args = parser.parse_args(["serve"])
+        assert args.command == "serve"
+        assert args.port is None
+        assert args.host == "0.0.0.0"
+        assert args.no_telegram is False
+
+    def test_parse_serve_with_flags(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            ["serve", "--port", "9000", "--host", "127.0.0.1", "--no-telegram"]
+        )
+        assert args.port == 9000
+        assert args.host == "127.0.0.1"
+        assert args.no_telegram is True
