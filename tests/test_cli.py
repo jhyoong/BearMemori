@@ -143,3 +143,74 @@ class TestBriefingCommand:
                 code = cmd_briefing("http://localhost:8100", event_days=7)
             assert json.loads(captured.getvalue()) == data
             assert code == 0
+
+
+class TestSearchCommand:
+    def test_parse_search(self):
+        parser = build_parser()
+        args = parser.parse_args(["search", "dentist", "--category", "event", "--top-k", "10"])
+        assert args.command == "search"
+        assert args.query == "dentist"
+        assert args.category == "event"
+        assert args.top_k == 10
+
+    def test_search_success(self):
+        data = {"results": [{"id": "mem_1", "document": "Dentist at 3pm"}]}
+        with patch("bearmemori.cli.api_request", return_value=data) as mock_req:
+            captured = StringIO()
+            with patch("sys.stdout", captured):
+                from bearmemori.cli import cmd_search
+
+                code = cmd_search("http://localhost:8100", query="dentist", category=None, top_k=5)
+            mock_req.assert_called_once_with(
+                "http://localhost:8100",
+                "GET",
+                "/memory/search",
+                params={"query": "dentist", "top_k": 5},
+            )
+            assert code == 0
+
+
+class TestListCommand:
+    def test_parse_list(self):
+        parser = build_parser()
+        args = parser.parse_args(["list", "--category", "note", "--limit", "20"])
+        assert args.command == "list"
+        assert args.category == "note"
+        assert args.limit == 20
+
+    def test_list_success(self):
+        data = {"memories": [], "total": 0}
+        with patch("bearmemori.cli.api_request", return_value=data):
+            captured = StringIO()
+            with patch("sys.stdout", captured):
+                from bearmemori.cli import cmd_list
+
+                code = cmd_list(
+                    "http://localhost:8100", category=None, needs_review=None, offset=0, limit=50
+                )
+            assert code == 0
+
+
+class TestEventsCommand:
+    def test_parse_events(self):
+        parser = build_parser()
+        args = parser.parse_args(["events", "--days", "14"])
+        assert args.command == "events"
+        assert args.days == 14
+
+    def test_parse_events_range(self):
+        parser = build_parser()
+        args = parser.parse_args(["events", "--start", "2026-04-01", "--end", "2026-04-30"])
+        assert args.start == "2026-04-01"
+        assert args.end == "2026-04-30"
+
+    def test_events_success(self):
+        data = {"events": []}
+        with patch("bearmemori.cli.api_request", return_value=data):
+            captured = StringIO()
+            with patch("sys.stdout", captured):
+                from bearmemori.cli import cmd_events
+
+                code = cmd_events("http://localhost:8100", days=7, start=None, end=None)
+            assert code == 0

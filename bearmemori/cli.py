@@ -84,6 +84,46 @@ def cmd_briefing(base_url: str, event_days: int = 7) -> int:
     return 0
 
 
+def cmd_search(base_url: str, query: str, category: str | None, top_k: int) -> int:
+    params = {"query": query, "top_k": top_k}
+    if category:
+        params["category"] = category
+    result = api_request(base_url, "GET", "/memory/search", params=params)
+    if result is None:
+        return 1
+    output(result)
+    return 0
+
+
+def cmd_list(
+    base_url: str, category: str | None, needs_review: bool | None, offset: int, limit: int
+) -> int:
+    params: dict = {"offset": offset, "limit": limit}
+    if category:
+        params["category"] = category
+    if needs_review is not None:
+        params["needs_review"] = str(needs_review).lower()
+    result = api_request(base_url, "GET", "/memory/list", params=params)
+    if result is None:
+        return 1
+    output(result)
+    return 0
+
+
+def cmd_events(base_url: str, days: int, start: str | None, end: str | None) -> int:
+    params: dict = {}
+    if start and end:
+        params["start"] = start
+        params["end"] = end
+    else:
+        params["days"] = days
+    result = api_request(base_url, "GET", "/memory/events/upcoming", params=params)
+    if result is None:
+        return 1
+    output(result)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bearmemori",
@@ -103,6 +143,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--event-days", type=int, default=7, help="Days of upcoming events (default: 7)"
     )
 
+    p_search = subparsers.add_parser("search", help="Search memories")
+    p_search.add_argument("query", help="Search query")
+    p_search.add_argument("--category", default=None, help="Filter by category")
+    p_search.add_argument("--top-k", type=int, default=5, help="Number of results (default: 5)")
+
+    p_list = subparsers.add_parser("list", help="List memories")
+    p_list.add_argument("--category", default=None, help="Filter by category")
+    p_list.add_argument("--needs-review", type=bool, default=None, help="Filter by needs_review")
+    p_list.add_argument("--offset", type=int, default=0, help="Pagination offset (default: 0)")
+    p_list.add_argument("--limit", type=int, default=50, help="Pagination limit (default: 50)")
+
+    p_events = subparsers.add_parser("events", help="List upcoming events")
+    p_events.add_argument("--days", type=int, default=7, help="Days ahead (default: 7)")
+    p_events.add_argument("--start", default=None, help="Range start datetime (ISO format)")
+    p_events.add_argument("--end", default=None, help="Range end datetime (ISO format)")
+
     return parser
 
 
@@ -115,6 +171,11 @@ def main() -> None:
         "health": lambda: cmd_health(base_url),
         "get": lambda: cmd_get(base_url, args.id),
         "briefing": lambda: cmd_briefing(base_url, args.event_days),
+        "search": lambda: cmd_search(base_url, args.query, args.category, args.top_k),
+        "list": lambda: cmd_list(
+            base_url, args.category, args.needs_review, args.offset, args.limit
+        ),
+        "events": lambda: cmd_events(base_url, args.days, args.start, args.end),
     }
 
     handler = commands.get(args.command)
