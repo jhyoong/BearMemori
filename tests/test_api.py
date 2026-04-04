@@ -739,3 +739,106 @@ def test_update_event_status(client, db, vector_store):
     assert response.status_code == 200
     record = db.get("mem_evt_upd")
     assert record.event_fields.status == "done"
+
+
+def test_update_event_status_on_non_event_memory(client, db, vector_store):
+    _seed_memory(db, vector_store, id="mem_nonevent", category=MemoryCategory.GENERAL)
+    response = client.put(
+        "/memory/mem_nonevent",
+        json={"event_status": "done"},
+    )
+    assert response.status_code == 400
+    assert "non-event" in response.json()["detail"]
+
+
+def test_update_occurrence_date_without_event_status(client, db, vector_store):
+    future = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_occ_no_status",
+        category=MemoryCategory.EVENT,
+        title="Meeting",
+        content="Weekly",
+        event_fields=EventFields(
+            datetime=future, status="pending", recurrence="FREQ=WEEKLY;BYDAY=MO"
+        ),
+    )
+    response = client.put(
+        "/memory/mem_occ_no_status",
+        json={"occurrence_date": "2026-04-07"},
+    )
+    assert response.status_code == 400
+    assert "occurrence_date requires event_status" in response.json()["detail"]
+
+
+def test_update_occurrence_date_on_non_recurring(client, db, vector_store):
+    future = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_nonrecur",
+        category=MemoryCategory.EVENT,
+        title="One-time event",
+        content="No recurrence",
+        event_fields=EventFields(datetime=future, status="pending"),
+    )
+    response = client.put(
+        "/memory/mem_nonrecur",
+        json={"event_status": "done", "occurrence_date": "2026-04-07"},
+    )
+    assert response.status_code == 400
+    assert "recurring" in response.json()["detail"]
+
+
+def test_update_occurrence_date_toggle_done(client, db, vector_store):
+    future = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_recur_toggle",
+        category=MemoryCategory.EVENT,
+        title="Weekly meeting",
+        content="Sync",
+        event_fields=EventFields(
+            datetime=future, status="pending", recurrence="FREQ=WEEKLY;BYDAY=MO"
+        ),
+    )
+    # Mark occurrence as done
+    response = client.put(
+        "/memory/mem_recur_toggle",
+        json={"event_status": "done", "occurrence_date": "2026-04-07"},
+    )
+    assert response.status_code == 200
+    record = db.get("mem_recur_toggle")
+    assert "2026-04-07" in record.metadata["completed_occurrences"]
+
+    # Mark same occurrence back to pending
+    response = client.put(
+        "/memory/mem_recur_toggle",
+        json={"event_status": "pending", "occurrence_date": "2026-04-07"},
+    )
+    assert response.status_code == 200
+    record = db.get("mem_recur_toggle")
+    assert "2026-04-07" not in record.metadata["completed_occurrences"]
+
+
+def test_update_event_datetime(client, db, vector_store):
+    future = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_dt_upd",
+        category=MemoryCategory.EVENT,
+        title="Meeting",
+        content="Moved",
+        event_fields=EventFields(datetime=future, status="pending"),
+    )
+    new_dt = (datetime.now(UTC) + timedelta(days=5)).isoformat()
+    response = client.put(
+        "/memory/mem_dt_upd",
+        json={"event_datetime": new_dt},
+    )
+    assert response.status_code == 200
+    record = db.get("mem_dt_upd")
+    assert new_dt[:10] in record.event_fields.datetime
