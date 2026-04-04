@@ -140,6 +140,40 @@ This starts:
 - The internal processing queue
 - The pending memory cleanup task
 
+### CLI
+
+After installation, the `bearmemori` command is available as an entry point. It provides server management and a JSON-output client for all API operations — designed for scripting and LLM tool use.
+
+**Start the server:**
+
+```bash
+bearmemori serve                             # Uses settings from .env
+bearmemori serve --port 8100 --no-telegram   # Override port, skip Telegram bot
+```
+
+**Client commands** (talk to a running server, output JSON):
+
+```bash
+bearmemori health
+bearmemori search "dentist appointment" --category event --top-k 5
+bearmemori list --category profile --needs-review false --limit 20
+bearmemori get <id>
+bearmemori create --title "Meeting" --content "..." --category event --tags "work,q2" --importance 7
+bearmemori update <id> --needs-review false
+bearmemori delete <id>
+bearmemori briefing --event-days 7
+bearmemori events --days 14
+bearmemori triage --conversation '[{"role":"user","content":"..."}]'
+```
+
+Use `--url` to target a non-default server:
+
+```bash
+bearmemori --url http://homelab:8100 health
+```
+
+Errors are written to stderr as JSON with exit code 1.
+
 ### Run with Docker
 
 ```bash
@@ -218,6 +252,7 @@ BearMemori is a drop-in replacement for teleBearAI's memory service. To switch:
 bearmemori/
   __main__.py          # Entry point
   app.py               # Application factory and wiring
+  cli.py               # CLI entry point (serve + client commands)
   config.py            # Settings (pydantic-settings, loaded from .env)
   api/
     routes.py          # FastAPI endpoints
