@@ -719,3 +719,23 @@ def test_confirm_with_source_chat_id(client, db):
     assert record.source.chat_id == "46646397"
     assert record.source.platform == "telegram"
     assert record.metadata["source_chat_id"] == "46646397"
+
+
+def test_update_event_status(client, db, vector_store):
+    future = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+    _seed_memory(
+        db,
+        vector_store,
+        id="mem_evt_upd",
+        category=MemoryCategory.REMINDER,
+        title="Call dentist",
+        content="Schedule cleaning",
+        event_fields=EventFields(datetime=future, status="pending"),
+    )
+    response = client.put(
+        "/memory/mem_evt_upd",
+        json={"event_status": "done"},
+    )
+    assert response.status_code == 200
+    record = db.get("mem_evt_upd")
+    assert record.event_fields.status == "done"
