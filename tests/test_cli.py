@@ -105,3 +105,41 @@ class TestHealthCommand:
 
             code = cmd_health("http://localhost:8100")
             assert code == 1
+
+
+class TestGetCommand:
+    def test_parse_get(self):
+        parser = build_parser()
+        args = parser.parse_args(["get", "mem_abc123"])
+        assert args.command == "get"
+        assert args.id == "mem_abc123"
+
+    def test_get_success(self):
+        record = {"id": "mem_abc123", "title": "Test", "content": "Hello"}
+        with patch("bearmemori.cli.api_request", return_value=record):
+            captured = StringIO()
+            with patch("sys.stdout", captured):
+                from bearmemori.cli import cmd_get
+
+                code = cmd_get("http://localhost:8100", "mem_abc123")
+            assert json.loads(captured.getvalue()) == record
+            assert code == 0
+
+
+class TestBriefingCommand:
+    def test_parse_briefing(self):
+        parser = build_parser()
+        args = parser.parse_args(["briefing", "--event-days", "14"])
+        assert args.command == "briefing"
+        assert args.event_days == 14
+
+    def test_briefing_success(self):
+        data = {"due_now": {"count": 0}, "total_memories": 42}
+        with patch("bearmemori.cli.api_request", return_value=data):
+            captured = StringIO()
+            with patch("sys.stdout", captured):
+                from bearmemori.cli import cmd_briefing
+
+                code = cmd_briefing("http://localhost:8100", event_days=7)
+            assert json.loads(captured.getvalue()) == data
+            assert code == 0

@@ -67,6 +67,23 @@ def cmd_health(base_url: str) -> int:
     return 0
 
 
+def cmd_get(base_url: str, record_id: str) -> int:
+    result = api_request(base_url, "GET", f"/memory/{record_id}")
+    if result is None:
+        return 1
+    output(result)
+    return 0
+
+
+def cmd_briefing(base_url: str, event_days: int = 7) -> int:
+    params = {"event_days": event_days}
+    result = api_request(base_url, "GET", "/memory/briefing", params=params)
+    if result is None:
+        return 1
+    output(result)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bearmemori",
@@ -78,6 +95,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("health", help="Check server health")
 
+    p_get = subparsers.add_parser("get", help="Get a memory by ID")
+    p_get.add_argument("id", help="Memory record ID")
+
+    p_briefing = subparsers.add_parser("briefing", help="Get daily briefing")
+    p_briefing.add_argument(
+        "--event-days", type=int, default=7, help="Days of upcoming events (default: 7)"
+    )
+
     return parser
 
 
@@ -88,6 +113,8 @@ def main() -> None:
 
     commands = {
         "health": lambda: cmd_health(base_url),
+        "get": lambda: cmd_get(base_url, args.id),
+        "briefing": lambda: cmd_briefing(base_url, args.event_days),
     }
 
     handler = commands.get(args.command)
