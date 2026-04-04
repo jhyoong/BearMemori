@@ -51,6 +51,32 @@ uv run ruff check .         # Lint
 uv run ruff format .        # Format
 ```
 
+## CLI
+
+After `uv sync`, the `bearmemori` command is available via the installed entry point.
+
+```bash
+bearmemori serve                        # Start server (default port from settings)
+bearmemori serve --port 8100 --host 0.0.0.0 --no-telegram
+bearmemori --url http://host:8100 health  # Global --url overrides default http://localhost:8100
+```
+
+All client commands output JSON to stdout. Errors output JSON to stderr with exit code 1. Designed for LLM tool use.
+
+| Command | Description |
+|---------|-------------|
+| `serve [--port N] [--host H] [--no-telegram]` | Start the BearMemori server |
+| `health` | Check server health |
+| `search <query> [--category C] [--top-k N]` | Semantic search |
+| `list [--category C] [--needs-review true/false] [--offset N] [--limit N]` | List memories |
+| `get <id>` | Get a memory by ID |
+| `create --title T --content C --category C [--tags t1,t2] [--importance N]` | Create a memory |
+| `update <id> [--title T] [--content C] [--category C] [--tags t1,t2] [--importance N] [--needs-review true/false]` | Update a memory |
+| `delete <id>` | Delete a memory |
+| `briefing [--event-days N]` | Daily briefing |
+| `events [--days N] [--start ISO] [--end ISO]` | Upcoming events |
+| `triage --conversation JSON [--memory-hint JSON] [--current-time ISO]` | Run triage on a conversation |
+
 ## Testing
 
 - pytest + pytest-asyncio for async tests

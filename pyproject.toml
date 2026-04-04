@@ -16,6 +16,9 @@ dependencies = [
     "python-dateutil>=2.9",
 ]
 
+[project.scripts]
+bearmemori = "bearmemori.cli:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
