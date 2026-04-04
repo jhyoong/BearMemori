@@ -7,6 +7,14 @@ import urllib.request
 from urllib.parse import urlencode
 
 
+def _parse_bool(v: str) -> bool:
+    if v.lower() in ("true", "1", "yes"):
+        return True
+    if v.lower() in ("false", "0", "no"):
+        return False
+    raise argparse.ArgumentTypeError(f"Boolean value expected, got: {v!r}")
+
+
 def get_base_url(url_override: str | None) -> str:
     if url_override:
         return url_override
@@ -217,69 +225,10 @@ def cmd_triage(
 
 def cmd_serve(port: int | None, host: str, no_telegram: bool) -> int:
     import asyncio
-    import logging
-    from typing import cast
 
-    import uvicorn
+    from bearmemori.__main__ import run_server
 
-    from bearmemori.app import Application, create_application
-    from bearmemori.config import Settings
-    from bearmemori.events.domain import InputReceived
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-    )
-    logger = logging.getLogger("bearmemori")
-
-    async def processing_loop(application: Application) -> None:
-        logger.info("Processing loop started")
-        while True:
-            item = await application.queue_manager.get_next()
-            try:
-                followup_event = InputReceived(
-                    input_type=item.input_type,
-                    content=item.content,
-                    source_chat_id=item.source_chat_id,
-                )
-                followup_input = application.followup_manager.check_followup(followup_event)
-                if followup_input:
-                    item.context = followup_input.context
-                await application.processor.process_item(item)
-            except Exception:
-                logger.exception("Error processing item from %s", item.source_chat_id)
-
-    async def run() -> None:
-        settings = Settings()
-        actual_port = port if port is not None else settings.api_port
-        api = create_application(settings)
-        application = cast(Application, api.state.application)
-
-        asyncio.create_task(processing_loop(application))
-        asyncio.create_task(application.scheduler.run())
-        asyncio.create_task(application.cleanup_task.run())
-
-        config = uvicorn.Config(api, host=host, port=actual_port, log_level="info")
-        server = uvicorn.Server(config)
-
-        if no_telegram:
-            logger.info("BearMemori is running on %s:%d (Telegram disabled)", host, actual_port)
-            await server.serve()
-        else:
-            telegram_app = application.telegram.build()
-            async with telegram_app:
-                if telegram_app.post_init:
-                    await telegram_app.post_init(telegram_app)
-                await telegram_app.start()
-                await telegram_app.updater.start_polling()
-                logger.info("BearMemori is running on %s:%d", host, actual_port)
-                try:
-                    await server.serve()
-                finally:
-                    await telegram_app.updater.stop()
-                    await telegram_app.stop()
-
-    asyncio.run(run())
+    asyncio.run(run_server(port=port, host=host, no_telegram=no_telegram))
     return 0
 
 
@@ -309,7 +258,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_list = subparsers.add_parser("list", help="List memories")
     p_list.add_argument("--category", default=None, help="Filter by category")
-    p_list.add_argument("--needs-review", type=bool, default=None, help="Filter by needs_review")
+    p_list.add_argument(
+        "--needs-review", type=_parse_bool, default=None, help="Filter by needs_review"
+    )
     p_list.add_argument("--offset", type=int, default=0, help="Pagination offset (default: 0)")
     p_list.add_argument("--limit", type=int, default=50, help="Pagination limit (default: 50)")
 
@@ -335,7 +286,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--category", default=None, help="New category")
     p_update.add_argument("--tags", default=None, help="New comma-separated tags")
     p_update.add_argument("--importance", type=int, default=None, help="New importance 1-10")
-    p_update.add_argument("--needs-review", type=bool, default=None, help="Set needs_review flag")
+    p_update.add_argument(
+        "--needs-review", type=_parse_bool, default=None, help="Set needs_review flag"
+    )
 
     p_triage = subparsers.add_parser("triage", help="Run triage on a conversation")
     p_triage.add_argument("--conversation", required=True, help="Conversation JSON array")

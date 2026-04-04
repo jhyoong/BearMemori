@@ -1,3 +1,4 @@
+import argparse
 import json
 from io import StringIO
 from unittest.mock import MagicMock, patch
@@ -359,6 +360,34 @@ class TestMain:
 
                         main()
                     assert exc_info.value.code == 0
+
+
+class TestParseBool:
+    def test_parse_bool_true_values(self):
+        from bearmemori.cli import _parse_bool
+
+        assert _parse_bool("true") is True
+        assert _parse_bool("1") is True
+        assert _parse_bool("yes") is True
+        assert _parse_bool("True") is True
+
+    def test_parse_bool_false_values(self):
+        from bearmemori.cli import _parse_bool
+
+        assert _parse_bool("false") is False
+        assert _parse_bool("0") is False
+        assert _parse_bool("no") is False
+
+    def test_parse_bool_invalid(self):
+        from bearmemori.cli import _parse_bool
+
+        with pytest.raises(argparse.ArgumentTypeError):
+            _parse_bool("maybe")
+
+    def test_needs_review_false_parsed_correctly(self):
+        parser = build_parser()
+        args = parser.parse_args(["list", "--needs-review", "false"])
+        assert args.needs_review is False
 
 
 class TestServeCommand:

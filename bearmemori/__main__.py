@@ -34,32 +34,44 @@ async def processing_loop(application) -> None:
             logger.exception("Error processing item from %s", item.source_chat_id)
 
 
-async def main() -> None:
+async def run_server(
+    port: int | None = None,
+    host: str = "0.0.0.0",
+    no_telegram: bool = False,
+) -> None:
     settings = Settings()
+    actual_port = port if port is not None else settings.api_port
     api = create_application(settings)
     application = cast(Application, api.state.application)
-
-    telegram_app = application.telegram.build()
 
     asyncio.create_task(processing_loop(application))
     asyncio.create_task(application.scheduler.run())
     asyncio.create_task(application.cleanup_task.run())
 
-    config = uvicorn.Config(api, host="0.0.0.0", port=settings.api_port, log_level="info")
+    config = uvicorn.Config(api, host=host, port=actual_port, log_level="info")
     server = uvicorn.Server(config)
 
-    async with telegram_app:
-        if telegram_app.post_init:
-            await telegram_app.post_init(telegram_app)
-        await telegram_app.start()
-        await telegram_app.updater.start_polling()
-        logger.info("BearMemori is running on port %d", settings.api_port)
+    if no_telegram:
+        logger.info("BearMemori is running on %s:%d (Telegram disabled)", host, actual_port)
+        await server.serve()
+    else:
+        telegram_app = application.telegram.build()
+        async with telegram_app:
+            if telegram_app.post_init:
+                await telegram_app.post_init(telegram_app)
+            await telegram_app.start()
+            await telegram_app.updater.start_polling()
+            logger.info("BearMemori is running on %s:%d", host, actual_port)
 
-        try:
-            await server.serve()
-        finally:
-            await telegram_app.updater.stop()
-            await telegram_app.stop()
+            try:
+                await server.serve()
+            finally:
+                await telegram_app.updater.stop()
+                await telegram_app.stop()
+
+
+async def main() -> None:
+    await run_server()
 
 
 if __name__ == "__main__":
