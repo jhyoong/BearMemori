@@ -11,7 +11,6 @@ from bearmemori.api.schemas import (
     BulkUpdateRequest,
     ConfirmRequest,
     CreateMemoryRequest,
-    SearchRequest,
     TriageRequest,
     UpdateMemoryRequest,
 )
@@ -133,12 +132,12 @@ def create_app(
         logger.info("Confirmed memory: %s -> %s", request.pending_id, record_id)
         return {"record_id": record_id, "status": "confirmed"}
 
-    @app.post("/memory/search")
-    def search_memories(request: SearchRequest):
+    @app.get("/memory/search")
+    def search_memories(query: str, category: str | None = None, top_k: int = 5):
         results = vector_store.search(
-            query=request.query,
-            top_k=request.top_k,
-            category=request.category,
+            query=query,
+            top_k=top_k,
+            category=category,
         )
         return {"results": results}
 

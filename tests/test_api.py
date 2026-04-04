@@ -105,7 +105,7 @@ def test_delete_memory(client, db, vector_store):
 
 def test_search(client, db, vector_store):
     _seed_memory(db, vector_store)
-    r = client.post("/memory/search", json={"query": "coffee", "top_k": 5})
+    r = client.get("/memory/search", params={"query": "coffee", "top_k": 5})
     assert r.status_code == 200
     assert "results" in r.json()
 

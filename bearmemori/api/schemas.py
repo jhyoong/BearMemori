@@ -14,12 +14,6 @@ class ConfirmRequest(BaseModel):
     source_chat_id: str | None = None
 
 
-class SearchRequest(BaseModel):
-    query: str
-    category: str | None = None
-    top_k: int = 5
-
-
 class UpdateMemoryRequest(BaseModel):
     title: str | None = None
     content: str | None = None
