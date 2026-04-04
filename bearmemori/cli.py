@@ -124,6 +124,97 @@ def cmd_events(base_url: str, days: int, start: str | None, end: str | None) -> 
     return 0
 
 
+def cmd_create(
+    base_url: str,
+    title: str,
+    content: str,
+    category: str,
+    tags: str | None,
+    importance: int,
+) -> int:
+    body: dict = {
+        "title": title,
+        "content": content,
+        "category": category,
+        "importance": importance,
+    }
+    if tags:
+        body["tags"] = [t.strip() for t in tags.split(",")]
+    result = api_request(base_url, "POST", "/memory/create", body=body)
+    if result is None:
+        return 1
+    output(result)
+    return 0
+
+
+def cmd_delete(base_url: str, record_id: str) -> int:
+    result = api_request(base_url, "DELETE", f"/memory/{record_id}")
+    if result is None:
+        return 1
+    output(result)
+    return 0
+
+
+def cmd_update(
+    base_url: str,
+    record_id: str,
+    title: str | None,
+    content: str | None,
+    category: str | None,
+    tags: str | None,
+    importance: int | None,
+    needs_review: bool | None,
+) -> int:
+    body: dict = {}
+    if title is not None:
+        body["title"] = title
+    if content is not None:
+        body["content"] = content
+    if category is not None:
+        body["category"] = category
+    if tags is not None:
+        body["tags"] = [t.strip() for t in tags.split(",")]
+    if importance is not None:
+        body["importance"] = importance
+    if needs_review is not None:
+        body["needs_review"] = needs_review
+    if not body:
+        print(json.dumps({"error": "No updates provided"}), file=sys.stderr)
+        return 1
+    result = api_request(base_url, "PUT", f"/memory/{record_id}", body=body)
+    if result is None:
+        return 1
+    output(result)
+    return 0
+
+
+def cmd_triage(
+    base_url: str,
+    conversation: str,
+    memory_hint: str | None,
+    current_time: str | None,
+) -> int:
+    try:
+        conv_data = json.loads(conversation)
+    except json.JSONDecodeError as e:
+        print(json.dumps({"error": f"Invalid JSON for conversation: {e}"}), file=sys.stderr)
+        return 1
+    body: dict = {"conversation": conv_data}
+    if memory_hint:
+        try:
+            body["memory_hint"] = json.loads(memory_hint)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"error": f"Invalid JSON for memory_hint: {e}"}), file=sys.stderr)
+            return 1
+    if current_time:
+        body["current_time"] = current_time
+    result = api_request(base_url, "POST", "/memory/triage", body=body)
+    if result is None:
+        return 1
+    output(result)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bearmemori",
@@ -159,6 +250,30 @@ def build_parser() -> argparse.ArgumentParser:
     p_events.add_argument("--start", default=None, help="Range start datetime (ISO format)")
     p_events.add_argument("--end", default=None, help="Range end datetime (ISO format)")
 
+    p_create = subparsers.add_parser("create", help="Create a memory")
+    p_create.add_argument("--title", required=True, help="Memory title")
+    p_create.add_argument("--content", required=True, help="Memory content")
+    p_create.add_argument("--category", required=True, help="Memory category")
+    p_create.add_argument("--tags", default=None, help="Comma-separated tags")
+    p_create.add_argument("--importance", type=int, default=5, help="Importance 1-10 (default: 5)")
+
+    p_delete = subparsers.add_parser("delete", help="Delete a memory")
+    p_delete.add_argument("id", help="Memory record ID")
+
+    p_update = subparsers.add_parser("update", help="Update a memory")
+    p_update.add_argument("id", help="Memory record ID")
+    p_update.add_argument("--title", default=None, help="New title")
+    p_update.add_argument("--content", default=None, help="New content")
+    p_update.add_argument("--category", default=None, help="New category")
+    p_update.add_argument("--tags", default=None, help="New comma-separated tags")
+    p_update.add_argument("--importance", type=int, default=None, help="New importance 1-10")
+    p_update.add_argument("--needs-review", type=bool, default=None, help="Set needs_review flag")
+
+    p_triage = subparsers.add_parser("triage", help="Run triage on a conversation")
+    p_triage.add_argument("--conversation", required=True, help="Conversation JSON array")
+    p_triage.add_argument("--memory-hint", default=None, help="Memory hint JSON object")
+    p_triage.add_argument("--current-time", default=None, help="Current time (ISO format)")
+
     return parser
 
 
@@ -176,6 +291,23 @@ def main() -> None:
             base_url, args.category, args.needs_review, args.offset, args.limit
         ),
         "events": lambda: cmd_events(base_url, args.days, args.start, args.end),
+        "create": lambda: cmd_create(
+            base_url, args.title, args.content, args.category, args.tags, args.importance
+        ),
+        "delete": lambda: cmd_delete(base_url, args.id),
+        "update": lambda: cmd_update(
+            base_url,
+            args.id,
+            args.title,
+            args.content,
+            args.category,
+            args.tags,
+            args.importance,
+            args.needs_review,
+        ),
+        "triage": lambda: cmd_triage(
+            base_url, args.conversation, args.memory_hint, args.current_time
+        ),
     }
 
     handler = commands.get(args.command)

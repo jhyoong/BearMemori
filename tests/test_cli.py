@@ -214,3 +214,136 @@ class TestEventsCommand:
 
                 code = cmd_events("http://localhost:8100", days=7, start=None, end=None)
             assert code == 0
+
+
+class TestCreateCommand:
+    def test_parse_create(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "create",
+                "--title",
+                "Dentist",
+                "--content",
+                "At 3pm",
+                "--category",
+                "event",
+                "--tags",
+                "health,appointment",
+                "--importance",
+                "7",
+            ]
+        )
+        assert args.command == "create"
+        assert args.title == "Dentist"
+        assert args.content == "At 3pm"
+        assert args.category == "event"
+        assert args.tags == "health,appointment"
+        assert args.importance == 7
+
+    def test_create_success(self):
+        data = {"record_id": "mem_abc", "status": "created"}
+        with patch("bearmemori.cli.api_request", return_value=data) as mock_req:
+            captured = StringIO()
+            with patch("sys.stdout", captured):
+                from bearmemori.cli import cmd_create
+
+                code = cmd_create(
+                    "http://localhost:8100",
+                    title="Dentist",
+                    content="At 3pm",
+                    category="event",
+                    tags="health,appointment",
+                    importance=7,
+                )
+            mock_req.assert_called_once_with(
+                "http://localhost:8100",
+                "POST",
+                "/memory/create",
+                body={
+                    "title": "Dentist",
+                    "content": "At 3pm",
+                    "category": "event",
+                    "tags": ["health", "appointment"],
+                    "importance": 7,
+                },
+            )
+            assert code == 0
+
+
+class TestDeleteCommand:
+    def test_parse_delete(self):
+        parser = build_parser()
+        args = parser.parse_args(["delete", "mem_abc123"])
+        assert args.command == "delete"
+        assert args.id == "mem_abc123"
+
+    def test_delete_success(self):
+        data = {"status": "deleted"}
+        with patch("bearmemori.cli.api_request", return_value=data):
+            captured = StringIO()
+            with patch("sys.stdout", captured):
+                from bearmemori.cli import cmd_delete
+
+                code = cmd_delete("http://localhost:8100", "mem_abc123")
+            assert code == 0
+
+
+class TestUpdateCommand:
+    def test_parse_update(self):
+        parser = build_parser()
+        args = parser.parse_args(["update", "mem_abc", "--title", "New title"])
+        assert args.command == "update"
+        assert args.id == "mem_abc"
+        assert args.title == "New title"
+
+    def test_update_success(self):
+        data = {"status": "updated"}
+        with patch("bearmemori.cli.api_request", return_value=data) as mock_req:
+            captured = StringIO()
+            with patch("sys.stdout", captured):
+                from bearmemori.cli import cmd_update
+
+                code = cmd_update(
+                    "http://localhost:8100",
+                    "mem_abc",
+                    title="New title",
+                    content=None,
+                    category=None,
+                    tags=None,
+                    importance=None,
+                    needs_review=None,
+                )
+            mock_req.assert_called_once_with(
+                "http://localhost:8100",
+                "PUT",
+                "/memory/mem_abc",
+                body={"title": "New title"},
+            )
+            assert code == 0
+
+
+class TestTriageCommand:
+    def test_parse_triage(self):
+        parser = build_parser()
+        conv = '[{"role": "user", "content": "Remember my dentist is at 3pm"}]'
+        args = parser.parse_args(["triage", "--conversation", conv])
+        assert args.command == "triage"
+        assert args.conversation == conv
+
+    def test_triage_success(self):
+        data = {"should_save": True, "pending_id": "p_123"}
+        with patch("bearmemori.cli.api_request", return_value=data) as mock_req:
+            captured = StringIO()
+            with patch("sys.stdout", captured):
+                from bearmemori.cli import cmd_triage
+
+                code = cmd_triage(
+                    "http://localhost:8100",
+                    conversation='[{"role": "user", "content": "test"}]',
+                    memory_hint=None,
+                    current_time=None,
+                )
+            assert code == 0
+            body = mock_req.call_args.kwargs["body"]
+            assert body["conversation"] == [{"role": "user", "content": "test"}]
