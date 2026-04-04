@@ -389,8 +389,12 @@ def create_app(
             else:
                 # Update event fields directly
                 updated_record.event_fields = EventFields(
-                    datetime=event_datetime or updated_record.event_fields.datetime,
-                    status=event_status or updated_record.event_fields.status,
+                    datetime=event_datetime
+                    if event_datetime is not None
+                    else updated_record.event_fields.datetime,
+                    status=event_status
+                    if event_status is not None
+                    else updated_record.event_fields.status,
                     recurrence=event_recurrence
                     if event_recurrence is not None
                     else updated_record.event_fields.recurrence,
