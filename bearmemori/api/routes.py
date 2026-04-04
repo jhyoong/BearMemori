@@ -378,9 +378,7 @@ def create_app(
         if has_event_updates and updated_record.event_fields is not None:
             if occurrence_date is not None:
                 # Toggle specific occurrence in completed_occurrences metadata
-                completed = list(
-                    updated_record.metadata.get("completed_occurrences", [])
-                )
+                completed = list(updated_record.metadata.get("completed_occurrences", []))
                 if event_status == "done" and occurrence_date not in completed:
                     completed.append(occurrence_date)
                 elif event_status == "pending" and occurrence_date in completed:

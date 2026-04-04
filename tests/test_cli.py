@@ -334,11 +334,16 @@ class TestUpdateCommand:
 
     def test_parse_update_occurrence_date(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "update", "mem_abc",
-            "--event-status", "done",
-            "--occurrence-date", "2026-04-07",
-        ])
+        args = parser.parse_args(
+            [
+                "update",
+                "mem_abc",
+                "--event-status",
+                "done",
+                "--occurrence-date",
+                "2026-04-07",
+            ]
+        )
         assert args.event_status == "done"
         assert args.occurrence_date == "2026-04-07"
 

@@ -307,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--event-datetime", default=None, help="New event datetime (ISO 8601)")
     p_update.add_argument("--event-recurrence", default=None, help="New recurrence rule (RRULE)")
     p_update.add_argument(
-        "--occurrence-date", default=None, help="Specific occurrence date (YYYY-MM-DD) for recurring events"
+        "--occurrence-date", default=None, help="Occurrence date (YYYY-MM-DD) for recurring events"
     )
 
     p_triage = subparsers.add_parser("triage", help="Run triage on a conversation")
