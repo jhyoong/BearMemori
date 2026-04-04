@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.9] - 2026-04-04
+
+### Added
+
+- **Calendar webapp**: Month and week calendar views at `/webapp/calendar` with HTMX-powered navigation; shows all event/task/reminder occurrences including recurring events
+- **RRULE support**: Full recurring event expansion via `dateutil.rrule`; RRULE form builder in create/edit memory pages; supports daily, weekly, monthly, yearly, and custom recurrence with UNTIL/COUNT
+- **Recurring reminder handling**: Scheduler now tracks per-occurrence completions in `metadata.completed_occurrences` instead of marking recurring records done
+- **Briefing endpoint**: `GET /memory/briefing` returns a summary of recent memories, upcoming events, and review queue count for system prompt injection
+- **Recent memories endpoint**: `GET /memory/recent` lists recently updated memories with configurable count
+- **Due events endpoint**: `GET /memory/events/due` returns events due for reminder delivery
+- **Pagination**: `GET /memory/list` and webapp memory list now support `offset` and `limit` query parameters
+- **event_fields on create**: `POST /memory/create` now accepts `event_fields` for creating events/tasks/reminders directly
+- **Database count methods**: `count_all()`, `count_needs_review()`, `count_recent()`, `list_recently_updated()` on `MemoryDatabase`
+- **get_events_in_range**: Query events within a datetime range from `MemoryDatabase`
+- **Extended upcoming events**: `GET /memory/events/upcoming` now accepts `start` and `end` parameters with occurrence expansion
+
+### Changed
+
+- **Triage confidence override**: Low-confidence triage results now fall back to full triage instead of being discarded
+- **Triage prompt hardened**: Prompt biased toward saving memories over requesting follow-ups
+- **Triage API response**: Now includes `reason` field explaining the triage decision
+- **Telegram command scopes**: Stale bot command scopes (AllPrivateChats, AllGroupChats, AllChatAdministrators) are now cleared on startup to prevent conflicts from reused bot tokens
+
+### Fixed
+
+- **Triage reason codes**: `_run_full_triage` now properly populates reason codes in the response
+- **Telegram post_init**: Manually invoked after async context manager enter since PTB v22 no longer calls it from `initialize()`
+- **Non-recurring occurrence toggling**: Fixed toggling of individual non-recurring occurrences and naive datetime handling
+- **UNTIL date format**: Fixed RRULE UNTIL date formatting for compatibility
+
+---
+
 ## [0.3.8] - 2026-03-27
 
 ### Added
@@ -205,6 +237,7 @@ Initial release of BearMemori, a personal memory management system.
 - Docker Compose full-stack deployment
 - Test suite with pytest and pytest-asyncio
 
+[0.3.9]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.9
 [0.3.8]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.8
 [0.3.7]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.7
 [0.3.6]: https://github.com/jhyoong/BearMemori/releases/tag/v0.3.6

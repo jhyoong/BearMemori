@@ -41,7 +41,7 @@ def create_app(
     user_timezone: str = "UTC",
     image_storage_dir: str = "",
 ) -> FastAPI:
-    app = FastAPI(title="BearMemori", version="0.3.8")
+    app = FastAPI(title="BearMemori", version="0.3.9")
 
     def _delete_image(record_id: str) -> None:
         if not image_storage_dir:

@@ -74,9 +74,12 @@ FastAPI REST API (:8100)
 | `/memory/confirm` | POST | Confirm pending memory to permanent storage |
 | `/memory/search` | GET | Semantic search with optional category filter |
 | `/memory/retrieve` | GET | Hybrid retrieval (semantic + upcoming events) |
-| `/memory/list` | GET | List memories, optional category and `needs_review` filter |
-| `/memory/events/upcoming` | GET | Upcoming events within day window |
-| `/memory/create` | POST | Create memory directly (bypass LLM extraction) |
+| `/memory/list` | GET | List memories, optional category and `needs_review` filter, supports pagination (`offset`, `limit`) |
+| `/memory/recent` | GET | List recently updated memories |
+| `/memory/briefing` | GET | Generate a briefing with recent memories, upcoming events, and review queue summary |
+| `/memory/events/upcoming` | GET | Upcoming events within day window, supports `start`/`end` params |
+| `/memory/events/due` | GET | Events due for reminder delivery |
+| `/memory/create` | POST | Create memory directly (bypass LLM extraction), supports `event_fields` |
 | `/memory/bulk/delete` | POST | Delete multiple memories by ID list |
 | `/memory/bulk/update` | POST | Bulk update fields on multiple memories |
 | `/memory/{id}` | GET | Get a single memory |
@@ -286,7 +289,7 @@ tests/
 
 ## Version
 
-Current version: 0.3.8
+Current version: 0.3.9
 
 ## License
 
