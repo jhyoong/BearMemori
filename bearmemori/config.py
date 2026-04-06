@@ -30,3 +30,4 @@ class Settings(BaseSettings):
     importance_low_threshold: int = 2
     importance_relevance_weight: float = 0.5
     importance_weight: float = 0.5
+    api_only_mode: bool = False
