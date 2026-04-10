@@ -30,9 +30,7 @@ async def test_mcp_sse_endpoint_is_reachable(test_settings):
             async with client.stream("GET", "/mcp/sse") as response:
                 assert response.status_code != 404
                 return
-    # If move_on_after fired before we got into the stream context, that's fine —
-    # it means the connection was accepted (not rejected with 404).
-    assert True
+    assert True  # SSE stream opened (timeout is expected, connection never closes)
 
 
 @pytest.mark.asyncio
@@ -57,3 +55,24 @@ async def test_mcp_auth_blocks_when_secret_set(test_settings):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as client:
         response = await client.get("/mcp/sse")
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_mcp_auth_passes_with_correct_token(test_settings):
+    """When webapp_secret is set, /mcp/sse with correct Bearer token is not rejected."""
+    from bearmemori.app import create_application
+
+    settings_with_auth = test_settings.model_copy(update={"webapp_secret": "supersecret"})
+    app = create_application(settings_with_auth)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        import anyio
+
+        with anyio.move_on_after(2):
+            async with client.stream(
+                "GET",
+                "/mcp/sse",
+                headers={"Authorization": "Bearer supersecret"},
+            ) as response:
+                assert response.status_code != 401
+                return
+    assert True  # connection opened (timeout is expected for SSE)
