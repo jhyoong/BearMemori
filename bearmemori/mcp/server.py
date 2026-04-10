@@ -244,6 +244,9 @@ def create_mcp_app(
         except ValueError:
             return {"error": f"Invalid category: {category}"}
 
+        if not (1 <= importance <= 10):
+            return {"error": "importance must be between 1 and 10"}
+
         event_fields = None
         if event_datetime is not None:
             event_fields = EventFields(
@@ -312,11 +315,16 @@ def create_mcp_app(
         if needs_review is not None:
             update_data["needs_review"] = needs_review
         if importance is not None:
+            if not (1 <= importance <= 10):
+                return {"error": "importance must be between 1 and 10"}
             update_data["importance"] = importance
 
         has_event_updates = any(
             v is not None for v in [event_status, event_datetime, event_recurrence]
         )
+
+        if not update_data and not has_event_updates and occurrence_date is None:
+            return {"error": "No updates provided"}
 
         if has_event_updates and record.event_fields is None:
             return {"error": "Cannot set event fields on a non-event memory"}
@@ -358,6 +366,14 @@ def create_mcp_app(
 
     @mcp.tool(description="Delete a memory by ID. This is permanent.")
     def delete_memory(record_id: str) -> dict:
+        if settings.image_storage_dir:
+            from pathlib import Path
+
+            record_to_delete = db.get(record_id)
+            if record_to_delete and record_to_delete.image_path:
+                file_path = Path(settings.image_storage_dir) / record_to_delete.image_path
+                if file_path.exists():
+                    file_path.unlink()
         deleted = db.delete(record_id)
         if not deleted:
             return {"error": f"Memory not found: {record_id}"}
