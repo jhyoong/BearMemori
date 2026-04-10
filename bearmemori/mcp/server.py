@@ -132,7 +132,10 @@ def create_mcp_app(
 
         limit = min(limit, 200)
         if category is not None:
-            cat = MemoryCategory(category)
+            try:
+                cat = MemoryCategory(category)
+            except ValueError:
+                return {"error": f"Invalid category: {category}"}
             records = db.list_by_category(cat, offset=offset, limit=limit)
             total = db.count_by_category(cat)
         else:
@@ -196,8 +199,11 @@ def create_mcp_app(
         from bearmemori.core.recurrence import expand_occurrences
 
         if start and end:
-            start_dt = datetime.fromisoformat(start)
-            end_dt = datetime.fromisoformat(end)
+            try:
+                start_dt = datetime.fromisoformat(start)
+                end_dt = datetime.fromisoformat(end)
+            except ValueError:
+                return {"error": "Invalid start or end datetime format"}
             records = db.get_events_in_range(start_dt, end_dt)
             occurrences = []
             for r in records:
