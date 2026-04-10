@@ -25,6 +25,7 @@ from bearmemori.events.domain import (
 )
 from bearmemori.interfaces.telegram import TelegramInterface
 from bearmemori.llm.client import LLMClient
+from bearmemori.mcp.server import create_mcp_app
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
@@ -183,6 +184,9 @@ def create_application(settings: Settings) -> FastAPI:
         @api.get("/", include_in_schema=False)
         async def root_redirect():
             return RedirectResponse(url="/webapp/login")
+
+    mcp_asgi = create_mcp_app(db=db, vector_store=vector_store, settings=settings)
+    api.mount("/mcp", mcp_asgi)
 
     # Store application in app state for access by __main__.py
     api.state.application = application

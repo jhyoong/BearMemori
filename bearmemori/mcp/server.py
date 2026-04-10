@@ -33,8 +33,12 @@ def create_mcp_app(
 ):
     """Build and return the MCP ASGI sub-app."""
     from mcp.server.fastmcp import FastMCP
+    from mcp.server.transport_security import TransportSecuritySettings
 
-    mcp = FastMCP("BearMemori")
+    mcp = FastMCP(
+        "BearMemori",
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
 
     @mcp.tool(
         description=(
