@@ -12,14 +12,13 @@ class Settings(BaseSettings):
     def _require_telegram_unless_api_only(self) -> "Settings":
         if not self.api_only_mode:
             if not self.telegram_bot_token:
-                raise ValueError(
-                    "TELEGRAM_BOT_TOKEN is required when API_ONLY_MODE is not set"
-                )
+                raise ValueError("TELEGRAM_BOT_TOKEN is required when API_ONLY_MODE is not set")
             if self.telegram_allowed_user_id == 0:
                 raise ValueError(
                     "TELEGRAM_ALLOWED_USER_ID is required when API_ONLY_MODE is not set"
                 )
         return self
+
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "llama3"
     llm_api_key: str = "not-needed"
