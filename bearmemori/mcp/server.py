@@ -215,6 +215,155 @@ def create_mcp_app(
         events = db.get_upcoming_events(days=days)
         return {"events": [e.model_dump(mode="json") for e in events]}
 
+    @mcp.tool(
+        description=(
+            "Create a new memory. "
+            "category: one of profile, general, event, location, task, reminder. "
+            "importance: 1-10 (default 5). "
+            "For events, provide event_datetime as ISO 8601 string. "
+            "event_recurrence: e.g. 'weekly', 'monthly', 'yearly' (optional)."
+        )
+    )
+    def create_memory(
+        title: str,
+        content: str,
+        category: str,
+        tags: list[str] | None = None,
+        importance: int = 5,
+        event_datetime: str | None = None,
+        event_status: str = "pending",
+        event_recurrence: str | None = None,
+    ) -> dict:
+        import uuid
+        from datetime import UTC, datetime
+
+        from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
+
+        try:
+            cat = MemoryCategory(category)
+        except ValueError:
+            return {"error": f"Invalid category: {category}"}
+
+        event_fields = None
+        if event_datetime is not None:
+            event_fields = EventFields(
+                datetime=event_datetime,
+                status=event_status,
+                recurrence=event_recurrence,
+            )
+        record_id = f"mem_{uuid.uuid4().hex[:12]}"
+        record = MemoryRecord(
+            id=record_id,
+            category=cat,
+            title=title,
+            content=content,
+            created_at=datetime.now(UTC),
+            tags=tags or [],
+            importance=importance,
+            needs_review=False,
+            event_fields=event_fields,
+        )
+        db.create(record)
+        vector_store.add(record)
+        return {"record_id": record_id, "status": "created"}
+
+    @mcp.tool(
+        description=(
+            "Update an existing memory by ID. All fields are optional — "
+            "only provided fields are changed. "
+            "category: one of profile, general, event, location, task, reminder. "
+            "event_status: pending or done. "
+            "occurrence_date: for recurring events, mark a specific occurrence "
+            "(ISO date string) as done/pending. "
+            "Requires event_status when provided."
+        )
+    )
+    def update_memory(
+        record_id: str,
+        title: str | None = None,
+        content: str | None = None,
+        category: str | None = None,
+        tags: list[str] | None = None,
+        needs_review: bool | None = None,
+        importance: int | None = None,
+        event_status: str | None = None,
+        event_datetime: str | None = None,
+        event_recurrence: str | None = None,
+        occurrence_date: str | None = None,
+    ) -> dict:
+        from bearmemori.storage.models import EventFields, MemoryCategory
+
+        record = db.get(record_id)
+        if record is None:
+            return {"error": f"Memory not found: {record_id}"}
+
+        update_data: dict = {}
+        if title is not None:
+            update_data["title"] = title
+        if content is not None:
+            update_data["content"] = content
+        if category is not None:
+            try:
+                update_data["category"] = MemoryCategory(category)
+            except ValueError:
+                return {"error": f"Invalid category: {category}"}
+        if tags is not None:
+            update_data["tags"] = tags
+        if needs_review is not None:
+            update_data["needs_review"] = needs_review
+        if importance is not None:
+            update_data["importance"] = importance
+
+        has_event_updates = any(
+            v is not None for v in [event_status, event_datetime, event_recurrence]
+        )
+
+        if has_event_updates and record.event_fields is None:
+            return {"error": "Cannot set event fields on a non-event memory"}
+
+        if occurrence_date is not None and event_status is None:
+            return {"error": "occurrence_date requires event_status"}
+
+        if occurrence_date is not None and (
+            record.event_fields is None or not record.event_fields.recurrence
+        ):
+            return {"error": "occurrence_date is only valid for recurring events"}
+
+        updated_record = record.model_copy(update=update_data) if update_data else record
+
+        if has_event_updates and updated_record.event_fields is not None:
+            if occurrence_date is not None:
+                completed = list(updated_record.metadata.get("completed_occurrences", []))
+                if event_status == "done" and occurrence_date not in completed:
+                    completed.append(occurrence_date)
+                elif event_status == "pending" and occurrence_date in completed:
+                    completed.remove(occurrence_date)
+                updated_record.metadata["completed_occurrences"] = completed
+            else:
+                updated_record.event_fields = EventFields(
+                    datetime=event_datetime
+                    if event_datetime is not None
+                    else updated_record.event_fields.datetime,
+                    status=event_status
+                    if event_status is not None
+                    else updated_record.event_fields.status,
+                    recurrence=event_recurrence
+                    if event_recurrence is not None
+                    else updated_record.event_fields.recurrence,
+                )
+
+        db.update(updated_record)
+        vector_store.update(updated_record)
+        return {"status": "updated"}
+
+    @mcp.tool(description="Delete a memory by ID. This is permanent.")
+    def delete_memory(record_id: str) -> dict:
+        deleted = db.delete(record_id)
+        if not deleted:
+            return {"error": f"Memory not found: {record_id}"}
+        vector_store.delete(record_id)
+        return {"status": "deleted"}
+
     app = mcp.sse_app()
     if settings.webapp_secret:
         app = BearerAuthMiddleware(app, settings.webapp_secret)
