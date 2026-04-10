@@ -46,7 +46,7 @@ class Application:
         followup_manager: FollowUpManager,
         confirm_handler: ConfirmHandler,
         cleanup_task: PendingCleanupTask,
-        telegram: TelegramInterface,
+        telegram: TelegramInterface | None,
         settings: Settings,
         scheduler: ReminderScheduler,
     ) -> None:
@@ -103,14 +103,21 @@ def create_application(settings: Settings) -> FastAPI:
         pending_store=pending_store,
         interval_seconds=settings.cleanup_interval_seconds,
     )
-    telegram = TelegramInterface(
-        bus=bus,
-        token=settings.telegram_bot_token,
-        allowed_user_id=settings.telegram_allowed_user_id,
-        db=db,
-        image_storage_dir=settings.image_storage_dir,
-        vector_store=vector_store,
-    )
+    # Telegram interface and event wiring (skipped in API-only mode)
+    telegram: TelegramInterface | None = None
+    if not settings.api_only_mode:
+        telegram = TelegramInterface(
+            bus=bus,
+            token=settings.telegram_bot_token,
+            allowed_user_id=settings.telegram_allowed_user_id,
+            db=db,
+            image_storage_dir=settings.image_storage_dir,
+            vector_store=vector_store,
+        )
+        bus.on(MemoryPending, telegram.handle_memory_pending)
+        bus.on(SendMessage, telegram.handle_send_message)
+        bus.on(ReminderDue, telegram.handle_reminder_due)
+
     scheduler = ReminderScheduler(
         bus=bus,
         db=db,
@@ -119,11 +126,8 @@ def create_application(settings: Settings) -> FastAPI:
 
     bus.on(InputReceived, queue_manager.handle_input)
     bus.on(FollowUpRequired, followup_manager.handle_followup_required)
-    bus.on(MemoryPending, telegram.handle_memory_pending)
     bus.on(MemoryConfirmed, confirm_handler.handle_confirmed)
     bus.on(MemoryDiscarded, confirm_handler.handle_discarded)
-    bus.on(SendMessage, telegram.handle_send_message)
-    bus.on(ReminderDue, telegram.handle_reminder_due)
 
     application = Application(
         bus=bus,

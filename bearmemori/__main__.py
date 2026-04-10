@@ -45,16 +45,22 @@ async def run_server(
     application = cast(Application, api.state.application)
 
     asyncio.create_task(processing_loop(application))
-    asyncio.create_task(application.scheduler.run())
     asyncio.create_task(application.cleanup_task.run())
+
+    # Skip reminder scheduler in API-only mode (NanoClaw handles scheduling)
+    if not settings.api_only_mode:
+        asyncio.create_task(application.scheduler.run())
 
     config = uvicorn.Config(api, host=host, port=actual_port, log_level="info")
     server = uvicorn.Server(config)
 
-    if no_telegram:
-        logger.info("BearMemori is running on %s:%d (Telegram disabled)", host, actual_port)
+    # Skip Telegram bot in API-only mode or when explicitly disabled
+    if no_telegram or settings.api_only_mode:
+        mode = "API-only" if settings.api_only_mode else "Telegram disabled"
+        logger.info("BearMemori is running on %s:%d (%s)", host, actual_port, mode)
         await server.serve()
     else:
+        assert application.telegram is not None
         telegram_app = application.telegram.build()
         async with telegram_app:
             if telegram_app.post_init:

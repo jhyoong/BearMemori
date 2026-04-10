@@ -314,12 +314,94 @@ class TestUpdateCommand:
                     tags=None,
                     importance=None,
                     needs_review=None,
+                    event_status=None,
+                    event_datetime=None,
+                    event_recurrence=None,
+                    occurrence_date=None,
                 )
             mock_req.assert_called_once_with(
                 "http://localhost:8100",
                 "PUT",
                 "/memory/mem_abc",
                 body={"title": "New title"},
+            )
+            assert code == 0
+
+    def test_parse_update_event_status(self):
+        parser = build_parser()
+        args = parser.parse_args(["update", "mem_abc", "--event-status", "done"])
+        assert args.event_status == "done"
+
+    def test_parse_update_occurrence_date(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "update",
+                "mem_abc",
+                "--event-status",
+                "done",
+                "--occurrence-date",
+                "2026-04-07",
+            ]
+        )
+        assert args.event_status == "done"
+        assert args.occurrence_date == "2026-04-07"
+
+    def test_update_event_status_sends_to_api(self):
+        data = {"status": "updated"}
+        with patch("bearmemori.cli.api_request", return_value=data) as mock_req:
+            captured = StringIO()
+            with patch("sys.stdout", captured):
+                from bearmemori.cli import cmd_update
+
+                code = cmd_update(
+                    "http://localhost:8100",
+                    "mem_abc",
+                    title=None,
+                    content=None,
+                    category=None,
+                    tags=None,
+                    importance=None,
+                    needs_review=None,
+                    event_status="done",
+                    event_datetime=None,
+                    event_recurrence=None,
+                    occurrence_date=None,
+                )
+            mock_req.assert_called_once_with(
+                "http://localhost:8100",
+                "PUT",
+                "/memory/mem_abc",
+                body={"event_status": "done"},
+            )
+            assert code == 0
+
+    def test_update_occurrence_date_sends_to_api(self):
+        data = {"status": "updated"}
+        with patch("bearmemori.cli.api_request", return_value=data) as mock_req:
+            captured = StringIO()
+            with patch("sys.stdout", captured):
+                from bearmemori.cli import cmd_update
+
+                code = cmd_update(
+                    "http://localhost:8100",
+                    "mem_abc",
+                    title=None,
+                    content=None,
+                    category=None,
+                    tags=None,
+                    importance=None,
+                    needs_review=None,
+                    event_status="done",
+                    event_datetime=None,
+                    event_recurrence=None,
+                    occurrence_date="2026-04-07",
+                )
+            mock_req.assert_called_once_with(
+                "http://localhost:8100",
+                "PUT",
+                "/memory/mem_abc",
+                body={"event_status": "done", "occurrence_date": "2026-04-07"},
             )
             assert code == 0
 

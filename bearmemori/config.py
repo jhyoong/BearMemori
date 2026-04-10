@@ -1,11 +1,24 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
-    telegram_bot_token: str
-    telegram_allowed_user_id: int
+    telegram_bot_token: str = ""
+    telegram_allowed_user_id: int = 0
+
+    @model_validator(mode="after")
+    def _require_telegram_unless_api_only(self) -> "Settings":
+        if not self.api_only_mode:
+            if not self.telegram_bot_token:
+                raise ValueError("TELEGRAM_BOT_TOKEN is required when API_ONLY_MODE is not set")
+            if self.telegram_allowed_user_id == 0:
+                raise ValueError(
+                    "TELEGRAM_ALLOWED_USER_ID is required when API_ONLY_MODE is not set"
+                )
+        return self
+
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "llama3"
     llm_api_key: str = "not-needed"
@@ -30,3 +43,4 @@ class Settings(BaseSettings):
     importance_low_threshold: int = 2
     importance_relevance_weight: float = 0.5
     importance_weight: float = 0.5
+    api_only_mode: bool = False

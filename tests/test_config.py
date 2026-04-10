@@ -54,3 +54,12 @@ def test_image_storage_dir_default():
         telegram_allowed_user_id=1,
     )
     assert settings.image_storage_dir == "data/images"
+
+
+def test_api_only_mode_defaults_false(monkeypatch):
+    """API_ONLY_MODE should default to False for backwards compatibility."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test")
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_ID", "123")
+    monkeypatch.delenv("API_ONLY_MODE", raising=False)
+    s = Settings(_env_file=None)
+    assert s.api_only_mode is False

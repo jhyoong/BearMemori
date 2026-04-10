@@ -21,6 +21,10 @@ class UpdateMemoryRequest(BaseModel):
     tags: list[str] | None = None
     needs_review: bool | None = None
     importance: int | None = None
+    event_status: Literal["pending", "done"] | None = None
+    event_datetime: str | None = None
+    event_recurrence: str | None = None
+    occurrence_date: str | None = None
 
 
 class CreateMemoryRequest(BaseModel):

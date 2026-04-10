@@ -331,6 +331,36 @@ def create_app(
         if not update_data:
             raise HTTPException(status_code=400, detail="No updates provided")
 
+        # Extract event-specific fields before model_copy
+        event_status = update_data.pop("event_status", None)
+        event_datetime = update_data.pop("event_datetime", None)
+        event_recurrence = update_data.pop("event_recurrence", None)
+        occurrence_date = update_data.pop("occurrence_date", None)
+
+        has_event_updates = any(
+            v is not None for v in [event_status, event_datetime, event_recurrence]
+        )
+
+        if has_event_updates and record.event_fields is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot set event fields on a non-event memory",
+            )
+
+        if occurrence_date is not None and event_status is None:
+            raise HTTPException(
+                status_code=400,
+                detail="occurrence_date requires event_status",
+            )
+
+        if occurrence_date is not None and (
+            record.event_fields is None or not record.event_fields.recurrence
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="occurrence_date is only valid for recurring events",
+            )
+
         # Handle category as string to MemoryCategory enum
         if "category" in update_data and update_data["category"] is not None:
             try:
@@ -341,8 +371,33 @@ def create_app(
                     detail=f"Invalid category: {update_data['category']}",
                 )
 
-        # Update the record
-        updated_record = record.model_copy(update=update_data)
+        # Apply non-event updates
+        updated_record = record.model_copy(update=update_data) if update_data else record
+
+        # Apply event field updates
+        if has_event_updates and updated_record.event_fields is not None:
+            if occurrence_date is not None:
+                # Toggle specific occurrence in completed_occurrences metadata
+                completed = list(updated_record.metadata.get("completed_occurrences", []))
+                if event_status == "done" and occurrence_date not in completed:
+                    completed.append(occurrence_date)
+                elif event_status == "pending" and occurrence_date in completed:
+                    completed.remove(occurrence_date)
+                updated_record.metadata["completed_occurrences"] = completed
+            else:
+                # Update event fields directly
+                updated_record.event_fields = EventFields(
+                    datetime=event_datetime
+                    if event_datetime is not None
+                    else updated_record.event_fields.datetime,
+                    status=event_status
+                    if event_status is not None
+                    else updated_record.event_fields.status,
+                    recurrence=event_recurrence
+                    if event_recurrence is not None
+                    else updated_record.event_fields.recurrence,
+                )
+
         db.update(updated_record)
         vector_store.update(updated_record)
 
