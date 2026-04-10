@@ -157,7 +157,7 @@ def create_mcp_app(
             "limit": limit,
         }
 
-    @mcp.tool(description="Get a single memory by its ID (e.g. mem_abc123).")
+    @mcp.tool(description="Get a single memory by its ID (record_id: e.g. mem_abc123).")
     def get_memory(record_id: str) -> dict:
         record = db.get(record_id)
         if record is None:
@@ -279,7 +279,7 @@ def create_mcp_app(
 
     @mcp.tool(
         description=(
-            "Update an existing memory by ID. All fields are optional — "
+            "Update an existing memory by record_id. All fields are optional — "
             "only provided fields are changed. "
             "category: one of profile, general, event, location, task, reminder. "
             "event_status: pending or done. "
@@ -371,7 +371,7 @@ def create_mcp_app(
         vector_store.update(updated_record)
         return {"status": "updated"}
 
-    @mcp.tool(description="Delete a memory by ID. This is permanent.")
+    @mcp.tool(description="Delete a memory by record_id. This is permanent.")
     def delete_memory(record_id: str) -> dict:
         if settings.image_storage_dir:
             from pathlib import Path
