@@ -354,7 +354,8 @@ class LLMClient:
         )
         raw = _get_content(response.choices[0].message)
         logger.debug("Triage LLM raw output: %s", raw)
-        return extract_json(raw)
+        data = extract_json(raw)
+        return _clamp_importance(data)
 
     async def extract_triage(self, conversation_text: str, current_time: str) -> dict:
         system_prompt = _EXTRACTION_SYSTEM_TEMPLATE.format(current_time=current_time)
@@ -368,4 +369,5 @@ class LLMClient:
         )
         raw = _get_content(response.choices[0].message)
         logger.debug("Extraction LLM raw output: %s", raw)
-        return extract_json(raw)
+        data = extract_json(raw)
+        return _clamp_importance(data)
