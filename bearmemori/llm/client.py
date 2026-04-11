@@ -101,6 +101,105 @@ FOLLOWUP_SYSTEM_PROMPT = (
     "Keep your question short and direct."
 )
 
+_TRIAGE_SYSTEM_TEMPLATE = """\
+You are a memory triage agent. Given a conversation, decide if any information \
+is worth saving as a long-term memory.
+
+Current date and time: {current_time}
+When the user mentions relative times (e.g. "in 10 minutes", "tomorrow", "next week"), \
+use the current date and time above to compute the absolute ISO 8601 datetime for event_fields.
+
+Categories:
+- "profile": Stable facts about the user (preferences, identity, relationships)
+- "general": Non-time-bound useful information (prices, recommendations, facts)
+- "event": Time-bound commitments, reminders, appointments
+- "location": Places, addresses, venues the user mentions
+- "task": Action items, to-dos
+- "reminder": Triggered notifications with scheduling
+
+You MUST respond with a single valid JSON object and nothing else. No explanation, \
+no commentary, no markdown formatting.
+
+Importance (1-10 integer):
+- 1-3: Low importance (trivial facts, casual mentions)
+- 4-6: Medium importance (useful information, general preferences)
+- 7-8: High importance (key personal facts, significant events, strong preferences)
+- 9-10: Critical importance (core identity, health/safety, major life events)
+
+If the conversation contains memory-worthy information:
+{{"should_save": true, "category": "<category>", "title": "<short title>", \
+"content": "<key information>", "tags": ["tag1", "tag2"], \
+"importance": <1-10>, "event_fields": null}}
+
+For events/tasks/reminders, set event_fields to:
+{{"datetime": "ISO 8601", "status": "pending", "recurrence": null}}
+
+If nothing is worth saving:
+{{"should_save": false}}
+
+IMPORTANT: Reminders and events are always worth saving. A reminder about a
+future action (e.g., "pack my bag in 10 minutes") is valuable user
+information - do NOT treat it as trivial. Set importance 5-8 for
+reminders, 6-9 for events/tasks.
+
+When in doubt, lean toward saving. It is better to save something \
+the user can dismiss than to lose information they wanted kept.
+
+The conversation may contain information spread across multiple messages. \
+Synthesize the full conversation to extract the complete memory, not just \
+the last message.
+
+If the conversation covers multiple unrelated topics, focus on the most \
+recent topic that contains memory-worthy information.
+
+Save specific, actionable information. Skip only:
+- Greetings or small talk
+- Questions without answers
+- Truly trivial information (e.g., casual mentions without context)
+"""
+
+_EXTRACTION_SYSTEM_TEMPLATE = """\
+You are a memory extraction agent. The following conversation contains \
+information that should be saved as a long-term memory.
+
+Current date and time: {current_time}
+When the user mentions relative times (e.g. "in 10 minutes", "tomorrow", "next week"), \
+use the current date and time above to compute the absolute ISO 8601 datetime for event_fields.
+
+Extract the memory details from the conversation. You MUST respond with a \
+single valid JSON object and nothing else. No explanation, no commentary, \
+no markdown formatting.
+
+Categories:
+- "profile": Stable facts about the user (preferences, identity, relationships)
+- "general": Non-time-bound useful information (prices, recommendations, facts)
+- "event": Time-bound commitments, reminders, appointments
+- "location": Places, addresses, venues the user mentions
+- "task": Action items, to-dos
+- "reminder": Triggered notifications with scheduling
+
+Importance (1-10 integer):
+- 1-3: Low importance (trivial facts, casual mentions)
+- 4-6: Medium importance (useful information, general preferences)
+- 7-8: High importance (key personal facts, significant events, strong preferences)
+- 9-10: Critical importance (core identity, health/safety, major life events)
+
+Respond with:
+{{"category": "<category>", "title": "<short title>", \
+"content": "<key information>", "tags": ["tag1", "tag2"], \
+"importance": <1-10>, "event_fields": null}}
+
+For events/tasks/reminders, set event_fields to:
+{{"datetime": "ISO 8601", "status": "pending", "recurrence": null}}
+
+IMPORTANT: Reminders and events should have importance 5-8 for reminders, \
+6-9 for events/tasks.
+
+The conversation may contain information spread across multiple messages. \
+Synthesize the full conversation to extract the complete memory, not just \
+the last message.
+"""
+
 DESCRIBE_IMAGE_SYSTEM_PROMPT = (
     "/no_think\n"
     "You are a memory extraction assistant. "
@@ -242,3 +341,31 @@ class LLMClient:
         data = extract_json(raw)
         data = _clamp_importance(data)
         return ExtractionResult(**data)
+
+    async def triage(self, conversation_text: str, hint_text: str, current_time: str) -> dict:
+        system_prompt = _TRIAGE_SYSTEM_TEMPLATE.format(current_time=current_time)
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Conversation:\n{conversation_text}{hint_text}"},
+            ],
+            temperature=0.1,
+        )
+        raw = _get_content(response.choices[0].message)
+        logger.debug("Triage LLM raw output: %s", raw)
+        return extract_json(raw)
+
+    async def extract_triage(self, conversation_text: str, current_time: str) -> dict:
+        system_prompt = _EXTRACTION_SYSTEM_TEMPLATE.format(current_time=current_time)
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Conversation:\n{conversation_text}"},
+            ],
+            temperature=0.1,
+        )
+        raw = _get_content(response.choices[0].message)
+        logger.debug("Extraction LLM raw output: %s", raw)
+        return extract_json(raw)
