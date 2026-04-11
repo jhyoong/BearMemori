@@ -47,7 +47,9 @@ async def test_triage_should_not_save(llm):
 
 @pytest.mark.asyncio
 async def test_triage_malformed_response(llm):
-    with patch.object(llm, "triage", new_callable=AsyncMock, side_effect=json.JSONDecodeError("bad", "", 0)):
+    with patch.object(
+        llm, "triage", new_callable=AsyncMock, side_effect=json.JSONDecodeError("bad", "", 0)
+    ):
         result = await run_triage(
             [{"role": "user", "content": "test"}],
             llm=llm,
@@ -64,7 +66,11 @@ async def test_triage_with_memory_hint(llm):
         "content": "Team standup at 9am",
         "tags": ["meeting"],
         "importance": 7,
-        "event_fields": {"datetime": "2026-03-22T09:00:00", "status": "pending", "recurrence": None},
+        "event_fields": {
+            "datetime": "2026-03-22T09:00:00",
+            "status": "pending",
+            "recurrence": None,
+        },
     }
     with patch.object(llm, "triage", new_callable=AsyncMock, return_value=response_data):
         result = await run_triage(
@@ -86,7 +92,11 @@ async def test_triage_high_confidence_skips_should_save(llm):
         "content": "Pack bag in 10 minutes",
         "tags": ["reminder"],
         "importance": 6,
-        "event_fields": {"datetime": "2026-03-30T15:10:00", "status": "pending", "recurrence": None},
+        "event_fields": {
+            "datetime": "2026-03-30T15:10:00",
+            "status": "pending",
+            "recurrence": None,
+        },
     }
     with patch.object(llm, "extract_triage", new_callable=AsyncMock, return_value=response_data):
         result = await run_triage(
@@ -110,10 +120,19 @@ async def test_triage_high_confidence_falls_back_on_extraction_failure(llm):
         "content": "Pack bag in 10 minutes",
         "tags": ["reminder"],
         "importance": 6,
-        "event_fields": {"datetime": "2026-03-30T15:10:00", "status": "pending", "recurrence": None},
+        "event_fields": {
+            "datetime": "2026-03-30T15:10:00",
+            "status": "pending",
+            "recurrence": None,
+        },
     }
     with (
-        patch.object(llm, "extract_triage", new_callable=AsyncMock, side_effect=json.JSONDecodeError("bad", "", 0)),
+        patch.object(
+            llm,
+            "extract_triage",
+            new_callable=AsyncMock,
+            side_effect=json.JSONDecodeError("bad", "", 0),
+        ),
         patch.object(llm, "triage", new_callable=AsyncMock, return_value=full_triage_data),
     ):
         result = await run_triage(
@@ -128,15 +147,18 @@ async def test_triage_high_confidence_falls_back_on_extraction_failure(llm):
 
 def test_triage_prompt_contains_when_in_doubt_save():
     from bearmemori.llm.client import _TRIAGE_SYSTEM_TEMPLATE
+
     assert "when in doubt" in _TRIAGE_SYSTEM_TEMPLATE.lower()
     assert "Be selective" not in _TRIAGE_SYSTEM_TEMPLATE
 
 
 def test_triage_prompt_contains_multi_turn_guidance():
     from bearmemori.llm.client import _TRIAGE_SYSTEM_TEMPLATE
+
     assert "multiple messages" in _TRIAGE_SYSTEM_TEMPLATE
 
 
 def test_triage_prompt_contains_mixed_topic_guidance():
     from bearmemori.llm.client import _TRIAGE_SYSTEM_TEMPLATE
+
     assert "multiple unrelated topics" in _TRIAGE_SYSTEM_TEMPLATE

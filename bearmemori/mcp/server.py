@@ -426,7 +426,8 @@ def create_mcp_app(
     @mcp.tool(
         description=(
             "Analyse a conversation and decide if any information is worth saving as a memory. "
-            "Returns should_save=true with a pending_id and draft when memory-worthy content is found. "
+            "Returns should_save=true with a pending_id and draft when memory-worthy"
+            " content is found. "
             "The memory enters a pending state for user review — it is not saved automatically. "
             "conversation: list of {role, content} dicts. "
             "memory_hint: optional {likely_category, confidence} from the calling agent. "

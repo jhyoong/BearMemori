@@ -28,6 +28,7 @@ def test_create_mcp_app_accepts_llm_and_pending_store():
     db.get_upcoming_events.return_value = []
 
     from bearmemori.config import Settings
+
     settings = MagicMock(spec=Settings)
     settings.webapp_secret = ""
     settings.user_timezone = "UTC"
@@ -44,7 +45,8 @@ def test_create_mcp_app_accepts_llm_and_pending_store():
 
 @pytest.mark.asyncio
 async def test_handle_triage_conversation_should_save(llm, pending_store):
-    """When triage returns should_save=True, pending_store.add is called and response includes pending_id and draft."""
+    """When triage returns should_save=True, pending_store.add is called and response includes
+    pending_id and draft."""
     from bearmemori.core.triage import TriageResult
 
     draft = MemoryDraft(
@@ -57,7 +59,9 @@ async def test_handle_triage_conversation_should_save(llm, pending_store):
     mock_result = TriageResult(should_save=True, draft=draft)
     pending_store.add.return_value = "pend_abc123"
 
-    with patch("bearmemori.mcp.server.run_triage", new_callable=AsyncMock, return_value=mock_result):
+    with patch(
+        "bearmemori.mcp.server.run_triage", new_callable=AsyncMock, return_value=mock_result
+    ):
         response = await _handle_triage_conversation(
             conversation=[{"role": "user", "content": "I love black coffee"}],
             memory_hint=None,
@@ -80,7 +84,9 @@ async def test_handle_triage_conversation_should_not_save(llm, pending_store):
 
     mock_result = TriageResult(should_save=False, reason="llm_decided_no")
 
-    with patch("bearmemori.mcp.server.run_triage", new_callable=AsyncMock, return_value=mock_result):
+    with patch(
+        "bearmemori.mcp.server.run_triage", new_callable=AsyncMock, return_value=mock_result
+    ):
         response = await _handle_triage_conversation(
             conversation=[{"role": "user", "content": "Hey there"}],
             memory_hint=None,
