@@ -70,7 +70,7 @@ async def test_triage_with_memory_hint(llm):
         result = await run_triage(
             [{"role": "user", "content": "I have a standup at 9am tomorrow"}],
             llm=llm,
-            memory_hint={"likely_category": "event", "confidence": "high"},
+            memory_hint={"likely_category": "event", "confidence": "low"},
         )
     assert result.should_save is True
     assert result.draft.event_fields is not None
