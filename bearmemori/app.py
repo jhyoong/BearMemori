@@ -150,11 +150,7 @@ def create_application(settings: Settings) -> FastAPI:
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
-        llm_base_url=settings.llm_base_url,
-        llm_api_key=settings.llm_api_key,
-        llm_model=settings.llm_model,
-        llm_max_tokens=settings.llm_max_tokens,
-        triage_timeout=settings.triage_timeout_seconds,
+        llm=llm,
         user_timezone=settings.user_timezone,
         image_storage_dir=settings.image_storage_dir,
     )
@@ -185,7 +181,13 @@ def create_application(settings: Settings) -> FastAPI:
         async def root_redirect():
             return RedirectResponse(url="/webapp/login")
 
-    mcp_asgi = create_mcp_app(db=db, vector_store=vector_store, settings=settings)
+    mcp_asgi = create_mcp_app(
+        db=db,
+        vector_store=vector_store,
+        settings=settings,
+        llm=llm,
+        pending_store=pending_store,
+    )
     api.mount("/mcp", mcp_asgi)
 
     # Store application in app state for access by __main__.py

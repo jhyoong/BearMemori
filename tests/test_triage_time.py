@@ -1,74 +1,54 @@
 """Tests for current_time injection in triage prompt."""
 
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from bearmemori.core.triage import run_triage
+from bearmemori.llm.client import LLMClient
+
+
+@pytest.fixture
+def llm():
+    return LLMClient(base_url="http://localhost:11434/v1", model="test", api_key="test")
 
 
 @pytest.mark.asyncio
-async def test_triage_includes_current_time_in_prompt():
-    """When current_time is provided, it should appear in the LLM messages."""
-    mock_response = {
-        "choices": [
-            {
-                "message": {
-                    "content": json.dumps({"should_save": False}),
-                }
-            }
-        ]
-    }
+async def test_triage_includes_current_time_in_prompt(llm):
+    """When current_time is provided, it should be passed to llm.triage()."""
+    given_time = "Monday, March 24, 2026, 07:33 PM +0800 (Asia/Singapore)"
 
-    with patch(
-        "bearmemori.core.triage._llm_call",
-        new_callable=AsyncMock,
-        return_value=mock_response,
-    ) as mock_call:
+    with patch.object(
+        llm, "triage", new_callable=AsyncMock, return_value={"should_save": False}
+    ) as mock_triage:
         await run_triage(
             conversation=[{"role": "user", "content": "Remind me in 10 minutes"}],
-            llm_base_url="http://fake",
-            llm_api_key="key",
-            llm_model="model",
-            current_time="Monday, March 24, 2026, 07:33 PM +0800 (Asia/Singapore)",
+            llm=llm,
+            current_time=given_time,
         )
 
-        messages = mock_call.call_args[0][0]
-        system_msg = messages[0]["content"]
-        assert "Monday, March 24, 2026, 07:33 PM +0800" in system_msg, (
-            f"System prompt should contain current_time, got:\n{system_msg}"
+        mock_triage.assert_called_once()
+        # current_time is the third positional arg to llm.triage()
+        _, _, passed_time = mock_triage.call_args[0]
+        assert passed_time == given_time, (
+            f"current_time should be passed to llm.triage(), got: {passed_time}"
         )
 
 
 @pytest.mark.asyncio
-async def test_triage_generates_fallback_time_when_not_provided():
-    """When current_time is None, triage should generate a server-side time."""
-    mock_response = {
-        "choices": [
-            {
-                "message": {
-                    "content": json.dumps({"should_save": False}),
-                }
-            }
-        ]
-    }
-
-    with patch(
-        "bearmemori.core.triage._llm_call",
-        new_callable=AsyncMock,
-        return_value=mock_response,
-    ) as mock_call:
+async def test_triage_generates_fallback_time_when_not_provided(llm):
+    """When current_time is None, triage should generate a server-side time and pass it."""
+    with patch.object(
+        llm, "triage", new_callable=AsyncMock, return_value={"should_save": False}
+    ) as mock_triage:
         await run_triage(
             conversation=[{"role": "user", "content": "Remind me tomorrow"}],
-            llm_base_url="http://fake",
-            llm_api_key="key",
-            llm_model="model",
+            llm=llm,
             current_time=None,
         )
 
-        messages = mock_call.call_args[0][0]
-        system_msg = messages[0]["content"]
-        assert "Current date and time:" in system_msg, (
-            f"System prompt should contain fallback time, got:\n{system_msg}"
+        mock_triage.assert_called_once()
+        _, _, passed_time = mock_triage.call_args[0]
+        assert passed_time is not None and len(passed_time) > 0, (
+            f"A fallback time string should be generated and passed, got: {passed_time}"
         )

@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from bearmemori.api.routes import create_app
+from bearmemori.llm.client import LLMClient
 
 
 @pytest.fixture
@@ -13,13 +14,12 @@ def client():
     db = MagicMock()
     vector_store = MagicMock()
     pending_store = MagicMock()
+    llm = MagicMock(spec=LLMClient)
     app = create_app(
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
-        llm_base_url="http://fake",
-        llm_api_key="key",
-        llm_model="model",
+        llm=llm,
     )
     return TestClient(app)
 

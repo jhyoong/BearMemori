@@ -34,8 +34,6 @@ class Settings(BaseSettings):
     upcoming_events_days: int = 7
     api_port: int = 8100
     webapp_secret: str = ""
-    llm_max_tokens: int = 4096
-    triage_timeout_seconds: int = 3000
     webapp_secure_cookie: bool = False
     user_timezone: str = "UTC"
     image_storage_dir: str = "data/images"

@@ -266,3 +266,60 @@ async def test_extract_memory_includes_current_time():
     system_msg = messages[0]["content"]
     assert "Current date and time:" in system_msg
     assert "Asia/Singapore" in system_msg
+
+
+@pytest.mark.asyncio
+async def test_llm_client_triage_returns_dict(client):
+    response_data = {
+        "should_save": True,
+        "category": "profile",
+        "title": "Likes coffee",
+        "content": "User prefers black coffee",
+        "tags": ["preference"],
+        "importance": 5,
+        "event_fields": None,
+    }
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(message=AsyncMock(content=json.dumps(response_data), reasoning_content=None))
+    ]
+    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
+        result = await client.triage("USER: I love black coffee", "", "2026-04-11T10:00:00")
+    assert result["should_save"] is True
+    assert result["category"] == "profile"
+
+
+@pytest.mark.asyncio
+async def test_llm_client_extract_triage_returns_dict(client):
+    response_data = {
+        "category": "reminder",
+        "title": "Pack bag",
+        "content": "Pack bag in 10 minutes",
+        "tags": ["reminder"],
+        "importance": 6,
+        "event_fields": {
+            "datetime": "2026-04-11T10:10:00",
+            "status": "pending",
+            "recurrence": None,
+        },
+    }
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(message=AsyncMock(content=json.dumps(response_data), reasoning_content=None))
+    ]
+    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
+        result = await client.extract_triage(
+            "USER: Pack my bag in 10 minutes", "2026-04-11T10:00:00"
+        )
+    assert result["category"] == "reminder"
+    assert result["event_fields"] is not None
+
+
+def test_triage_prompt_templates_exist():
+    from bearmemori.llm.client import _EXTRACTION_SYSTEM_TEMPLATE, _TRIAGE_SYSTEM_TEMPLATE
+
+    assert "should_save" in _TRIAGE_SYSTEM_TEMPLATE
+    assert "when in doubt" in _TRIAGE_SYSTEM_TEMPLATE.lower()
+    assert "multiple messages" in _TRIAGE_SYSTEM_TEMPLATE
+    assert "multiple unrelated topics" in _TRIAGE_SYSTEM_TEMPLATE
+    assert "category" in _EXTRACTION_SYSTEM_TEMPLATE

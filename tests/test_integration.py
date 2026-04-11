@@ -1,11 +1,12 @@
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from bearmemori.api.routes import create_app
 from bearmemori.core.triage import TriageResult
+from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import EventFields, MemoryCategory, MemoryDraft
 from bearmemori.storage.pending_store import PendingStore
@@ -23,9 +24,7 @@ def full_stack(tmp_path):
         db=db,
         vector_store=vs,
         pending_store=ps,
-        llm_base_url="http://test",
-        llm_api_key="test",
-        llm_model="test",
+        llm=MagicMock(spec=LLMClient),
     )
     return TestClient(app), db, vs, ps
 

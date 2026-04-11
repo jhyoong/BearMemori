@@ -22,12 +22,13 @@ def test_triage_request_current_time_defaults_to_none():
 
 def test_triage_response_includes_reason_when_not_saved():
     """The triage API should return a reason when should_save is False."""
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     from fastapi.testclient import TestClient
 
     from bearmemori.api.routes import create_app
     from bearmemori.core.triage import TriageResult
+    from bearmemori.llm.client import LLMClient
     from bearmemori.storage.database import MemoryDatabase
     from bearmemori.storage.pending_store import PendingStore
     from bearmemori.storage.vector_store import VectorStore
@@ -35,14 +36,13 @@ def test_triage_response_includes_reason_when_not_saved():
     db = MemoryDatabase(":memory:")
     vs = VectorStore.__new__(VectorStore)
     ps = PendingStore()
+    llm = MagicMock(spec=LLMClient)
 
     app = create_app(
         db,
         vs,
         ps,
-        llm_base_url="http://localhost/v1",
-        llm_api_key="test",
-        llm_model="test",
+        llm=llm,
     )
     client = TestClient(app)
 
