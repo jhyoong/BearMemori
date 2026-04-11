@@ -1,2 +1,10 @@
-3. Memory importance field (?) Ranking of how important a memory is ( probably range from 1 - 10  or using some formula )
-4. Telegram menu
+1. Memory cleanup
+    - Importance reranking
+    - Auditable logs
+    - Pruning/archiving memories ( no hard deletes )
+    - Confirmation with user (?)
+2. MCP compatability
+3. Rework triage conversation function? 
+4. Potential rework or redesign for better compatability with generic claw-like agents
+5. Internal LLM functions to be made optional?
+6. embeddings model download - instead of always redownloading it, use local data if already downloaded
