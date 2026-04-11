@@ -29,6 +29,37 @@ class BearerAuthMiddleware:
         await self.app(scope, receive, send)
 
 
+async def _handle_triage_conversation(
+    conversation: list[dict],
+    memory_hint: dict | None,
+    current_time: str | None,
+    llm: LLMClient | None,
+    pending_store: PendingStore | None,
+    user_timezone: str,
+) -> dict:
+    """Tool handler logic extracted for testability."""
+    if llm is None or pending_store is None:
+        return {"error": "Triage is not configured on this server"}
+    result = await run_triage(
+        conversation,
+        llm=llm,
+        memory_hint=memory_hint,
+        current_time=current_time,
+        user_timezone=user_timezone,
+    )
+    if not result.should_save or result.draft is None:
+        response: dict = {"should_save": False}
+        if result.reason:
+            response["reason"] = result.reason
+        return response
+    pending_id = pending_store.add(result.draft)
+    return {
+        "should_save": True,
+        "pending_id": pending_id,
+        "draft": result.draft.model_dump(mode="json"),
+    }
+
+
 def create_mcp_app(
     db: MemoryDatabase,
     vector_store: VectorStore,
@@ -407,26 +438,9 @@ def create_mcp_app(
         memory_hint: dict | None = None,
         current_time: str | None = None,
     ) -> dict:
-        if llm is None or pending_store is None:
-            return {"error": "Triage is not configured on this server"}
-        result = await run_triage(
-            conversation,
-            llm=llm,
-            memory_hint=memory_hint,
-            current_time=current_time,
-            user_timezone=settings.user_timezone,
+        return await _handle_triage_conversation(
+            conversation, memory_hint, current_time, llm, pending_store, settings.user_timezone
         )
-        if not result.should_save or result.draft is None:
-            response: dict = {"should_save": False}
-            if result.reason:
-                response["reason"] = result.reason
-            return response
-        pending_id = pending_store.add(result.draft)
-        return {
-            "should_save": True,
-            "pending_id": pending_id,
-            "draft": result.draft.model_dump(mode="json"),
-        }
 
     app = mcp.sse_app()
     if settings.webapp_secret:
