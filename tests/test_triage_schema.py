@@ -32,17 +32,20 @@ def test_triage_response_includes_reason_when_not_saved():
     from bearmemori.storage.pending_store import PendingStore
     from bearmemori.storage.vector_store import VectorStore
 
+    from unittest.mock import MagicMock
+
+    from bearmemori.llm.client import LLMClient
+
     db = MemoryDatabase(":memory:")
     vs = VectorStore.__new__(VectorStore)
     ps = PendingStore()
+    llm = MagicMock(spec=LLMClient)
 
     app = create_app(
         db,
         vs,
         ps,
-        llm_base_url="http://localhost/v1",
-        llm_api_key="test",
-        llm_model="test",
+        llm=llm,
     )
     client = TestClient(app)
 

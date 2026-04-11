@@ -4,7 +4,10 @@ from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from bearmemori.config import Settings
+from bearmemori.core.triage import run_triage
+from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
+from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
 
 
@@ -30,6 +33,8 @@ def create_mcp_app(
     db: MemoryDatabase,
     vector_store: VectorStore,
     settings: Settings,
+    llm: LLMClient | None = None,
+    pending_store: PendingStore | None = None,
 ):
     """Build and return the MCP ASGI sub-app."""
     from mcp.server.fastmcp import FastMCP
@@ -386,6 +391,42 @@ def create_mcp_app(
             return {"error": f"Memory not found: {record_id}"}
         vector_store.delete(record_id)
         return {"status": "deleted"}
+
+    @mcp.tool(
+        description=(
+            "Analyse a conversation and decide if any information is worth saving as a memory. "
+            "Returns should_save=true with a pending_id and draft when memory-worthy content is found. "
+            "The memory enters a pending state for user review — it is not saved automatically. "
+            "conversation: list of {role, content} dicts. "
+            "memory_hint: optional {likely_category, confidence} from the calling agent. "
+            "current_time: optional ISO 8601 string; uses server time if omitted."
+        )
+    )
+    async def triage_conversation(
+        conversation: list[dict],
+        memory_hint: dict | None = None,
+        current_time: str | None = None,
+    ) -> dict:
+        if llm is None or pending_store is None:
+            return {"error": "Triage is not configured on this server"}
+        result = await run_triage(
+            conversation,
+            llm=llm,
+            memory_hint=memory_hint,
+            current_time=current_time,
+            user_timezone=settings.user_timezone,
+        )
+        if not result.should_save or result.draft is None:
+            response: dict = {"should_save": False}
+            if result.reason:
+                response["reason"] = result.reason
+            return response
+        pending_id = pending_store.add(result.draft)
+        return {
+            "should_save": True,
+            "pending_id": pending_id,
+            "draft": result.draft.model_dump(mode="json"),
+        }
 
     app = mcp.sse_app()
     if settings.webapp_secret:
