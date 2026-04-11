@@ -21,11 +21,12 @@ COPY --from=builder /app/.venv /app/.venv
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Default data directory for SQLite and ChromaDB
+# Default data directory for SQLite, ChromaDB, and HuggingFace model cache
 RUN mkdir -p /data
 ENV DATABASE_PATH=/data/bearmemori.db
 ENV CHROMA_PERSIST_DIR=/data/chroma
 ENV IMAGE_STORAGE_DIR=/data/images
+ENV HF_HOME=/data/hf_cache
 
 EXPOSE 8100
 
