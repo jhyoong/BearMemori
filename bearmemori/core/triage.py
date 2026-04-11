@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import openai
 from pydantic import ValidationError
 
+from bearmemori.llm.client import LLMClient
 from bearmemori.storage.models import EventFields, MemoryCategory, MemoryDraft
 from bearmemori.utils.time import get_server_time
 
@@ -38,7 +39,7 @@ def _build_draft(data: dict) -> MemoryDraft:
 
 async def _try_extraction(
     conv_text: str,
-    llm,
+    llm: LLMClient,
     current_time: str,
 ) -> TriageResult | None:
     """Call extraction-only prompt. Returns TriageResult on success, None on failure."""
@@ -68,7 +69,7 @@ async def _try_extraction(
 async def _run_full_triage(
     conv_text: str,
     hint_text: str,
-    llm,
+    llm: LLMClient,
     current_time: str,
 ) -> TriageResult:
     """Run full triage (should_save decision + extraction) and return a TriageResult."""
@@ -101,7 +102,7 @@ async def _run_full_triage(
 
 async def run_triage(
     conversation: list[dict],
-    llm,
+    llm: LLMClient,
     memory_hint: dict | None = None,
     current_time: str | None = None,
     user_timezone: str = "UTC",

@@ -56,6 +56,8 @@ def create_app(
 
     @app.post("/memory/triage")
     async def triage_conversation(request: TriageRequest):
+        if llm is None:
+            return {"error": "LLM is not configured"}
         logger.info(
             "Triage request: conversation_len=%d, memory_hint=%s, current_time=%s",
             len(request.conversation),

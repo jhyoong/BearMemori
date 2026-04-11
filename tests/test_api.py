@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -145,7 +145,7 @@ def test_triage_endpoint(client):
         title="Coffee",
         content="Likes coffee",
     )
-    with patch("bearmemori.api.routes.run_triage") as mock_triage:
+    with patch("bearmemori.api.routes.run_triage", new_callable=AsyncMock) as mock_triage:
         mock_triage.return_value = TriageResult(
             should_save=True,
             draft=draft,
