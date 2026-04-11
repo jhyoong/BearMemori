@@ -1,11 +1,12 @@
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from bearmemori.api.routes import create_app
 from bearmemori.core.triage import TriageResult
+from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import (
     EventFields,
@@ -42,9 +43,7 @@ def client(db, vector_store, pending_store):
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
-        llm_base_url="http://localhost:11434/v1",
-        llm_api_key="test",
-        llm_model="test",
+        llm=MagicMock(spec=LLMClient),
     )
     return TestClient(app)
 
@@ -338,9 +337,7 @@ def client_with_images(db, vector_store, pending_store, tmp_path):
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
-        llm_base_url="http://localhost:11434/v1",
-        llm_api_key="test",
-        llm_model="test",
+        llm=MagicMock(spec=LLMClient),
         image_storage_dir=str(image_dir),
     )
     return TestClient(app), image_dir
@@ -366,9 +363,7 @@ def test_get_image_no_storage_configured(db, vector_store, pending_store):
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
-        llm_base_url="http://localhost:11434/v1",
-        llm_api_key="test",
-        llm_model="test",
+        llm=MagicMock(spec=LLMClient),
         image_storage_dir="",
     )
     c = TestClient(app)

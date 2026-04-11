@@ -150,11 +150,7 @@ def create_application(settings: Settings) -> FastAPI:
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
-        llm_base_url=settings.llm_base_url,
-        llm_api_key=settings.llm_api_key,
-        llm_model=settings.llm_model,
-        llm_max_tokens=settings.llm_max_tokens,
-        triage_timeout=settings.triage_timeout_seconds,
+        llm=llm,
         user_timezone=settings.user_timezone,
         image_storage_dir=settings.image_storage_dir,
     )

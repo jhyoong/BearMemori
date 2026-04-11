@@ -15,6 +15,7 @@ from bearmemori.api.schemas import (
     UpdateMemoryRequest,
 )
 from bearmemori.core.triage import run_triage
+from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import (
     EventFields,
@@ -33,11 +34,7 @@ def create_app(
     db: MemoryDatabase,
     vector_store: VectorStore,
     pending_store: PendingStore,
-    llm_base_url: str = "",
-    llm_api_key: str = "",
-    llm_model: str = "",
-    llm_max_tokens: int = 4096,
-    triage_timeout: float = 60.0,
+    llm: LLMClient | None = None,
     user_timezone: str = "UTC",
     image_storage_dir: str = "",
 ) -> FastAPI:
@@ -72,11 +69,7 @@ def create_app(
             )
         result = await run_triage(
             request.conversation,
-            llm_base_url=llm_base_url,
-            llm_api_key=llm_api_key,
-            llm_model=llm_model,
-            llm_max_tokens=llm_max_tokens,
-            triage_timeout=triage_timeout,
+            llm=llm,
             memory_hint=request.memory_hint,
             current_time=request.current_time,
             user_timezone=user_timezone,
