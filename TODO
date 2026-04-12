@@ -1,8 +1,7 @@
-1. Memory cleanup
-    - Importance reranking
-    - Auditable logs
-    - Pruning/archiving memories ( no hard deletes )
-    - Confirmation with user (?)
-2. Rework triage conversation function? 
-3. Potential rework or redesign for better compatability with generic claw-like agents
-4. Internal LLM functions to be made optional?
+~~1. Memory cleanup~~
+~~    - Importance reranking~~
+~~    - Auditable logs~~
+~~    - Pruning/archiving memories ( no hard deletes )~~
+~~    - Confirmation with user (?)~~
+2. Potential rework or redesign for better compatability with generic claw-like agents
+3. Internal LLM functions to be made optional?
