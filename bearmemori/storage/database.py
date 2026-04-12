@@ -93,7 +93,10 @@ class MemoryDatabase:
         self._conn.commit()
 
     def _migrate(self) -> None:
-        """Add needs_review column if it doesn't exist (for existing databases)."""
+        """Add missing columns for existing databases.
+
+        Handles: needs_review, image_path, importance, archived.
+        """
         cursor = self._conn.execute(
             "SELECT name FROM pragma_table_info('memories') WHERE name = ?",
             ("needs_review",),
@@ -226,7 +229,8 @@ class MemoryDatabase:
     ) -> list[MemoryRecord]:
         if needs_review is None:
             rows = self._conn.execute(
-                "SELECT * FROM memories WHERE archived = 0 ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM memories WHERE archived = 0"
+                " ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()
         else:
@@ -241,7 +245,8 @@ class MemoryDatabase:
         self, category: MemoryCategory, offset: int = 0, limit: int = 50
     ) -> list[MemoryRecord]:
         rows = self._conn.execute(
-            "SELECT * FROM memories WHERE category = ? AND archived = 0 ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "SELECT * FROM memories WHERE category = ? AND archived = 0"
+            " ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (category.value, limit, offset),
         ).fetchall()
         return [self._row_to_record(r) for r in rows]

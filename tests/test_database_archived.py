@@ -1,7 +1,9 @@
+from datetime import UTC, datetime
+
 import pytest
+
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import MemoryCategory, MemoryRecord
-from datetime import UTC, datetime
 
 
 @pytest.fixture
