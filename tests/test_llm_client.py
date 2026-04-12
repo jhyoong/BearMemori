@@ -327,8 +327,9 @@ def test_triage_prompt_templates_exist():
 
 @pytest.mark.asyncio
 async def test_reflect_memory_returns_archive_decision(client):
-    from bearmemori.storage.models import MemoryCategory, MemoryRecord
     from datetime import UTC, datetime
+
+    from bearmemori.storage.models import MemoryCategory, MemoryRecord
 
     record = MemoryRecord(
         id="mem_test",
@@ -355,8 +356,9 @@ async def test_reflect_memory_returns_archive_decision(client):
 
 @pytest.mark.asyncio
 async def test_reflect_memory_returns_keep_with_new_importance(client):
-    from bearmemori.storage.models import MemoryCategory, MemoryRecord
     from datetime import UTC, datetime
+
+    from bearmemori.storage.models import MemoryCategory, MemoryRecord
 
     record = MemoryRecord(
         id="mem_test2",
