@@ -842,7 +842,9 @@ def test_update_event_datetime(client, db, vector_store):
 @pytest.fixture
 def client_with_reflection():
     from unittest.mock import AsyncMock, MagicMock
+
     from fastapi.testclient import TestClient
+
     from bearmemori.api.routes import create_app
     from bearmemori.core.reflection import ReflectionTask
 
