@@ -323,3 +323,66 @@ def test_triage_prompt_templates_exist():
     assert "multiple messages" in _TRIAGE_SYSTEM_TEMPLATE
     assert "multiple unrelated topics" in _TRIAGE_SYSTEM_TEMPLATE
     assert "category" in _EXTRACTION_SYSTEM_TEMPLATE
+
+
+@pytest.mark.asyncio
+async def test_reflect_memory_returns_archive_decision(client):
+    from bearmemori.storage.models import MemoryCategory, MemoryRecord
+    from datetime import UTC, datetime
+
+    record = MemoryRecord(
+        id="mem_test",
+        category=MemoryCategory.GENERAL,
+        title="Old note",
+        content="Some old content",
+        created_at=datetime(2025, 1, 1, tzinfo=UTC),
+        importance=2,
+    )
+    response_data = {
+        "action": "archive",
+        "new_importance": None,
+        "reason": "Outdated and low value",
+    }
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(message=AsyncMock(content=json.dumps(response_data), reasoning_content=None))
+    ]
+    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
+        result = await client.reflect_memory(record)
+    assert result["action"] == "archive"
+    assert result["reason"] == "Outdated and low value"
+
+
+@pytest.mark.asyncio
+async def test_reflect_memory_returns_keep_with_new_importance(client):
+    from bearmemori.storage.models import MemoryCategory, MemoryRecord
+    from datetime import UTC, datetime
+
+    record = MemoryRecord(
+        id="mem_test2",
+        category=MemoryCategory.PROFILE,
+        title="Preference",
+        content="Likes hiking",
+        created_at=datetime(2025, 6, 1, tzinfo=UTC),
+        importance=4,
+    )
+    response_data = {
+        "action": "keep",
+        "new_importance": 7,
+        "reason": "Still relevant personal preference",
+    }
+    mock_response = AsyncMock()
+    mock_response.choices = [
+        AsyncMock(message=AsyncMock(content=json.dumps(response_data), reasoning_content=None))
+    ]
+    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
+        result = await client.reflect_memory(record)
+    assert result["action"] == "keep"
+    assert result["new_importance"] == 7
+
+
+def test_reflect_memory_prompt_template_exists():
+    from bearmemori.llm.client import _REFLECT_SYSTEM_PROMPT
+    assert "archive" in _REFLECT_SYSTEM_PROMPT
+    assert "new_importance" in _REFLECT_SYSTEM_PROMPT
+    assert "reason" in _REFLECT_SYSTEM_PROMPT

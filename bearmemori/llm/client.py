@@ -200,6 +200,29 @@ Synthesize the full conversation to extract the complete memory, not just \
 the last message.
 """
 
+_REFLECT_SYSTEM_PROMPT = """\
+You are a memory reflection agent. Review the following memory and decide whether \
+to archive it or keep it. You may also update its importance score.
+
+Respond with a single valid JSON object and nothing else. No explanation, no commentary, \
+no markdown formatting.
+
+{"action": "archive" | "keep", "new_importance": <1-10 or null>, "reason": "<brief reason>"}
+
+Guidelines:
+- "action": "archive" if the memory is outdated, superseded, trivial, or no longer useful.
+- "action": "keep" if the memory is still relevant or valuable.
+- "new_importance": provide an updated 1-10 score if the current score seems wrong; \
+null to leave unchanged.
+- "reason": always required. One sentence explaining the decision.
+
+Importance scale:
+- 1-3: Low (trivial facts, casual mentions, no longer relevant)
+- 4-6: Medium (useful but not critical)
+- 7-8: High (key personal facts, significant events)
+- 9-10: Critical (health/safety, core identity, major life events)
+"""
+
 DESCRIBE_IMAGE_SYSTEM_PROMPT = (
     "/no_think\n"
     "You are a memory extraction assistant. "
@@ -371,3 +394,28 @@ class LLMClient:
         logger.debug("Extraction LLM raw output: %s", raw)
         data = extract_json(raw)
         return _clamp_importance(data)
+
+    async def reflect_memory(self, record) -> dict:
+        from datetime import UTC, datetime
+
+        age_days = (datetime.now(UTC) - record.created_at).days
+        memory_text = (
+            f"Title: {record.title}\n"
+            f"Category: {record.category.value}\n"
+            f"Content: {record.content}\n"
+            f"Tags: {', '.join(record.tags) if record.tags else 'none'}\n"
+            f"Importance: {record.importance}/10\n"
+            f"Age: {age_days} days\n"
+            f"Needs review: {record.needs_review}"
+        )
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": _REFLECT_SYSTEM_PROMPT},
+                {"role": "user", "content": memory_text},
+            ],
+            temperature=0.1,
+        )
+        raw = _get_content(response.choices[0].message)
+        logger.debug("Reflect memory raw output: %s", raw)
+        return extract_json(raw)
