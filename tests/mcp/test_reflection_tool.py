@@ -24,17 +24,19 @@ def mcp_deps():
     llm = MagicMock(spec=LLMClient)
     pending_store = MagicMock(spec=PendingStore)
     reflection_task = MagicMock(spec=ReflectionTask)
-    reflection_task.run_once = AsyncMock(return_value={
-        "run_id": "ref_test",
-        "triggered_by": "mcp",
-        "started_at": "2026-04-11T03:00:00+00:00",
-        "finished_at": "2026-04-11T03:00:01+00:00",
-        "candidates_evaluated": 0,
-        "archived": 0,
-        "reranked": 0,
-        "kept_unchanged": 0,
-        "decisions": [],
-    })
+    reflection_task.run_once = AsyncMock(
+        return_value={
+            "run_id": "ref_test",
+            "triggered_by": "mcp",
+            "started_at": "2026-04-11T03:00:00+00:00",
+            "finished_at": "2026-04-11T03:00:01+00:00",
+            "candidates_evaluated": 0,
+            "archived": 0,
+            "reranked": 0,
+            "kept_unchanged": 0,
+            "decisions": [],
+        }
+    )
     return db, vector_store, settings, llm, pending_store, reflection_task
 
 

@@ -69,11 +69,13 @@ async def test_run_once_archives_low_importance_old_memory(
     candidate = _make_record("mem_001", importance=2, age_days=40)
     db.list_all.return_value = [candidate]
 
-    llm.reflect_memory = AsyncMock(return_value={
-        "action": "archive",
-        "new_importance": None,
-        "reason": "Old and trivial",
-    })
+    llm.reflect_memory = AsyncMock(
+        return_value={
+            "action": "archive",
+            "new_importance": None,
+            "reason": "Old and trivial",
+        }
+    )
 
     task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
     summary = await task.run_once(triggered_by="api")
@@ -93,11 +95,13 @@ async def test_run_once_reranks_mid_importance_old_memory(
     candidate = _make_record("mem_002", importance=5, age_days=100)
     db.list_all.return_value = [candidate]
 
-    llm.reflect_memory = AsyncMock(return_value={
-        "action": "keep",
-        "new_importance": 7,
-        "reason": "Still relevant",
-    })
+    llm.reflect_memory = AsyncMock(
+        return_value={
+            "action": "keep",
+            "new_importance": 7,
+            "reason": "Still relevant",
+        }
+    )
 
     task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
     summary = await task.run_once(triggered_by="api")
@@ -134,11 +138,13 @@ async def test_run_once_writes_log_entry(db, vector_store, llm, bus, settings, t
 
     candidate = _make_record("mem_004", importance=2, age_days=40)
     db.list_all.return_value = [candidate]
-    llm.reflect_memory = AsyncMock(return_value={
-        "action": "archive",
-        "new_importance": None,
-        "reason": "Obsolete",
-    })
+    llm.reflect_memory = AsyncMock(
+        return_value={
+            "action": "archive",
+            "new_importance": None,
+            "reason": "Obsolete",
+        }
+    )
 
     task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
     await task.run_once(triggered_by="scheduler")
@@ -159,11 +165,13 @@ async def test_run_once_needs_review_old_memory_is_candidate(
     # needs_review=True, 25 days old — threshold is 21
     candidate = _make_record("mem_005", importance=6, age_days=25, needs_review=True)
     db.list_all.return_value = [candidate]
-    llm.reflect_memory = AsyncMock(return_value={
-        "action": "keep",
-        "new_importance": None,
-        "reason": "Still valid",
-    })
+    llm.reflect_memory = AsyncMock(
+        return_value={
+            "action": "keep",
+            "new_importance": None,
+            "reason": "Still valid",
+        }
+    )
 
     task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
     summary = await task.run_once(triggered_by="api")
@@ -173,17 +181,20 @@ async def test_run_once_needs_review_old_memory_is_candidate(
 
 def test_is_within_window_true():
     from bearmemori.core.reflection import _is_within_window
+
     # 3am is within 2-6 window
     assert _is_within_window(current_hour=3, start_hour=2, end_hour=6) is True
 
 
 def test_is_within_window_false():
     from bearmemori.core.reflection import _is_within_window
+
     # 10am is outside 2-6 window
     assert _is_within_window(current_hour=10, start_hour=2, end_hour=6) is False
 
 
 def test_is_within_window_equals_start_equals_end_always_true():
     from bearmemori.core.reflection import _is_within_window
+
     # start == end means no restriction
     assert _is_within_window(current_hour=15, start_hour=4, end_hour=4) is True

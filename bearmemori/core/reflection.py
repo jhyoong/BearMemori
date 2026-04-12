@@ -85,13 +85,15 @@ class ReflectionTask:
             else:
                 kept_unchanged += 1
 
-            decisions.append({
-                "memory_id": record.id,
-                "action": action,
-                "old_importance": old_importance,
-                "new_importance": new_importance,
-                "reason": reason,
-            })
+            decisions.append(
+                {
+                    "memory_id": record.id,
+                    "action": action,
+                    "old_importance": old_importance,
+                    "new_importance": new_importance,
+                    "reason": reason,
+                }
+            )
 
         finished_at = datetime.now(UTC)
         summary = {
@@ -111,7 +113,10 @@ class ReflectionTask:
 
         logger.info(
             "Reflection run complete: %s — archived=%d reranked=%d kept=%d",
-            run_id, archived, reranked, kept_unchanged,
+            run_id,
+            archived,
+            reranked,
+            kept_unchanged,
         )
         return summary
 
@@ -133,11 +138,7 @@ class ReflectionTask:
         run_id = summary["run_id"]
         triggered_by = summary["triggered_by"]
 
-        archived_titles = [
-            d["memory_id"]
-            for d in summary["decisions"]
-            if d["action"] == "archive"
-        ]
+        archived_titles = [d["memory_id"] for d in summary["decisions"] if d["action"] == "archive"]
 
         lines = [
             f"Reflection complete ({run_id}, triggered by {triggered_by}):",

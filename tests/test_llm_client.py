@@ -385,6 +385,7 @@ async def test_reflect_memory_returns_keep_with_new_importance(client):
 
 def test_reflect_memory_prompt_template_exists():
     from bearmemori.llm.client import _REFLECT_SYSTEM_PROMPT
+
     assert "archive" in _REFLECT_SYSTEM_PROMPT
     assert "new_importance" in _REFLECT_SYSTEM_PROMPT
     assert "reason" in _REFLECT_SYSTEM_PROMPT

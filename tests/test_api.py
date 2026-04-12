@@ -852,17 +852,19 @@ def client_with_reflection():
     vector_store = MagicMock()
     pending_store = MagicMock()
     reflection_task = MagicMock(spec=ReflectionTask)
-    reflection_task.run_once = AsyncMock(return_value={
-        "run_id": "ref_abc123",
-        "triggered_by": "api",
-        "started_at": "2026-04-11T03:00:00+00:00",
-        "finished_at": "2026-04-11T03:00:05+00:00",
-        "candidates_evaluated": 0,
-        "archived": 0,
-        "reranked": 0,
-        "kept_unchanged": 0,
-        "decisions": [],
-    })
+    reflection_task.run_once = AsyncMock(
+        return_value={
+            "run_id": "ref_abc123",
+            "triggered_by": "api",
+            "started_at": "2026-04-11T03:00:00+00:00",
+            "finished_at": "2026-04-11T03:00:05+00:00",
+            "candidates_evaluated": 0,
+            "archived": 0,
+            "reranked": 0,
+            "kept_unchanged": 0,
+            "decisions": [],
+        }
+    )
     app = create_app(
         db=db,
         vector_store=vector_store,
