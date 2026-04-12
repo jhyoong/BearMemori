@@ -207,7 +207,7 @@ to archive it or keep it. You may also update its importance score.
 Respond with a single valid JSON object and nothing else. No explanation, no commentary, \
 no markdown formatting.
 
-{"action": "archive" | "keep", "new_importance": <1-10 or null>, "reason": "<brief reason>"}
+{{"action": "archive" | "keep", "new_importance": <1-10 or null>, "reason": "<brief reason>"}}
 
 Guidelines:
 - "action": "archive" if the memory is outdated, superseded, trivial, or no longer useful.

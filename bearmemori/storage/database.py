@@ -326,7 +326,9 @@ class MemoryDatabase:
         return row[0]
 
     def count_needs_review(self) -> int:
-        row = self._conn.execute("SELECT COUNT(*) FROM memories WHERE needs_review = 1").fetchone()
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE needs_review = 1 AND archived = 0"
+        ).fetchone()
         return row[0]
 
     def count_recent(self, hours: int = 24) -> dict:
@@ -335,7 +337,7 @@ class MemoryDatabase:
             """SELECT
                    SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END),
                    SUM(CASE WHEN updated_at >= ? THEN 1 ELSE 0 END)
-               FROM memories""",
+               FROM memories WHERE archived = 0""",
             (cutoff, cutoff),
         ).fetchone()
         return {"created": row[0] or 0, "updated": row[1] or 0}
