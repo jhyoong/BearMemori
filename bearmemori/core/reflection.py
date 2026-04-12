@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import uuid
+import zoneinfo
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -160,7 +161,6 @@ class ReflectionTask:
             await asyncio.sleep(self._settings.reflection_poll_interval_seconds)
             now_local_hour = datetime.now(UTC).hour
             try:
-                import zoneinfo
                 tz = zoneinfo.ZoneInfo(self._settings.user_timezone)
                 now_local_hour = datetime.now(tz).hour
             except Exception:

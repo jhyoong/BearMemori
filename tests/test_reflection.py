@@ -1,7 +1,6 @@
 import json
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -12,7 +11,9 @@ from bearmemori.storage.models import MemoryCategory, MemoryRecord
 from bearmemori.storage.vector_store import VectorStore
 
 
-def _make_record(record_id: str, importance: int, age_days: int, needs_review: bool = False) -> MemoryRecord:
+def _make_record(
+    record_id: str, importance: int, age_days: int, needs_review: bool = False
+) -> MemoryRecord:
     return MemoryRecord(
         id=record_id,
         category=MemoryCategory.GENERAL,
@@ -61,7 +62,9 @@ def settings():
 
 
 @pytest.mark.asyncio
-async def test_run_once_archives_low_importance_old_memory(db, vector_store, llm, bus, settings, tmp_path):
+async def test_run_once_archives_low_importance_old_memory(
+    db, vector_store, llm, bus, settings, tmp_path
+):
     settings.reflection_log_path = str(tmp_path / "reflection.log")
     candidate = _make_record("mem_001", importance=2, age_days=40)
     db.list_all.return_value = [candidate]
@@ -83,7 +86,9 @@ async def test_run_once_archives_low_importance_old_memory(db, vector_store, llm
 
 
 @pytest.mark.asyncio
-async def test_run_once_reranks_mid_importance_old_memory(db, vector_store, llm, bus, settings, tmp_path):
+async def test_run_once_reranks_mid_importance_old_memory(
+    db, vector_store, llm, bus, settings, tmp_path
+):
     settings.reflection_log_path = str(tmp_path / "reflection.log")
     candidate = _make_record("mem_002", importance=5, age_days=100)
     db.list_all.return_value = [candidate]
@@ -105,7 +110,9 @@ async def test_run_once_reranks_mid_importance_old_memory(db, vector_store, llm,
 
 
 @pytest.mark.asyncio
-async def test_run_once_skips_high_importance_recent_memory(db, vector_store, llm, bus, settings, tmp_path):
+async def test_run_once_skips_high_importance_recent_memory(
+    db, vector_store, llm, bus, settings, tmp_path
+):
     settings.reflection_log_path = str(tmp_path / "reflection.log")
     # importance=8, only 10 days old — should not be a candidate
     non_candidate = _make_record("mem_003", importance=8, age_days=10)
@@ -145,7 +152,9 @@ async def test_run_once_writes_log_entry(db, vector_store, llm, bus, settings, t
 
 
 @pytest.mark.asyncio
-async def test_run_once_needs_review_old_memory_is_candidate(db, vector_store, llm, bus, settings, tmp_path):
+async def test_run_once_needs_review_old_memory_is_candidate(
+    db, vector_store, llm, bus, settings, tmp_path
+):
     settings.reflection_log_path = str(tmp_path / "reflection.log")
     # needs_review=True, 25 days old — threshold is 21
     candidate = _make_record("mem_005", importance=6, age_days=25, needs_review=True)
