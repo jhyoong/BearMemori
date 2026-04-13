@@ -14,6 +14,7 @@ from bearmemori.api.schemas import (
     TriageRequest,
     UpdateMemoryRequest,
 )
+from bearmemori.core.reflection import ReflectionTask
 from bearmemori.core.triage import run_triage
 from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
@@ -35,6 +36,7 @@ def create_app(
     vector_store: VectorStore,
     pending_store: PendingStore,
     llm: LLMClient | None = None,
+    reflection_task: ReflectionTask | None = None,
     user_timezone: str = "UTC",
     image_storage_dir: str = "",
 ) -> FastAPI:
@@ -89,6 +91,13 @@ def create_app(
             "pending_id": pending_id,
             "draft": result.draft.model_dump(mode="json"),
         }
+
+    @app.post("/memory/reflection/run")
+    async def run_reflection():
+        if reflection_task is None:
+            return {"error": "Reflection is not configured"}
+        summary = await reflection_task.run_once(triggered_by="api")
+        return summary
 
     @app.post("/memory/pending")
     def create_pending(draft: MemoryDraft):

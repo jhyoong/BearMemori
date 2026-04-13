@@ -837,3 +837,55 @@ def test_update_event_datetime(client, db, vector_store):
     assert response.status_code == 200
     record = db.get("mem_dt_upd")
     assert new_dt[:10] in record.event_fields.datetime
+
+
+@pytest.fixture
+def client_with_reflection():
+    from unittest.mock import AsyncMock, MagicMock
+
+    from fastapi.testclient import TestClient
+
+    from bearmemori.api.routes import create_app
+    from bearmemori.core.reflection import ReflectionTask
+
+    db = MagicMock()
+    vector_store = MagicMock()
+    pending_store = MagicMock()
+    reflection_task = MagicMock(spec=ReflectionTask)
+    reflection_task.run_once = AsyncMock(
+        return_value={
+            "run_id": "ref_abc123",
+            "triggered_by": "api",
+            "started_at": "2026-04-11T03:00:00+00:00",
+            "finished_at": "2026-04-11T03:00:05+00:00",
+            "candidates_evaluated": 0,
+            "archived": 0,
+            "reranked": 0,
+            "kept_unchanged": 0,
+            "decisions": [],
+        }
+    )
+    app = create_app(
+        db=db,
+        vector_store=vector_store,
+        pending_store=pending_store,
+        reflection_task=reflection_task,
+    )
+    return TestClient(app)
+
+
+def test_reflection_run_returns_summary(client_with_reflection):
+    response = client_with_reflection.post("/memory/reflection/run")
+    assert response.status_code == 200
+    data = response.json()
+    assert "run_id" in data
+    assert "archived" in data
+    assert "reranked" in data
+    assert data["triggered_by"] == "api"
+
+
+def test_reflection_run_returns_error_when_not_configured(client):
+    # client fixture has no reflection_task
+    response = client.post("/memory/reflection/run")
+    assert response.status_code == 200
+    assert response.json().get("error") is not None

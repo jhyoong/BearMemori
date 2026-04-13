@@ -4,6 +4,7 @@ from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from bearmemori.config import Settings
+from bearmemori.core.reflection import ReflectionTask
 from bearmemori.core.triage import run_triage
 from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
@@ -66,6 +67,7 @@ def create_mcp_app(
     settings: Settings,
     llm: LLMClient | None = None,
     pending_store: PendingStore | None = None,
+    reflection_task: ReflectionTask | None = None,
 ):
     """Build and return the MCP ASGI sub-app."""
     from mcp.server.fastmcp import FastMCP
@@ -442,6 +444,18 @@ def create_mcp_app(
         return await _handle_triage_conversation(
             conversation, memory_hint, current_time, llm, pending_store, settings.user_timezone
         )
+
+    @mcp.tool(
+        description=(
+            "Trigger a memory reflection run. Reviews stored memories, archives low-value entries, "
+            "and reranks importance scores. Returns a summary of what changed. "
+            "This bypasses the scheduled time window and runs immediately."
+        )
+    )
+    async def run_reflection() -> dict:
+        if reflection_task is None:
+            return {"error": "Reflection is not configured on this server"}
+        return await reflection_task.run_once(triggered_by="mcp")
 
     app = mcp.sse_app()
     if settings.webapp_secret:
