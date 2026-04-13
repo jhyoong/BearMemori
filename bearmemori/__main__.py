@@ -46,6 +46,7 @@ async def run_server(
 
     asyncio.create_task(processing_loop(application))
     asyncio.create_task(application.cleanup_task.run())
+    asyncio.create_task(application.reflection_task.run())
 
     # Skip reminder scheduler in API-only mode (NanoClaw handles scheduling)
     if not settings.api_only_mode:

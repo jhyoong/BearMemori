@@ -44,7 +44,8 @@ class MemoryDatabase:
                 event_status TEXT,
                 event_recurrence TEXT,
                 metadata TEXT NOT NULL DEFAULT '{}',
-                needs_review INTEGER NOT NULL DEFAULT 0
+                needs_review INTEGER NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0
             )
         """)
         self._migrate()
@@ -60,6 +61,10 @@ class MemoryDatabase:
         self._conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_memories_importance
             ON memories (importance)
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_memories_archived
+            ON memories (archived)
         """)
         self._conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
@@ -88,7 +93,10 @@ class MemoryDatabase:
         self._conn.commit()
 
     def _migrate(self) -> None:
-        """Add needs_review column if it doesn't exist (for existing databases)."""
+        """Add missing columns for existing databases.
+
+        Handles: needs_review, image_path, importance, archived.
+        """
         cursor = self._conn.execute(
             "SELECT name FROM pragma_table_info('memories') WHERE name = ?",
             ("needs_review",),
@@ -114,6 +122,16 @@ class MemoryDatabase:
         if cursor.fetchone() is None:
             self._conn.execute(
                 "ALTER TABLE memories ADD COLUMN importance INTEGER NOT NULL DEFAULT 5"
+            )
+            self._conn.commit()
+
+        cursor = self._conn.execute(
+            "SELECT name FROM pragma_table_info('memories') WHERE name = ?",
+            ("archived",),
+        )
+        if cursor.fetchone() is None:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"
             )
             self._conn.commit()
 
@@ -144,6 +162,7 @@ class MemoryDatabase:
             needs_review=bool(row["needs_review"]),
             image_path=row["image_path"],
             importance=row["importance"],
+            archived=bool(row["archived"]),
         )
 
     def create(self, record: MemoryRecord) -> None:
@@ -162,8 +181,8 @@ class MemoryDatabase:
             """INSERT INTO memories
                (id, category, title, content, raw_input, created_at, updated_at,
                 tags, source, event_datetime, event_status, event_recurrence,
-                metadata, needs_review, image_path, importance)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                metadata, needs_review, image_path, importance, archived)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 record.id,
                 record.category.value,
@@ -181,6 +200,7 @@ class MemoryDatabase:
                 1 if record.needs_review else 0,
                 record.image_path,
                 record.importance,
+                1 if record.archived else 0,
             ),
         )
         self._conn.commit()
@@ -209,12 +229,13 @@ class MemoryDatabase:
     ) -> list[MemoryRecord]:
         if needs_review is None:
             rows = self._conn.execute(
-                "SELECT * FROM memories ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM memories WHERE archived = 0"
+                " ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()
         else:
             rows = self._conn.execute(
-                "SELECT * FROM memories WHERE needs_review = ?"
+                "SELECT * FROM memories WHERE needs_review = ? AND archived = 0"
                 " ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 (1 if needs_review else 0, limit, offset),
             ).fetchall()
@@ -224,8 +245,16 @@ class MemoryDatabase:
         self, category: MemoryCategory, offset: int = 0, limit: int = 50
     ) -> list[MemoryRecord]:
         rows = self._conn.execute(
-            "SELECT * FROM memories WHERE category = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "SELECT * FROM memories WHERE category = ? AND archived = 0"
+            " ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (category.value, limit, offset),
+        ).fetchall()
+        return [self._row_to_record(r) for r in rows]
+
+    def list_archived(self, offset: int = 0, limit: int = 50) -> list[MemoryRecord]:
+        rows = self._conn.execute(
+            "SELECT * FROM memories WHERE archived = 1 ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
@@ -233,7 +262,7 @@ class MemoryDatabase:
         rows = self._conn.execute(
             """SELECT memories.* FROM memories_fts
                JOIN memories ON memories.rowid = memories_fts.rowid
-               WHERE memories_fts MATCH ?
+               WHERE memories_fts MATCH ? AND memories.archived = 0
                ORDER BY rank
                LIMIT ?""",
             (query, limit),
@@ -250,6 +279,7 @@ class MemoryDatabase:
                  AND event_datetime >= ?
                  AND event_datetime <= ?
                  AND (event_status IS NULL OR event_status = 'pending')
+                 AND archived = 0
                ORDER BY event_datetime ASC""",
             (now, future),
         ).fetchall()
@@ -263,6 +293,7 @@ class MemoryDatabase:
                  AND event_datetime IS NOT NULL
                  AND event_datetime <= ?
                  AND (event_status IS NULL OR event_status = 'pending')
+                 AND archived = 0
                ORDER BY event_datetime ASC""",
             (now,),
         ).fetchall()
@@ -274,6 +305,7 @@ class MemoryDatabase:
         rows = self._conn.execute(
             """SELECT * FROM memories
                WHERE category IN ('event', 'reminder', 'task')
+                 AND archived = 0
                  AND (
                    (event_recurrence IS NULL
                     AND event_datetime IS NOT NULL
@@ -290,11 +322,13 @@ class MemoryDatabase:
         return [self._row_to_record(r) for r in rows]
 
     def count_all(self) -> int:
-        row = self._conn.execute("SELECT COUNT(*) FROM memories").fetchone()
+        row = self._conn.execute("SELECT COUNT(*) FROM memories WHERE archived = 0").fetchone()
         return row[0]
 
     def count_needs_review(self) -> int:
-        row = self._conn.execute("SELECT COUNT(*) FROM memories WHERE needs_review = 1").fetchone()
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE needs_review = 1 AND archived = 0"
+        ).fetchone()
         return row[0]
 
     def count_recent(self, hours: int = 24) -> dict:
@@ -303,14 +337,14 @@ class MemoryDatabase:
             """SELECT
                    SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END),
                    SUM(CASE WHEN updated_at >= ? THEN 1 ELSE 0 END)
-               FROM memories""",
+               FROM memories WHERE archived = 0""",
             (cutoff, cutoff),
         ).fetchone()
         return {"created": row[0] or 0, "updated": row[1] or 0}
 
     def count_by_category(self, category: MemoryCategory) -> int:
         row = self._conn.execute(
-            "SELECT COUNT(*) FROM memories WHERE category = ?", (category.value,)
+            "SELECT COUNT(*) FROM memories WHERE category = ? AND archived = 0", (category.value,)
         ).fetchone()
         return row[0]
 
@@ -318,7 +352,7 @@ class MemoryDatabase:
         since_iso = since.isoformat()
         rows = self._conn.execute(
             """SELECT * FROM memories
-               WHERE updated_at >= ?
+               WHERE updated_at >= ? AND archived = 0
                ORDER BY updated_at DESC
                LIMIT ?""",
             (since_iso, limit),
@@ -341,7 +375,7 @@ class MemoryDatabase:
             """UPDATE memories SET category=?, title=?, content=?, raw_input=?,
                updated_at=?, tags=?, source=?, event_datetime=?, event_status=?,
                event_recurrence=?, metadata=?, needs_review=?, image_path=?,
-               importance=?
+               importance=?, archived=?
                WHERE id=?""",
             (
                 record.category.value,
@@ -358,6 +392,7 @@ class MemoryDatabase:
                 1 if record.needs_review else 0,
                 record.image_path,
                 record.importance,
+                1 if record.archived else 0,
                 record.id,
             ),
         )

@@ -12,6 +12,7 @@ from bearmemori.core.confirm import ConfirmHandler
 from bearmemori.core.followup import FollowUpManager
 from bearmemori.core.processor import Processor
 from bearmemori.core.queue import QueueManager
+from bearmemori.core.reflection import ReflectionTask
 from bearmemori.core.scheduler import ReminderScheduler
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import (
@@ -50,6 +51,7 @@ class Application:
         telegram: TelegramInterface | None,
         settings: Settings,
         scheduler: ReminderScheduler,
+        reflection_task: ReflectionTask,
     ) -> None:
         self.bus = bus
         self.db = db
@@ -63,6 +65,7 @@ class Application:
         self.telegram = telegram
         self.settings = settings
         self.scheduler = scheduler
+        self.reflection_task = reflection_task
 
 
 def create_application(settings: Settings) -> FastAPI:
@@ -125,6 +128,14 @@ def create_application(settings: Settings) -> FastAPI:
         poll_interval_seconds=settings.reminder_poll_interval_seconds,
     )
 
+    reflection_task = ReflectionTask(
+        db=db,
+        vector_store=vector_store,
+        llm=llm,
+        bus=bus,
+        settings=settings,
+    )
+
     bus.on(InputReceived, queue_manager.handle_input)
     bus.on(FollowUpRequired, followup_manager.handle_followup_required)
     bus.on(MemoryConfirmed, confirm_handler.handle_confirmed)
@@ -143,6 +154,7 @@ def create_application(settings: Settings) -> FastAPI:
         telegram=telegram,
         settings=settings,
         scheduler=scheduler,
+        reflection_task=reflection_task,
     )
 
     # Create FastAPI app
@@ -151,6 +163,7 @@ def create_application(settings: Settings) -> FastAPI:
         vector_store=vector_store,
         pending_store=pending_store,
         llm=llm,
+        reflection_task=reflection_task,
         user_timezone=settings.user_timezone,
         image_storage_dir=settings.image_storage_dir,
     )
@@ -187,6 +200,7 @@ def create_application(settings: Settings) -> FastAPI:
         settings=settings,
         llm=llm,
         pending_store=pending_store,
+        reflection_task=reflection_task,
     )
     api.mount("/mcp", mcp_asgi)
 

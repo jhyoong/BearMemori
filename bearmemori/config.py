@@ -41,4 +41,11 @@ class Settings(BaseSettings):
     importance_low_threshold: int = 2
     importance_relevance_weight: float = 0.5
     importance_weight: float = 0.5
+    reflection_start_hour: int = 2
+    reflection_end_hour: int = 6
+    reflection_poll_interval_seconds: int = 3600
+    reflection_low_importance_age_days: int = 30
+    reflection_needs_review_age_days: int = 21
+    reflection_mid_importance_age_days: int = 90
+    reflection_log_path: str = "data/reflection.log"
     api_only_mode: bool = False
