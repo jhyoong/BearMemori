@@ -264,7 +264,7 @@ def create_webapp_router(
     ):
         from bearmemori.core.recurrence import build_rrule_from_form
 
-        record = db.get(record_id)
+        record = memory_service.get(record_id)
         if not record:
             return RedirectResponse(url="/webapp/memories", status_code=302)
 
