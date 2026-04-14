@@ -160,12 +160,11 @@ class ReflectionTask:
         )
         while True:
             await asyncio.sleep(self._settings.reflection_poll_interval_seconds)
-            now_local_hour = datetime.now(UTC).hour
             try:
                 tz = zoneinfo.ZoneInfo(self._settings.user_timezone)
                 now_local_hour = datetime.now(tz).hour
             except Exception:
-                pass
+                now_local_hour = datetime.now(UTC).hour  # fallback to UTC
 
             if _is_within_window(
                 now_local_hour,

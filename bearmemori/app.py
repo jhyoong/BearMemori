@@ -171,7 +171,7 @@ def create_application(settings: Settings) -> FastAPI:
     # Mount webapp if secret is configured
     if settings.webapp_secret:
         webapp_auth = WebappAuthMiddleware(
-            api, settings.webapp_secret, secure_cookie=settings.webapp_secure_cookie
+            None, settings.webapp_secret, secure_cookie=settings.webapp_secure_cookie
         )
         webapp_router = create_webapp_router(
             db,
