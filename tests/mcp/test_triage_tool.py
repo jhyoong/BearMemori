@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.llm.client import LLMClient
 from bearmemori.mcp.server import _handle_triage_conversation, create_mcp_app
 from bearmemori.storage.database import MemoryDatabase
@@ -32,6 +33,9 @@ def test_create_mcp_app_accepts_llm_and_pending_store():
     settings = MagicMock(spec=Settings)
     settings.webapp_secret = ""
     settings.user_timezone = "UTC"
+    settings.image_storage_dir = ""
+
+    memory_service = MagicMock(spec=MemoryService)
 
     app = create_mcp_app(
         db=db,
@@ -39,6 +43,7 @@ def test_create_mcp_app_accepts_llm_and_pending_store():
         settings=settings,
         llm=MagicMock(spec=LLMClient),
         pending_store=MagicMock(spec=PendingStore),
+        memory_service=memory_service,
     )
     assert app is not None
 

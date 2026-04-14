@@ -4,6 +4,7 @@ from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from bearmemori.config import Settings
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.core.reflection import ReflectionTask
 from bearmemori.core.triage import run_triage
 from bearmemori.llm.client import LLMClient
@@ -68,8 +69,16 @@ def create_mcp_app(
     llm: LLMClient | None = None,
     pending_store: PendingStore | None = None,
     reflection_task: ReflectionTask | None = None,
+    memory_service: MemoryService | None = None,
 ):
     """Build and return the MCP ASGI sub-app."""
+    if memory_service is None:
+        memory_service = MemoryService(
+            db=db,
+            vector_store=vector_store,
+            image_storage_dir=settings.image_storage_dir if hasattr(settings, "image_storage_dir") else "",
+        )
+
     from mcp.server.fastmcp import FastMCP
     from mcp.server.transport_security import TransportSecuritySettings
 
@@ -92,7 +101,7 @@ def create_mcp_app(
         category: str | None = None,
         top_k: int = 5,
     ) -> dict:
-        results = vector_store.search(query=query, top_k=top_k, category=category)
+        results = memory_service.search(query=query, top_k=top_k, category=category)
         return {"results": results}
 
     @mcp.tool(
@@ -107,57 +116,7 @@ def create_mcp_app(
         top_k: int = 5,
         event_days: int = 7,
     ) -> dict:
-        semantic_results = vector_store.search(query=query_context, top_k=top_k * 2)
-        upcoming_events = db.get_upcoming_events(days=event_days)
-
-        scored = []
-        for r in semantic_results:
-            distance = r.get("distance", 1.0)
-            similarity = max(0.0, 1.0 - distance)
-            importance = r.get("metadata", {}).get("importance", 5) / 10.0
-            combined = 0.5 * similarity + 0.5 * importance
-            scored.append((combined, r))
-        scored.sort(key=lambda x: x[0], reverse=True)
-
-        filtered = []
-        for _score, r in scored:
-            imp = r.get("metadata", {}).get("importance", 5)
-            distance = r.get("distance", 1.0)
-            similarity = max(0.0, 1.0 - distance)
-            if imp <= 2 and similarity < 0.7:
-                continue
-            filtered.append(r)
-            if len(filtered) >= top_k:
-                break
-
-        high_imp = [
-            r
-            for _, r in scored
-            if r.get("metadata", {}).get("importance", 5) >= 8 and r not in filtered
-        ]
-        filtered.extend(high_imp[: max(0, top_k - len(filtered))])
-
-        lines = []
-        if filtered:
-            lines.append("## Relevant Memories")
-            for r in filtered:
-                lines.append(f"- {r['document']}")
-        if upcoming_events:
-            lines.append("\n## Upcoming Events")
-            for e in upcoming_events:
-                dt = e.event_fields.datetime if e.event_fields else "unknown"
-                lines.append(f"- [{dt}] {e.title}: {e.content}")
-
-        context_block = "\n".join(lines) if lines else ""
-        items = filtered + [
-            {
-                "id": e.id,
-                "document": f"{e.title}: {e.content}",
-                "metadata": {"category": e.category.value},
-            }
-            for e in upcoming_events
-        ]
-        return {"context_block": context_block, "items": items}
+        return memory_service.retrieve_context(query=query_context, top_k=top_k, event_days=event_days)
 
     @mcp.tool(
         description=(
@@ -175,19 +134,25 @@ def create_mcp_app(
     ) -> dict:
         from bearmemori.storage.models import MemoryCategory
 
-        limit = min(limit, 200)
         if category is not None:
             try:
-                cat = MemoryCategory(category)
+                MemoryCategory(category)
             except ValueError:
                 return {"error": f"Invalid category: {category}"}
-            records = db.list_by_category(cat, offset=offset, limit=limit)
+
+        limit = min(limit, 200)
+        if category is not None:
+            cat = MemoryCategory(category)
             total = db.count_by_category(cat)
         else:
-            records = db.list_all(offset=offset, limit=limit)
             total = db.count_all()
-        if needs_review is not None:
-            records = [r for r in records if r.needs_review == needs_review]
+
+        records = memory_service.list(
+            category=category,
+            needs_review=needs_review,
+            offset=offset,
+            limit=limit,
+        )
         return {
             "memories": [r.model_dump(mode="json") for r in records],
             "total": total,
@@ -197,7 +162,7 @@ def create_mcp_app(
 
     @mcp.tool(description="Get a single memory by its ID (record_id: e.g. mem_abc123).")
     def get_memory(record_id: str) -> dict:
-        record = db.get(record_id)
+        record = memory_service.get(record_id)
         if record is None:
             return {"error": f"Memory not found: {record_id}"}
         return record.model_dump(mode="json")
@@ -279,10 +244,7 @@ def create_mcp_app(
         event_status: str = "pending",
         event_recurrence: str | None = None,
     ) -> dict:
-        import uuid
-        from datetime import UTC, datetime
-
-        from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
+        from bearmemori.storage.models import EventFields, MemoryCategory, MemoryDraft
 
         try:
             cat = MemoryCategory(category)
@@ -299,21 +261,17 @@ def create_mcp_app(
                 status=event_status,
                 recurrence=event_recurrence,
             )
-        record_id = f"mem_{uuid.uuid4().hex[:12]}"
-        record = MemoryRecord(
-            id=record_id,
+
+        draft = MemoryDraft(
             category=cat,
             title=title,
             content=content,
-            created_at=datetime.now(UTC),
             tags=tags or [],
             importance=importance,
-            needs_review=False,
             event_fields=event_fields,
         )
-        db.create(record)
-        vector_store.add(record)
-        return {"record_id": record_id, "status": "created"}
+        record = memory_service.create(draft)
+        return {"record_id": record.id, "status": "created"}
 
     @mcp.tool(
         description=(
@@ -339,36 +297,30 @@ def create_mcp_app(
         event_recurrence: str | None = None,
         occurrence_date: str | None = None,
     ) -> dict:
-        from bearmemori.storage.models import EventFields, MemoryCategory
+        from bearmemori.storage.models import MemoryCategory
 
-        record = db.get(record_id)
+        record = memory_service.get(record_id)
         if record is None:
             return {"error": f"Memory not found: {record_id}"}
 
-        update_data: dict = {}
-        if title is not None:
-            update_data["title"] = title
-        if content is not None:
-            update_data["content"] = content
         if category is not None:
             try:
-                update_data["category"] = MemoryCategory(category)
+                MemoryCategory(category)
             except ValueError:
                 return {"error": f"Invalid category: {category}"}
-        if tags is not None:
-            update_data["tags"] = tags
-        if needs_review is not None:
-            update_data["needs_review"] = needs_review
-        if importance is not None:
-            if not (1 <= importance <= 10):
-                return {"error": "importance must be between 1 and 10"}
-            update_data["importance"] = importance
+
+        if importance is not None and not (1 <= importance <= 10):
+            return {"error": "importance must be between 1 and 10"}
 
         has_event_updates = any(
             v is not None for v in [event_status, event_datetime, event_recurrence]
         )
 
-        if not update_data and not has_event_updates and occurrence_date is None:
+        has_simple_updates = any(
+            v is not None for v in [title, content, category, tags, needs_review, importance]
+        )
+
+        if not has_simple_updates and not has_event_updates and occurrence_date is None:
             return {"error": "No updates provided"}
 
         if has_event_updates and record.event_fields is None:
@@ -382,47 +334,48 @@ def create_mcp_app(
         ):
             return {"error": "occurrence_date is only valid for recurring events"}
 
-        updated_record = record.model_copy(update=update_data) if update_data else record
+        # For occurrence_date (recurring event occurrence marking), apply directly
+        # since MemoryService.update does not handle completed_occurrences.
+        if occurrence_date is not None:
+            completed = list(record.metadata.get("completed_occurrences", []))
+            if event_status == "done" and occurrence_date not in completed:
+                completed.append(occurrence_date)
+            elif event_status == "pending" and occurrence_date in completed:
+                completed.remove(occurrence_date)
+            record.metadata["completed_occurrences"] = completed
+            db.update(record)
+            vector_store.update(record)
+            return {"status": "updated"}
 
-        if has_event_updates and updated_record.event_fields is not None:
-            if occurrence_date is not None:
-                completed = list(updated_record.metadata.get("completed_occurrences", []))
-                if event_status == "done" and occurrence_date not in completed:
-                    completed.append(occurrence_date)
-                elif event_status == "pending" and occurrence_date in completed:
-                    completed.remove(occurrence_date)
-                updated_record.metadata["completed_occurrences"] = completed
-            else:
-                updated_record.event_fields = EventFields(
-                    datetime=event_datetime
-                    if event_datetime is not None
-                    else updated_record.event_fields.datetime,
-                    status=event_status
-                    if event_status is not None
-                    else updated_record.event_fields.status,
-                    recurrence=event_recurrence
-                    if event_recurrence is not None
-                    else updated_record.event_fields.recurrence,
-                )
+        # Build updates dict for MemoryService
+        updates: dict = {}
+        if title is not None:
+            updates["title"] = title
+        if content is not None:
+            updates["content"] = content
+        if category is not None:
+            updates["category"] = category
+        if tags is not None:
+            updates["tags"] = tags
+        if needs_review is not None:
+            updates["needs_review"] = needs_review
+        if importance is not None:
+            updates["importance"] = importance
+        if event_status is not None:
+            updates["event_status"] = event_status
+        if event_datetime is not None:
+            updates["event_datetime"] = event_datetime
+        if event_recurrence is not None:
+            updates["event_recurrence"] = event_recurrence
 
-        db.update(updated_record)
-        vector_store.update(updated_record)
+        memory_service.update(record_id, updates)
         return {"status": "updated"}
 
     @mcp.tool(description="Delete a memory by record_id. This is permanent.")
     def delete_memory(record_id: str) -> dict:
-        if settings.image_storage_dir:
-            from pathlib import Path
-
-            record_to_delete = db.get(record_id)
-            if record_to_delete and record_to_delete.image_path:
-                file_path = Path(settings.image_storage_dir) / record_to_delete.image_path
-                if file_path.exists():
-                    file_path.unlink()
-        deleted = db.delete(record_id)
+        deleted = memory_service.delete(record_id)
         if not deleted:
             return {"error": f"Memory not found: {record_id}"}
-        vector_store.delete(record_id)
         return {"status": "deleted"}
 
     @mcp.tool(

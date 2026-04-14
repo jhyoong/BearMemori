@@ -210,6 +210,7 @@ def create_application(settings: Settings) -> FastAPI:
         llm=llm,
         pending_store=pending_store,
         reflection_task=reflection_task,
+        memory_service=memory_service,
     )
     api.mount("/mcp", mcp_asgi)
 
