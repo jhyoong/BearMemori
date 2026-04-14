@@ -185,6 +185,7 @@ def create_application(settings: Settings) -> FastAPI:
             db,
             vector_store,
             webapp_auth,
+            memory_service=memory_service,
             image_storage_dir=settings.image_storage_dir,
             user_timezone=settings.user_timezone,
         )

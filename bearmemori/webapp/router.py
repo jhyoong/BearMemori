@@ -1,5 +1,4 @@
 import calendar as cal_module
-import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,8 +7,9 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
+from bearmemori.storage.models import EventFields, MemoryCategory, MemoryDraft
 from bearmemori.storage.vector_store import VectorStore
 from bearmemori.utils.time import utc_to_local_iso
 from bearmemori.webapp.auth import WebappAuthMiddleware
@@ -27,6 +27,7 @@ def create_webapp_router(
     db: MemoryDatabase,
     vector_store: VectorStore,
     auth: WebappAuthMiddleware,
+    memory_service: MemoryService | None = None,
     image_storage_dir: str = "",
     user_timezone: str = "UTC",
 ) -> APIRouter:
@@ -50,15 +51,6 @@ def create_webapp_router(
 
     templates.env.filters["event_datetime"] = _format_event_dt
     templates.env.filters["event_datetime_input"] = _format_event_dt_input
-
-    def _delete_image_file(record_id: str) -> None:
-        if not image_storage_dir:
-            return
-        record = db.get(record_id)
-        if record and record.image_path:
-            file_path = Path(image_storage_dir) / record.image_path
-            if file_path.exists():
-                file_path.unlink()
 
     @r.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request):
@@ -165,25 +157,20 @@ def create_webapp_router(
             bymonthday=rrule_bymonthday,
             until=rrule_until,
         )
-        record_id = f"mem_{uuid.uuid4().hex[:12]}"
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-        record = MemoryRecord(
-            id=record_id,
+        draft = MemoryDraft(
             category=MemoryCategory(category),
             title=title,
             content=content,
-            created_at=datetime.now(UTC),
             tags=tag_list,
             importance=max(1, min(10, importance)),
-        )
-        if event_datetime:
-            record.event_fields = EventFields(
+            event_fields=EventFields(
                 datetime=event_datetime,
                 status="pending",
                 recurrence=recurrence if recurrence else None,
-            )
-        db.create(record)
-        vector_store.add(record)
+            ) if event_datetime else None,
+        )
+        memory_service.create(draft)
 
         return_to = request.query_params.get("return", "")
         if return_to == "calendar":
@@ -192,7 +179,7 @@ def create_webapp_router(
 
     @r.get("/review", response_class=HTMLResponse)
     async def review_queue(request: Request):
-        memories = db.list_all(needs_review=True)
+        memories = memory_service.list(needs_review=True)
         return templates.TemplateResponse(
             request,
             "review_queue.html",
@@ -204,10 +191,7 @@ def create_webapp_router(
         form = await request.form()
         record_ids = form.getlist("record_ids")
         if record_ids:
-            for rid in record_ids:
-                _delete_image_file(rid)
-            db.delete_many(record_ids)
-            vector_store.delete_many(record_ids)
+            memory_service.bulk_delete(record_ids)
         # Return updated table
         memories = db.list_all()
         return templates.TemplateResponse(
@@ -218,11 +202,7 @@ def create_webapp_router(
     async def bulk_clear_review(request: Request):
         form = await request.form()
         record_ids = form.getlist("record_ids")
-        for rid in record_ids:
-            record = db.get(rid)
-            if record:
-                record.needs_review = False
-                db.update(record)
+        memory_service.bulk_update(record_ids, {"needs_review": False})
         memories = db.list_all()
         return templates.TemplateResponse(
             request, "partials/memory_table.html", {"memories": memories}
@@ -232,11 +212,7 @@ def create_webapp_router(
     async def bulk_approve(request: Request):
         form = await request.form()
         record_ids = form.getlist("record_ids")
-        for rid in record_ids:
-            record = db.get(rid)
-            if record:
-                record.needs_review = False
-                db.update(record)
+        memory_service.bulk_update(record_ids, {"needs_review": False})
         memories = db.list_all(needs_review=True)
         return templates.TemplateResponse(
             request, "partials/memory_table.html", {"memories": memories}
@@ -247,7 +223,7 @@ def create_webapp_router(
     async def memory_detail(request: Request, record_id: str):
         from bearmemori.core.recurrence import parse_rrule_to_form
 
-        record = db.get(record_id)
+        record = memory_service.get(record_id)
         if not record:
             return RedirectResponse(url="/webapp/memories", status_code=302)
         rrule_form = parse_rrule_to_form(
@@ -324,9 +300,7 @@ def create_webapp_router(
 
     @r.delete("/memories/{record_id}")
     async def memory_delete(record_id: str):
-        _delete_image_file(record_id)
-        db.delete(record_id)
-        vector_store.delete(record_id)
+        memory_service.delete(record_id)
         return ""  # HTMX removes the element
 
     def _occurrences_by_date(start_dt: datetime, end_dt: datetime) -> dict[str, list]:

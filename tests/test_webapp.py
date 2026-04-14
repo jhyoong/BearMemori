@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import MemoryCategory, MemoryRecord
 from bearmemori.storage.vector_store import VectorStore
@@ -29,7 +30,8 @@ def vector_store():
 def webapp_client(db, vector_store):
     app = FastAPI()
     auth = WebappAuthMiddleware(app, "test-secret")
-    router = create_webapp_router(db, vector_store, auth)
+    ms = MemoryService(db=db, vector_store=vector_store)
+    router = create_webapp_router(db, vector_store, auth, memory_service=ms)
     app.include_router(router)
     app.add_middleware(WebappAuthMiddleware, secret="test-secret")
     return TestClient(app)
@@ -39,7 +41,8 @@ def webapp_client(db, vector_store):
 def authed_webapp_client(db, vector_store):
     app = FastAPI()
     auth = WebappAuthMiddleware(app, "test-secret")
-    router = create_webapp_router(db, vector_store, auth)
+    ms = MemoryService(db=db, vector_store=vector_store)
+    router = create_webapp_router(db, vector_store, auth, memory_service=ms)
     app.include_router(router)
     app.add_middleware(WebappAuthMiddleware, secret="test-secret")
 
