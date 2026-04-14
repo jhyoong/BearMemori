@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from bearmemori.api.routes import create_app
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
 from bearmemori.storage.pending_store import PendingStore
@@ -20,7 +21,8 @@ def test_client():
         vs = MagicMock(spec=VectorStore)
         vs.search.return_value = []
         ps = PendingStore()
-        app = create_app(db=db, vector_store=vs, pending_store=ps)
+        memory_service = MemoryService(db=db, vector_store=vs)
+        app = create_app(db=db, vector_store=vs, pending_store=ps, memory_service=memory_service)
         yield TestClient(app), db
 
 

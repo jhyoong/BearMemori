@@ -8,6 +8,7 @@ from starlette.staticfiles import StaticFiles
 from bearmemori.api.routes import create_app as create_api_app
 from bearmemori.config import Settings
 from bearmemori.core.cleanup import PendingCleanupTask
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.core.confirm import ConfirmHandler
 from bearmemori.core.followup import FollowUpManager
 from bearmemori.core.processor import Processor
@@ -157,11 +158,18 @@ def create_application(settings: Settings) -> FastAPI:
         reflection_task=reflection_task,
     )
 
+    memory_service = MemoryService(
+        db=db,
+        vector_store=vector_store,
+        image_storage_dir=settings.image_storage_dir,
+    )
+
     # Create FastAPI app
     api = create_api_app(
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
+        memory_service=memory_service,
         llm=llm,
         reflection_task=reflection_task,
         user_timezone=settings.user_timezone,

@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -14,6 +14,7 @@ from bearmemori.api.schemas import (
     TriageRequest,
     UpdateMemoryRequest,
 )
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.core.reflection import ReflectionTask
 from bearmemori.core.triage import run_triage
 from bearmemori.llm.client import LLMClient
@@ -35,22 +36,13 @@ def create_app(
     db: MemoryDatabase,
     vector_store: VectorStore,
     pending_store: PendingStore,
+    memory_service: MemoryService,
     llm: LLMClient | None = None,
     reflection_task: ReflectionTask | None = None,
     user_timezone: str = "UTC",
     image_storage_dir: str = "",
 ) -> FastAPI:
     app = FastAPI(title="BearMemori", version="0.3.9")
-
-    def _delete_image(record_id: str) -> None:
-        if not image_storage_dir:
-            return
-        record = db.get(record_id)
-        if record and record.image_path:
-            file_path = Path(image_storage_dir) / record.image_path
-            if file_path.exists():
-                file_path.unlink()
-                logger.info("Deleted image: %s", file_path)
 
     @app.get("/health")
     def health():
@@ -138,76 +130,12 @@ def create_app(
 
     @app.get("/memory/search")
     def search_memories(query: str, category: str | None = None, top_k: int = 5):
-        results = vector_store.search(
-            query=query,
-            top_k=top_k,
-            category=category,
-        )
+        results = memory_service.search(query=query, top_k=top_k, category=category)
         return {"results": results}
 
     @app.get("/memory/retrieve")
     def retrieve_context(query_context: str, top_k: int = 5, event_days: int = 7):
-        # Fetch more candidates than needed for scoring
-        semantic_results = vector_store.search(query=query_context, top_k=top_k * 2)
-        upcoming_events = db.get_upcoming_events(days=event_days)
-
-        # Score and rank by combined relevance + importance
-        scored = []
-        for r in semantic_results:
-            distance = r.get("distance", 1.0)
-            similarity = max(0.0, 1.0 - distance)
-            importance = r.get("metadata", {}).get("importance", 5) / 10.0
-            combined = 0.5 * similarity + 0.5 * importance
-            scored.append((combined, r))
-
-        # Sort by combined score descending
-        scored.sort(key=lambda x: x[0], reverse=True)
-
-        # Apply importance thresholds
-        filtered = []
-        for score, r in scored:
-            imp = r.get("metadata", {}).get("importance", 5)
-            distance = r.get("distance", 1.0)
-            similarity = max(0.0, 1.0 - distance)
-            # Skip low importance unless highly relevant
-            if imp <= 2 and similarity < 0.7:
-                continue
-            filtered.append(r)
-            if len(filtered) >= top_k:
-                break
-
-        # Always include high-importance memories with any relevance
-        high_imp = [
-            r
-            for _, r in scored
-            if r.get("metadata", {}).get("importance", 5) >= 8 and r not in filtered
-        ]
-        filtered.extend(high_imp[: max(0, top_k - len(filtered))])
-
-        lines = []
-        if filtered:
-            lines.append("## Relevant Memories")
-            for r in filtered:
-                lines.append(f"- {r['document']}")
-
-        if upcoming_events:
-            lines.append("\n## Upcoming Events")
-            for e in upcoming_events:
-                dt = e.event_fields.datetime if e.event_fields else "unknown"
-                lines.append(f"- [{dt}] {e.title}: {e.content}")
-
-        context_block = "\n".join(lines) if lines else ""
-
-        items = filtered + [
-            {
-                "id": e.id,
-                "document": f"{e.title}: {e.content}",
-                "metadata": {"category": e.category.value},
-            }
-            for e in upcoming_events
-        ]
-
-        return {"context_block": context_block, "items": items}
+        return memory_service.retrieve_context(query=query_context, top_k=top_k, event_days=event_days)
 
     @app.get("/memory/events/upcoming")
     def get_upcoming_events(days: int = 7, start: str | None = None, end: str | None = None):
@@ -253,14 +181,22 @@ def create_app(
                     status_code=400,
                     detail=f"Invalid category: {category}",
                 )
-            records = db.list_by_category(cat, offset=offset, limit=limit)
             total = db.count_by_category(cat)
         else:
-            records = db.list_all(offset=offset, limit=limit)
             total = db.count_all()
 
-        if needs_review is not None:
-            records = [r for r in records if r.needs_review == needs_review]
+        try:
+            records = memory_service.list(
+                category=category,
+                needs_review=needs_review,
+                offset=offset,
+                limit=limit,
+            )
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid category: {category}",
+            )
 
         return {
             "memories": [r.model_dump(mode="json") for r in records],
@@ -310,18 +246,16 @@ def create_app(
 
     @app.get("/memory/{record_id}")
     def get_memory(record_id: str):
-        record = db.get(record_id)
+        record = memory_service.get(record_id)
         if record is None:
             raise HTTPException(status_code=404, detail="Memory not found")
         return record.model_dump(mode="json")
 
     @app.delete("/memory/{record_id}")
     def delete_memory(record_id: str):
-        _delete_image(record_id)
-        deleted = db.delete(record_id)
+        deleted = memory_service.delete(record_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Memory not found")
-        vector_store.delete(record_id)
         logger.info("Deleted memory: %s", record_id)
         return {"status": "deleted"}
 
@@ -426,62 +360,26 @@ def create_app(
                 recurrence=request.event_recurrence,
             )
 
-        record_id = f"mem_{uuid.uuid4().hex[:12]}"
-        record = MemoryRecord(
-            id=record_id,
+        draft = MemoryDraft(
             category=category,
             title=request.title,
             content=request.content,
-            created_at=datetime.now(UTC),
             tags=request.tags or [],
             importance=request.importance,
-            needs_review=False,
             event_fields=event_fields,
         )
 
-        db.create(record)
-        vector_store.add(record)
-        logger.info("Created memory: %s", record_id)
-        return {"record_id": record_id, "status": "created"}
+        record = memory_service.create(draft)
+        return {"record_id": record.id, "status": "created"}
 
     @app.post("/memory/bulk/delete")
     def bulk_delete(request: BulkDeleteRequest):
-        deleted_count = 0
-        for record_id in request.record_ids:
-            _delete_image(record_id)
-            if db.delete(record_id):
-                vector_store.delete(record_id)
-                deleted_count += 1
-                logger.info("Deleted memory: %s", record_id)
-
+        deleted_count = memory_service.bulk_delete(request.record_ids)
         return {"deleted": deleted_count}
 
     @app.post("/memory/bulk/update")
     def bulk_update(request: BulkUpdateRequest):
-        allowed_fields = {"title", "content", "category", "tags", "needs_review", "importance"}
-        updated_count = 0
-        for record_id in request.record_ids:
-            record = db.get(record_id)
-            if record is None:
-                continue
-
-            update_data = {k: v for k, v in request.updates.items() if k in allowed_fields}
-            if not update_data:
-                continue
-
-            # Handle category string to enum conversion
-            if "category" in update_data and update_data["category"] is not None:
-                try:
-                    update_data["category"] = MemoryCategory(update_data["category"])
-                except ValueError:
-                    continue
-
-            updated_record = record.model_copy(update=update_data)
-            db.update(updated_record)
-            vector_store.update(updated_record)
-            updated_count += 1
-            logger.info("Updated memory: %s", record_id)
-
+        updated_count = memory_service.bulk_update(request.record_ids, request.updates)
         return {"updated": updated_count}
 
     @app.get("/images/{filename}")
