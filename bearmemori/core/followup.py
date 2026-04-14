@@ -11,9 +11,6 @@ class FollowUpManager:
         self._bus = bus
         self._active: dict[str, dict] = {}  # chat_id -> context
 
-    def has_active_followup(self, chat_id: str) -> bool:
-        return chat_id in self._active
-
     async def handle_followup_required(self, event: FollowUpRequired) -> None:
         self._active[event.source_chat_id] = event.context
         await self._bus.emit(SendMessage(chat_id=event.source_chat_id, text=event.question))

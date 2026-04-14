@@ -53,12 +53,6 @@ class PendingStore:
             return True
         return False
 
-    def cleanup(self) -> int:
-        expired = [pid for pid, item in self._store.items() if self._is_expired(item)]
-        for pid in expired:
-            del self._store[pid]
-        return len(expired)
-
     def _is_expired(self, item: PendingMemory) -> bool:
         now = datetime.now(UTC)
         elapsed = (now - item.created_at).total_seconds()

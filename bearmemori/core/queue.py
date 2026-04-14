@@ -16,9 +16,6 @@ class QueueManager:
         self._heap: list[QueueItem] = []
         self._item_available = asyncio.Event()
 
-    def size(self) -> int:
-        return len(self._heap)
-
     async def enqueue(self, item: QueueItem) -> bool:
         if len(self._heap) >= self._max_size:
             logger.warning("Queue full, rejecting item from %s", item.source_chat_id)

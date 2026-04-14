@@ -47,8 +47,8 @@ def test_cleanup():
     store.add(_make_draft())
     store.add(_make_draft())
     time.sleep(1.1)
-    removed = store.cleanup()
-    assert removed == 2
+    expired = store.cleanup_with_details()
+    assert len(expired) == 2
 
 
 def test_add_with_chat_id_and_image_bytes():

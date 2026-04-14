@@ -27,7 +27,7 @@ async def test_followup_required_tracks_conversation(manager, bus):
     )
     await manager.handle_followup_required(event)
 
-    assert manager.has_active_followup("123")
+    assert "123" in manager._active
     assert len(sent) == 1
     assert sent[0].text == "What changed?"
 
@@ -47,7 +47,7 @@ async def test_check_followup_adds_context(manager):
     assert result is not None
     assert result.context is not None
     assert result.context["messages"][-1]["content"] == "something"
-    assert not manager.has_active_followup("123")
+    assert "123" not in manager._active
 
 
 @pytest.mark.asyncio
