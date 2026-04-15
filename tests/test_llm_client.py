@@ -1,5 +1,5 @@
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -7,12 +7,23 @@ from bearmemori.llm.client import CLASSIFY_SYSTEM_PROMPT, LLMClient
 
 
 @pytest.fixture
-def client():
-    return LLMClient(base_url="http://localhost:11434/v1", model="llama3", api_key="not-needed")
+def mock_openai_client():
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock()
+    return client
+
+
+@pytest.fixture
+def client(mock_openai_client):
+    return LLMClient(
+        base_url="http://localhost:11434/v1",
+        model="llama3",
+        _client=mock_openai_client,
+    )
 
 
 @pytest.mark.asyncio
-async def test_classify_input_returns_store(client):
+async def test_classify_input_returns_store(client, mock_openai_client):
     mock_response = AsyncMock()
     mock_response.choices = [
         AsyncMock(
@@ -28,15 +39,15 @@ async def test_classify_input_returns_store(client):
         )
     ]
 
-    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
-        result = await client.classify_input("I prefer dark mode")
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.classify_input("I prefer dark mode")
 
     assert result.action == "store"
     assert result.category == "profile"
 
 
 @pytest.mark.asyncio
-async def test_classify_input_returns_followup(client):
+async def test_classify_input_returns_followup(client, mock_openai_client):
     mock_response = AsyncMock()
     mock_response.choices = [
         AsyncMock(
@@ -51,15 +62,15 @@ async def test_classify_input_returns_followup(client):
         )
     ]
 
-    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
-        result = await client.classify_input("I changed something")
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.classify_input("I changed something")
 
     assert result.action == "followup"
     assert result.question == "What kind of dark mode?"
 
 
 @pytest.mark.asyncio
-async def test_extract_memory(client):
+async def test_extract_memory(client, mock_openai_client):
     mock_response = AsyncMock()
     mock_response.choices = [
         AsyncMock(
@@ -77,8 +88,8 @@ async def test_extract_memory(client):
         )
     ]
 
-    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
-        result = await client.extract_memory("I prefer dark mode", context=None)
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.extract_memory("I prefer dark mode", context=None)
 
     assert result.content == "User prefers dark mode in all applications"
     assert result.category == "profile"
@@ -87,20 +98,20 @@ async def test_extract_memory(client):
 
 
 @pytest.mark.asyncio
-async def test_generate_followup(client):
+async def test_generate_followup(client, mock_openai_client):
     mock_response = AsyncMock()
     mock_response.choices = [
         AsyncMock(message=AsyncMock(content="Could you tell me more about what changed?"))
     ]
 
-    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
-        result = await client.generate_followup("something changed", context=None)
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.generate_followup("something changed", context=None)
 
     assert "changed" in result
 
 
 @pytest.mark.asyncio
-async def test_classify_reminder(client):
+async def test_classify_reminder(client, mock_openai_client):
     mock_response = AsyncMock()
     mock_response.choices = [
         AsyncMock(
@@ -116,15 +127,15 @@ async def test_classify_reminder(client):
         )
     ]
 
-    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
-        result = await client.classify_input("remind me to take meds at 8pm")
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.classify_input("remind me to take meds at 8pm")
 
     assert result.action == "store"
     assert result.category == "reminder"
 
 
 @pytest.mark.asyncio
-async def test_extract_reminder(client):
+async def test_extract_reminder(client, mock_openai_client):
     mock_response = AsyncMock()
     mock_response.choices = [
         AsyncMock(
@@ -146,8 +157,8 @@ async def test_extract_reminder(client):
         )
     ]
 
-    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
-        result = await client.extract_memory("remind me to take meds at 8pm", None)
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.extract_memory("remind me to take meds at 8pm", None)
 
     assert result.category == "reminder"
     assert result.event_fields["datetime"] == "2026-03-21T20:00:00"
@@ -155,7 +166,7 @@ async def test_extract_reminder(client):
 
 
 @pytest.mark.asyncio
-async def test_extract_recurring_reminder(client):
+async def test_extract_recurring_reminder(client, mock_openai_client):
     mock_response = AsyncMock()
     mock_response.choices = [
         AsyncMock(
@@ -177,15 +188,15 @@ async def test_extract_recurring_reminder(client):
         )
     ]
 
-    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
-        result = await client.extract_memory("remind me every 8 hours to take meds", None)
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.extract_memory("remind me every 8 hours to take meds", None)
 
     assert result.category == "reminder"
     assert result.event_fields["recurrence"] == "every 8 hours"
 
 
 @pytest.mark.asyncio
-async def test_describe_image(client):
+async def test_describe_image(client, mock_openai_client):
     mock_response = AsyncMock()
     mock_response.choices = [
         AsyncMock(
@@ -203,17 +214,15 @@ async def test_describe_image(client):
         )
     ]
 
-    with patch.object(
-        client._client.chat.completions, "create", return_value=mock_response
-    ) as mock_create:
-        result = await client.describe_image(b"fake-image-bytes")
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.describe_image(b"fake-image-bytes")
 
     assert result.title == "Ocean sunset"
     assert result.content == "A sunset over the ocean"
     assert result.category == "general"
 
     # Verify vision message format was used
-    call_args = mock_create.call_args
+    call_args = mock_openai_client.chat.completions.create.call_args
     messages = call_args.kwargs["messages"]
     assert len(messages) == 2
     assert messages[1]["role"] == "user"
@@ -229,11 +238,13 @@ def test_classify_prompt_biases_toward_store():
 
 @pytest.mark.asyncio
 async def test_extract_memory_includes_current_time():
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock()
     client = LLMClient(
         base_url="http://localhost:11434/v1",
         model="llama3",
-        api_key="not-needed",
         user_timezone="Asia/Singapore",
+        _client=mock_client,
     )
     mock_response = AsyncMock()
     mock_response.choices = [
@@ -256,12 +267,10 @@ async def test_extract_memory_includes_current_time():
         )
     ]
 
-    with patch.object(
-        client._client.chat.completions, "create", return_value=mock_response
-    ) as mock_create:
-        await client.extract_memory("remind me to take meds at 8pm", None)
+    mock_client.chat.completions.create.return_value = mock_response
+    await client.extract_memory("remind me to take meds at 8pm", None)
 
-    call_args = mock_create.call_args
+    call_args = mock_client.chat.completions.create.call_args
     messages = call_args.kwargs["messages"]
     system_msg = messages[0]["content"]
     assert "Current date and time:" in system_msg
@@ -269,7 +278,7 @@ async def test_extract_memory_includes_current_time():
 
 
 @pytest.mark.asyncio
-async def test_llm_client_triage_returns_dict(client):
+async def test_llm_client_triage_returns_dict(client, mock_openai_client):
     response_data = {
         "should_save": True,
         "category": "profile",
@@ -283,14 +292,14 @@ async def test_llm_client_triage_returns_dict(client):
     mock_response.choices = [
         AsyncMock(message=AsyncMock(content=json.dumps(response_data), reasoning_content=None))
     ]
-    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
-        result = await client.triage("USER: I love black coffee", "", "2026-04-11T10:00:00")
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.triage("USER: I love black coffee", "", "2026-04-11T10:00:00")
     assert result["should_save"] is True
     assert result["category"] == "profile"
 
 
 @pytest.mark.asyncio
-async def test_llm_client_extract_triage_returns_dict(client):
+async def test_llm_client_extract_triage_returns_dict(client, mock_openai_client):
     response_data = {
         "category": "reminder",
         "title": "Pack bag",
@@ -307,10 +316,10 @@ async def test_llm_client_extract_triage_returns_dict(client):
     mock_response.choices = [
         AsyncMock(message=AsyncMock(content=json.dumps(response_data), reasoning_content=None))
     ]
-    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
-        result = await client.extract_triage(
-            "USER: Pack my bag in 10 minutes", "2026-04-11T10:00:00"
-        )
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.extract_triage(
+        "USER: Pack my bag in 10 minutes", "2026-04-11T10:00:00"
+    )
     assert result["category"] == "reminder"
     assert result["event_fields"] is not None
 
@@ -326,7 +335,7 @@ def test_triage_prompt_templates_exist():
 
 
 @pytest.mark.asyncio
-async def test_reflect_memory_returns_archive_decision(client):
+async def test_reflect_memory_returns_archive_decision(client, mock_openai_client):
     from datetime import UTC, datetime
 
     from bearmemori.storage.models import MemoryCategory, MemoryRecord
@@ -348,14 +357,14 @@ async def test_reflect_memory_returns_archive_decision(client):
     mock_response.choices = [
         AsyncMock(message=AsyncMock(content=json.dumps(response_data), reasoning_content=None))
     ]
-    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
-        result = await client.reflect_memory(record)
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.reflect_memory(record)
     assert result["action"] == "archive"
     assert result["reason"] == "Outdated and low value"
 
 
 @pytest.mark.asyncio
-async def test_reflect_memory_returns_keep_with_new_importance(client):
+async def test_reflect_memory_returns_keep_with_new_importance(client, mock_openai_client):
     from datetime import UTC, datetime
 
     from bearmemori.storage.models import MemoryCategory, MemoryRecord
@@ -377,8 +386,8 @@ async def test_reflect_memory_returns_keep_with_new_importance(client):
     mock_response.choices = [
         AsyncMock(message=AsyncMock(content=json.dumps(response_data), reasoning_content=None))
     ]
-    with patch.object(client._client.chat.completions, "create", return_value=mock_response):
-        result = await client.reflect_memory(record)
+    mock_openai_client.chat.completions.create.return_value = mock_response
+    result = await client.reflect_memory(record)
     assert result["action"] == "keep"
     assert result["new_importance"] == 7
 

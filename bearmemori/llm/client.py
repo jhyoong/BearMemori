@@ -248,35 +248,6 @@ def _clamp_importance(data: dict) -> dict:
     return data
 
 
-class _AsyncCompletionsWrapper:
-    """Thin wrapper so that `create` is a proper coroutine function.
-
-    `patch.object` auto-selects AsyncMock only when the target attribute is
-    detected as a coroutine function via `inspect.iscoroutinefunction`. The
-    openai SDK's AsyncCompletions.create is implemented differently and is not
-    detected that way, so this wrapper ensures tests can patch it correctly.
-    """
-
-    def __init__(self, completions) -> None:
-        self._completions = completions
-
-    async def create(self, **kwargs):
-        return await self._completions.create(**kwargs)
-
-
-class _ChatWrapper:
-    def __init__(self, chat) -> None:
-        self.completions = _AsyncCompletionsWrapper(chat.completions)
-
-
-class _ClientWrapper:
-    """Wraps AsyncOpenAI so that chat.completions.create is patchable."""
-
-    def __init__(self, base_url: str, api_key: str) -> None:
-        self._openai = AsyncOpenAI(base_url=base_url, api_key=api_key)
-        self.chat = _ChatWrapper(self._openai.chat)
-
-
 class LLMClient:
     def __init__(
         self,
@@ -284,8 +255,9 @@ class LLMClient:
         model: str,
         api_key: str = "not-needed",
         user_timezone: str = "UTC",
+        _client=None,  # injectable for tests
     ) -> None:
-        self._client = _ClientWrapper(base_url=base_url, api_key=api_key)
+        self._client = _client or AsyncOpenAI(base_url=base_url, api_key=api_key)
         self._model = model
         self._user_timezone = user_timezone
 
