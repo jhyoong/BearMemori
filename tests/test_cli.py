@@ -1,4 +1,3 @@
-import argparse
 from io import StringIO
 from unittest.mock import patch
 
@@ -53,8 +52,6 @@ class TestBuildParser:
 class TestHealthCommand:
     def test_health_success(self):
         import json
-
-        import urllib.request
         from unittest.mock import MagicMock
 
         mock_response = MagicMock()
@@ -102,7 +99,6 @@ class TestServeCommand:
 
 class TestMain:
     def test_main_dispatches_health(self):
-        import json
         from unittest.mock import MagicMock
 
         mock_response = MagicMock()

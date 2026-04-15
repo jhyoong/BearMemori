@@ -1,7 +1,8 @@
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+
 from bearmemori.core.memory_service import MemoryService
-from bearmemori.storage.models import MemoryCategory, MemoryDraft, MemoryRecord
 
 
 @pytest.fixture
@@ -43,10 +44,8 @@ def test_delete_calls_db_and_vector_store(service, db, vector_store):
 
 def test_retrieve_context_scores_results(service, vector_store, db):
     vector_store.search.return_value = [
-        {"id": "mem_1", "document": "high imp", "distance": 0.1,
-         "metadata": {"importance": 9}},
-        {"id": "mem_2", "document": "low imp", "distance": 0.5,
-         "metadata": {"importance": 1}},
+        {"id": "mem_1", "document": "high imp", "distance": 0.1, "metadata": {"importance": 9}},
+        {"id": "mem_2", "document": "low imp", "distance": 0.5, "metadata": {"importance": 1}},
     ]
     db.get_upcoming_events.return_value = []
     result = service.retrieve_context("query", top_k=5)

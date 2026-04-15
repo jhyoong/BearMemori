@@ -10,7 +10,7 @@ from bearmemori.utils.time import get_server_time
 logger = logging.getLogger(__name__)
 
 _CATEGORY_ENUM = (
-    'Categories:\n'
+    "Categories:\n"
     '- "profile": Stable facts about the user (preferences, identity, relationships)\n'
     '- "general": Non-time-bound useful information (prices, recommendations, facts)\n'
     '- "event": Time-bound commitments, reminders, appointments\n'
@@ -122,14 +122,13 @@ _TRIAGE_SYSTEM_TEMPLATE = (
     "\n"
     "Current date and time: {current_time}\n"
     'When the user mentions relative times (e.g. "in 10 minutes", "tomorrow", "next week"), '
-    "use the current date and time above to compute the absolute ISO 8601 datetime for event_fields.\n"
-    "\n"
-    + _CATEGORY_ENUM + "\n"
+    "use the current date and time above to compute the absolute ISO 8601 datetime"
+    " for event_fields.\n"
+    "\n" + _CATEGORY_ENUM + "\n"
     "\n"
     "You MUST respond with a single valid JSON object and nothing else. No explanation, "
     "no commentary, no markdown formatting.\n"
-    "\n"
-    + _IMPORTANCE_SCALE + "\n"
+    "\n" + _IMPORTANCE_SCALE + "\n"
     "\n"
     "If the conversation contains memory-worthy information:\n"
     '{{"should_save": true, "category": "<category>", "title": "<short title>", '
@@ -143,7 +142,7 @@ _TRIAGE_SYSTEM_TEMPLATE = (
     '{{"should_save": false}}\n'
     "\n"
     "IMPORTANT: Reminders and events are always worth saving. A reminder about a\n"
-    "future action (e.g., \"pack my bag in 10 minutes\") is valuable user\n"
+    'future action (e.g., "pack my bag in 10 minutes") is valuable user\n'
     "information - do NOT treat it as trivial. Set importance 5-8 for\n"
     "reminders, 6-9 for events/tasks.\n"
     "\n"
@@ -169,15 +168,14 @@ _EXTRACTION_SYSTEM_TEMPLATE = (
     "\n"
     "Current date and time: {current_time}\n"
     'When the user mentions relative times (e.g. "in 10 minutes", "tomorrow", "next week"), '
-    "use the current date and time above to compute the absolute ISO 8601 datetime for event_fields.\n"
+    "use the current date and time above to compute the absolute ISO 8601 datetime"
+    " for event_fields.\n"
     "\n"
     "Extract the memory details from the conversation. You MUST respond with a "
     "single valid JSON object and nothing else. No explanation, no commentary, "
     "no markdown formatting.\n"
-    "\n"
-    + _CATEGORY_ENUM + "\n"
-    "\n"
-    + _IMPORTANCE_SCALE + "\n"
+    "\n" + _CATEGORY_ENUM + "\n"
+    "\n" + _IMPORTANCE_SCALE + "\n"
     "\n"
     "Respond with:\n"
     '{{"category": "<category>", "title": "<short title>", '

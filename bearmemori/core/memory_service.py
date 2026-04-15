@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import MemoryCategory, MemoryDraft, MemoryRecord, MemorySource
+from bearmemori.storage.models import MemoryCategory, MemoryDraft, MemoryRecord
 from bearmemori.storage.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,8 @@ class MemoryService:
                 break
 
         high_imp = [
-            r for _, r in scored
+            r
+            for _, r in scored
             if r.get("metadata", {}).get("importance", 5) >= 8 and r not in filtered
         ]
         filtered.extend(high_imp[: max(0, top_k - len(filtered))])
@@ -67,8 +68,11 @@ class MemoryService:
                 lines.append(f"- [{dt}] {e.title}: {e.content}")
 
         items = filtered + [
-            {"id": e.id, "document": f"{e.title}: {e.content}",
-             "metadata": {"category": e.category.value}}
+            {
+                "id": e.id,
+                "document": f"{e.title}: {e.content}",
+                "metadata": {"category": e.category.value},
+            }
             for e in upcoming_events
         ]
         return {"context_block": "\n".join(lines) if lines else "", "items": items}
@@ -105,8 +109,17 @@ class MemoryService:
         record = self._db.get(record_id)
         if record is None:
             return None
-        allowed = {"title", "content", "category", "tags", "needs_review",
-                   "importance", "event_status", "event_datetime", "event_recurrence"}
+        allowed = {
+            "title",
+            "content",
+            "category",
+            "tags",
+            "needs_review",
+            "importance",
+            "event_status",
+            "event_datetime",
+            "event_recurrence",
+        }
         for key, value in updates.items():
             if key not in allowed:
                 continue

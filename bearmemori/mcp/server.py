@@ -55,7 +55,9 @@ def create_mcp_app(
         memory_service = MemoryService(
             db=db,
             vector_store=vector_store,
-            image_storage_dir=settings.image_storage_dir if hasattr(settings, "image_storage_dir") else "",
+            image_storage_dir=settings.image_storage_dir
+            if hasattr(settings, "image_storage_dir")
+            else "",
         )
 
     from mcp.server.fastmcp import FastMCP
@@ -95,7 +97,9 @@ def create_mcp_app(
         top_k: int = 5,
         event_days: int = 7,
     ) -> dict:
-        return memory_service.retrieve_context(query=query_context, top_k=top_k, event_days=event_days)
+        return memory_service.retrieve_context(
+            query=query_context, top_k=top_k, event_days=event_days
+        )
 
     @mcp.tool(
         description=(

@@ -168,7 +168,9 @@ def create_webapp_router(
                 datetime=event_datetime,
                 status="pending",
                 recurrence=recurrence if recurrence else None,
-            ) if event_datetime else None,
+            )
+            if event_datetime
+            else None,
         )
         memory_service.create(draft)
 

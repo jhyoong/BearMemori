@@ -8,9 +8,9 @@ from starlette.staticfiles import StaticFiles
 from bearmemori.api.routes import create_app as create_api_app
 from bearmemori.config import Settings
 from bearmemori.core.cleanup import PendingCleanupTask
-from bearmemori.core.memory_service import MemoryService
 from bearmemori.core.confirm import ConfirmHandler
 from bearmemori.core.followup import FollowUpManager
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.core.processor import Processor
 from bearmemori.core.queue import QueueManager
 from bearmemori.core.reflection import ReflectionTask

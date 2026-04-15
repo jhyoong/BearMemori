@@ -317,9 +317,7 @@ async def test_llm_client_extract_triage_returns_dict(client, mock_openai_client
         AsyncMock(message=AsyncMock(content=json.dumps(response_data), reasoning_content=None))
     ]
     mock_openai_client.chat.completions.create.return_value = mock_response
-    result = await client.extract_triage(
-        "USER: Pack my bag in 10 minutes", "2026-04-11T10:00:00"
-    )
+    result = await client.extract_triage("USER: Pack my bag in 10 minutes", "2026-04-11T10:00:00")
     assert result["category"] == "reminder"
     assert result["event_fields"] is not None
 

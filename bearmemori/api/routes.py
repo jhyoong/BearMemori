@@ -133,7 +133,9 @@ def create_app(
 
     @app.get("/memory/retrieve")
     def retrieve_context(query_context: str, top_k: int = 5, event_days: int = 7):
-        return memory_service.retrieve_context(query=query_context, top_k=top_k, event_days=event_days)
+        return memory_service.retrieve_context(
+            query=query_context, top_k=top_k, event_days=event_days
+        )
 
     @app.get("/memory/events/upcoming")
     def get_upcoming_events(days: int = 7, start: str | None = None, end: str | None = None):

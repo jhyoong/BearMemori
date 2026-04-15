@@ -340,7 +340,9 @@ def sample_record():
 def client_with_images(db, vector_store, pending_store, tmp_path):
     image_dir = tmp_path / "images"
     image_dir.mkdir()
-    memory_service = MemoryService(db=db, vector_store=vector_store, image_storage_dir=str(image_dir))
+    memory_service = MemoryService(
+        db=db, vector_store=vector_store, image_storage_dir=str(image_dir)
+    )
     app = create_app(
         db=db,
         vector_store=vector_store,
@@ -876,6 +878,7 @@ def client_with_reflection():
         }
     )
     from bearmemori.core.memory_service import MemoryService as _MemoryService
+
     memory_service = _MemoryService(db=db, vector_store=vector_store)
     app = create_app(
         db=db,

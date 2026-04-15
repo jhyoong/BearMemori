@@ -27,13 +27,12 @@ def test_triage_response_includes_reason_when_not_saved():
     from fastapi.testclient import TestClient
 
     from bearmemori.api.routes import create_app
+    from bearmemori.core.memory_service import MemoryService
     from bearmemori.core.triage import TriageResult
     from bearmemori.llm.client import LLMClient
     from bearmemori.storage.database import MemoryDatabase
     from bearmemori.storage.pending_store import PendingStore
     from bearmemori.storage.vector_store import VectorStore
-
-    from bearmemori.core.memory_service import MemoryService
 
     db = MemoryDatabase(":memory:")
     vs = VectorStore.__new__(VectorStore)
