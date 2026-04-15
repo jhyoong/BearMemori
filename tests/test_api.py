@@ -724,7 +724,6 @@ def test_confirm_with_source_chat_id(client, db):
     assert record.source is not None
     assert record.source.chat_id == "46646397"
     assert record.source.platform == "telegram"
-    assert record.metadata["source_chat_id"] == "46646397"
 
 
 def test_update_event_status(client, db, vector_store):

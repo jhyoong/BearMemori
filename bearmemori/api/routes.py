@@ -118,7 +118,6 @@ def create_app(
                 platform="telegram",
                 chat_id=request.source_chat_id,
             )
-            record.metadata["source_chat_id"] = request.source_chat_id
 
         db.create(record)
         vector_store.add(record)

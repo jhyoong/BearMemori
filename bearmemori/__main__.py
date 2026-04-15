@@ -1,10 +1,9 @@
 import asyncio
 import logging
-from typing import cast
 
 import uvicorn
 
-from bearmemori.app import Application, create_application
+from bearmemori.app import create_application
 from bearmemori.config import Settings
 from bearmemori.events.domain import InputReceived
 
@@ -15,21 +14,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def processing_loop(application) -> None:
+async def processing_loop(api) -> None:
     logger.info("Processing loop started")
     while True:
-        item = await application.queue_manager.get_next()
+        item = await api.state.queue_manager.get_next()
         try:
             followup_event = InputReceived(
                 input_type=item.input_type,
                 content=item.content,
                 source_chat_id=item.source_chat_id,
             )
-            followup_input = application.followup_manager.check_followup(followup_event)
+            followup_input = api.state.followup_manager.check_followup(followup_event)
             if followup_input:
                 item.context = followup_input.context
 
-            await application.processor.process_item(item)
+            await api.state.processor.process_item(item)
         except Exception:
             logger.exception("Error processing item from %s", item.source_chat_id)
 
@@ -42,15 +41,14 @@ async def run_server(
     settings = Settings()
     actual_port = port if port is not None else settings.api_port
     api = create_application(settings)
-    application = cast(Application, api.state.application)
 
-    asyncio.create_task(processing_loop(application))
-    asyncio.create_task(application.cleanup_task.run())
-    asyncio.create_task(application.reflection_task.run())
+    asyncio.create_task(processing_loop(api))
+    asyncio.create_task(api.state.cleanup_task.run())
+    asyncio.create_task(api.state.reflection_task.run())
 
     # Skip reminder scheduler in API-only mode (NanoClaw handles scheduling)
     if not settings.api_only_mode:
-        asyncio.create_task(application.scheduler.run())
+        asyncio.create_task(api.state.scheduler.run())
 
     config = uvicorn.Config(api, host=host, port=actual_port, log_level="info")
     server = uvicorn.Server(config)
@@ -61,8 +59,8 @@ async def run_server(
         logger.info("BearMemori is running on %s:%d (%s)", host, actual_port, mode)
         await server.serve()
     else:
-        assert application.telegram is not None
-        telegram_app = application.telegram.build()
+        assert api.state.telegram is not None
+        telegram_app = api.state.telegram.build()
         async with telegram_app:
             if telegram_app.post_init:
                 await telegram_app.post_init(telegram_app)

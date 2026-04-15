@@ -37,38 +37,6 @@ from bearmemori.webapp.router import create_webapp_router
 logger = logging.getLogger(__name__)
 
 
-class Application:
-    def __init__(
-        self,
-        bus: EventBus,
-        db: MemoryDatabase,
-        vector_store: VectorStore,
-        pending_store: PendingStore,
-        queue_manager: QueueManager,
-        processor: Processor,
-        followup_manager: FollowUpManager,
-        confirm_handler: ConfirmHandler,
-        cleanup_task: PendingCleanupTask,
-        telegram: TelegramInterface | None,
-        settings: Settings,
-        scheduler: ReminderScheduler,
-        reflection_task: ReflectionTask,
-    ) -> None:
-        self.bus = bus
-        self.db = db
-        self.vector_store = vector_store
-        self.pending_store = pending_store
-        self.queue_manager = queue_manager
-        self.processor = processor
-        self.followup_manager = followup_manager
-        self.confirm_handler = confirm_handler
-        self.cleanup_task = cleanup_task
-        self.telegram = telegram
-        self.settings = settings
-        self.scheduler = scheduler
-        self.reflection_task = reflection_task
-
-
 def create_application(settings: Settings) -> FastAPI:
     bus = EventBus()
 
@@ -142,22 +110,6 @@ def create_application(settings: Settings) -> FastAPI:
     bus.on(MemoryConfirmed, confirm_handler.handle_confirmed)
     bus.on(MemoryDiscarded, confirm_handler.handle_discarded)
 
-    application = Application(
-        bus=bus,
-        db=db,
-        vector_store=vector_store,
-        pending_store=pending_store,
-        queue_manager=queue_manager,
-        processor=processor,
-        followup_manager=followup_manager,
-        confirm_handler=confirm_handler,
-        cleanup_task=cleanup_task,
-        telegram=telegram,
-        settings=settings,
-        scheduler=scheduler,
-        reflection_task=reflection_task,
-    )
-
     memory_service = MemoryService(
         db=db,
         vector_store=vector_store,
@@ -214,7 +166,19 @@ def create_application(settings: Settings) -> FastAPI:
     )
     api.mount("/mcp", mcp_asgi)
 
-    # Store application in app state for access by __main__.py
-    api.state.application = application
+    # Store components in app state for access by __main__.py
+    api.state.bus = bus
+    api.state.db = db
+    api.state.vector_store = vector_store
+    api.state.pending_store = pending_store
+    api.state.queue_manager = queue_manager
+    api.state.processor = processor
+    api.state.followup_manager = followup_manager
+    api.state.confirm_handler = confirm_handler
+    api.state.cleanup_task = cleanup_task
+    api.state.telegram = telegram
+    api.state.settings = settings
+    api.state.scheduler = scheduler
+    api.state.reflection_task = reflection_task
 
     return api

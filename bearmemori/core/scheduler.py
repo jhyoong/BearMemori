@@ -80,7 +80,7 @@ class ReminderScheduler:
     def _get_chat_id(self, record) -> str:
         if record.source:
             return record.source.chat_id
-        return record.metadata.get("source_chat_id", "")
+        return ""
 
     async def run(self) -> None:
         logger.info("Reminder scheduler started (poll every %ds)", self._poll_interval)
