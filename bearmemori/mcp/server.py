@@ -64,7 +64,7 @@ def create_mcp_app(
     mcp = FastMCP(
         "BearMemori",
         # DNS rebinding protection is disabled: the MCP app is mounted behind
-        # BearerAuthMiddleware which is the actual auth boundary. The host header
+        # WebappAuthMiddleware which is the actual auth boundary. The host header
         # check would break HTTPX test clients and reverse-proxy deployments.
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )

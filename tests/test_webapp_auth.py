@@ -115,7 +115,7 @@ def test_mcp_bearer_auth_accepted():
     secret = "test-secret"
     client = _make_mcp_app(secret)
     response = client.get("/mcp/health", headers={"Authorization": f"Bearer {secret}"})
-    assert response.status_code != 401
+    assert response.status_code == 200
 
 
 def test_mcp_bearer_auth_rejected():
