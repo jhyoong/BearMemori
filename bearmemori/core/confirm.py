@@ -41,7 +41,6 @@ class ConfirmHandler:
                 platform="telegram",
                 chat_id=event.source_chat_id,
             )
-            record.metadata["source_chat_id"] = event.source_chat_id
         # Save image to disk if present
         if pending.image_bytes and self._image_storage_dir:
             image_dir = Path(self._image_storage_dir)
