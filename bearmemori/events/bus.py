@@ -24,6 +24,8 @@ class EventBus:
                 tasks.append(result)
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error("Event handler error: %s", result)
+            errors = [r for r in results if isinstance(r, Exception)]
+            for err in errors:
+                logger.error("Event handler error: %s", err)
+            if errors:
+                raise errors[0]

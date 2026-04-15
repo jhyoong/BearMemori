@@ -135,3 +135,16 @@ async def test_memory_discarded_event():
     await bus.emit(MemoryDiscarded(pending_id="pend_abc123", source_chat_id="123"))
     assert len(received) == 1
     assert received[0].pending_id == "pend_abc123"
+
+
+@pytest.mark.asyncio
+async def test_handler_exception_propagates():
+    bus = EventBus()
+
+    async def failing_handler(event):
+        raise ValueError("handler failed")
+
+    bus.on(FakeEvent, failing_handler)
+
+    with pytest.raises(ValueError, match="handler failed"):
+        await bus.emit(FakeEvent(data="trigger"))
