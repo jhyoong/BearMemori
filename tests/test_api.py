@@ -223,7 +223,7 @@ def test_create_memory_with_event_fields(client, db):
             "category": "reminder",
             "title": "Call dentist",
             "content": "Schedule cleaning",
-            "event_datetime": "2026-04-10T14:00:00+00:00",
+            "event_fields": {"datetime": "2026-04-10T14:00:00+00:00"},
         },
     )
     assert response.status_code == 200
@@ -243,9 +243,11 @@ def test_create_memory_with_event_recurrence(client, db):
             "category": "task",
             "title": "Weekly review",
             "content": "Review tasks",
-            "event_datetime": "2026-04-07T09:00:00+00:00",
-            "event_status": "pending",
-            "event_recurrence": "FREQ=WEEKLY;BYDAY=MO",
+            "event_fields": {
+                "datetime": "2026-04-07T09:00:00+00:00",
+                "status": "pending",
+                "recurrence": "FREQ=WEEKLY;BYDAY=MO",
+            },
         },
     )
     assert response.status_code == 200
@@ -261,8 +263,10 @@ def test_create_memory_invalid_event_status(client):
             "category": "reminder",
             "title": "Bad status",
             "content": "Test",
-            "event_datetime": "2026-04-10T14:00:00+00:00",
-            "event_status": "invalid",
+            "event_fields": {
+                "datetime": "2026-04-10T14:00:00+00:00",
+                "status": "invalid",
+            },
         },
     )
     assert response.status_code == 422

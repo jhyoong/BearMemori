@@ -10,7 +10,6 @@ from bearmemori.api.schemas import (
     BulkDeleteRequest,
     BulkUpdateRequest,
     ConfirmRequest,
-    CreateMemoryRequest,
     TriageRequest,
     UpdateMemoryRequest,
 )
@@ -343,32 +342,7 @@ def create_app(
         return {"status": "updated"}
 
     @app.post("/memory/create")
-    def create_memory_direct(request: CreateMemoryRequest):
-        try:
-            category = MemoryCategory(request.category)
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid category: {request.category}",
-            )
-
-        event_fields = None
-        if request.event_datetime is not None:
-            event_fields = EventFields(
-                datetime=request.event_datetime,
-                status=request.event_status,
-                recurrence=request.event_recurrence,
-            )
-
-        draft = MemoryDraft(
-            category=category,
-            title=request.title,
-            content=request.content,
-            tags=request.tags or [],
-            importance=request.importance,
-            event_fields=event_fields,
-        )
-
+    def create_memory_direct(draft: MemoryDraft):
         record = memory_service.create(draft)
         return {"record_id": record.id, "status": "created"}
 

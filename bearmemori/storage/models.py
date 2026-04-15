@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -23,7 +24,7 @@ class MemorySource(BaseModel):
 
 class EventFields(BaseModel):
     datetime: str  # ISO 8601 string
-    status: str = "pending"
+    status: Literal["pending", "done"] = "pending"
     recurrence: str | None = None
 
 

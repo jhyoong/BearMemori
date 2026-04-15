@@ -27,17 +27,6 @@ class UpdateMemoryRequest(BaseModel):
     occurrence_date: str | None = None
 
 
-class CreateMemoryRequest(BaseModel):
-    category: str
-    title: str
-    content: str
-    tags: list[str] = Field(default_factory=list)
-    importance: int = 5
-    event_datetime: str | None = None
-    event_status: Literal["pending", "done"] = "pending"
-    event_recurrence: str | None = None
-
-
 class BulkDeleteRequest(BaseModel):
     record_ids: list[str]
 
