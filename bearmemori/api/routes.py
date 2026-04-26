@@ -337,7 +337,7 @@ def create_app(
                     else updated_record.event_fields.recurrence,
                 )
 
-        db.update(updated_record)
+        db.update(updated_record, actor=Actor.API)
         vector_store.update(updated_record)
 
         logger.info("Updated memory: %s", record_id)

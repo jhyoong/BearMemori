@@ -56,7 +56,7 @@ def test_update_importance(tmp_path):
     db.create(record, actor=Actor.API)
 
     record.importance = 8
-    db.update(record)
+    db.update(record, actor=Actor.API)
 
     retrieved = db.get("mem_upd_test")
     assert retrieved is not None

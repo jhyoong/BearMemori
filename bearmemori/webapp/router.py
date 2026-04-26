@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 
 from bearmemori.core.memory_service import MemoryService
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import EventFields, MemoryCategory, MemoryDraft
+from bearmemori.storage.models import Actor, EventFields, MemoryCategory, MemoryDraft
 from bearmemori.storage.vector_store import VectorStore
 from bearmemori.utils.time import utc_to_local_iso
 from bearmemori.webapp.auth import WebappAuthMiddleware
@@ -292,7 +292,7 @@ def create_webapp_router(
             )
         else:
             record.event_fields = None
-        db.update(record)
+        db.update(record, actor=Actor.WEBAPP)
         vector_store.update(record)
 
         return_to = request.query_params.get("return", "")
@@ -485,7 +485,7 @@ def create_webapp_router(
                     status=new_status,
                     recurrence=None,
                 )
-            db.update(record)
+            db.update(record, actor=Actor.WEBAPP)
 
         today = datetime.now(UTC)
         ctx = _build_calendar_context(

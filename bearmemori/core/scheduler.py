@@ -6,7 +6,7 @@ from bearmemori.core.recurrence import expand_occurrences
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import ReminderDue
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import EventFields
+from bearmemori.storage.models import Actor, EventFields
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class ReminderScheduler:
                 status="done",
                 recurrence=record.event_fields.recurrence,
             )
-        self._db.update(record)
+        self._db.update(record, actor=Actor.API)
         logger.info("Fired single reminder %s: %s", record.id, record.content[:80])
 
     async def _handle_recurring(self, record) -> None:
@@ -73,7 +73,7 @@ class ReminderScheduler:
 
         if fired:
             record.metadata["completed_occurrences"] = completed
-            self._db.update(record)
+            self._db.update(record, actor=Actor.API)
         else:
             logger.debug("Recurring reminder %s has no unfired due occurrences", record.id)
 

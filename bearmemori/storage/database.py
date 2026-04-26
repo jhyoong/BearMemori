@@ -486,7 +486,14 @@ class MemoryDatabase:
             for r in rows
         ]
 
-    def update(self, record: MemoryRecord) -> None:
+    def update(self, record: MemoryRecord, *, actor: Actor) -> None:
+        prev = self._conn.execute(
+            "SELECT archived FROM memories WHERE id = ?", (record.id,)
+        ).fetchone()
+        prev_archived = bool(prev["archived"]) if prev else False
+        becoming_archived = (not prev_archived) and record.archived
+        action = "archive" if becoming_archived else "update"
+
         event_dt = None
         event_status = None
         event_recurrence = None
@@ -522,5 +529,12 @@ class MemoryDatabase:
                 1 if record.archived else 0,
                 record.id,
             ),
+        )
+        self._write_audit(
+            memory_id=record.id,
+            action=action,
+            actor=actor,
+            title_snapshot=record.title,
+            category_snapshot=record.category.value,
         )
         self._conn.commit()

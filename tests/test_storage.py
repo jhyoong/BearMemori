@@ -174,7 +174,7 @@ def test_list_memories_filter_needs_review(db, sample_record):
 def test_update_memory_needs_review(db, sample_record):
     db.create(sample_record, actor=Actor.API)
     sample_record.needs_review = True
-    db.update(sample_record)
+    db.update(sample_record, actor=Actor.API)
     retrieved = db.get(sample_record.id)
     assert retrieved.needs_review is True
 
@@ -240,7 +240,7 @@ def test_update_normalizes_event_datetime_to_utc(db):
         datetime="2026-03-26T10:00:00+05:30",
         status="pending",
     )
-    db.update(record)
+    db.update(record, actor=Actor.API)
     result = db.get("mem_tz2")
     # +05:30 offset means 04:30 UTC
     assert result.event_fields.datetime == "2026-03-26T04:30:00+00:00"

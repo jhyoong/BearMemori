@@ -105,7 +105,9 @@ class MemoryService:
         logger.info("Created memory: %s", record_id)
         return record
 
-    def update(self, record_id: str, updates: dict) -> MemoryRecord | None:
+    def update(
+        self, record_id: str, updates: dict, actor: Actor = Actor.API
+    ) -> MemoryRecord | None:
         record = self._db.get(record_id)
         if record is None:
             return None
@@ -133,7 +135,7 @@ class MemoryService:
                 record.event_fields.recurrence = value
             else:
                 setattr(record, key, value)
-        self._db.update(record)
+        self._db.update(record, actor=actor)
         self._vector_store.update(record)
         return record
 

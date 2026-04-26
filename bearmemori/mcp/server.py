@@ -280,7 +280,7 @@ def create_mcp_app(
         event_recurrence: str | None = None,
         occurrence_date: str | None = None,
     ) -> dict:
-        from bearmemori.storage.models import MemoryCategory
+        from bearmemori.storage.models import Actor, MemoryCategory
 
         record = memory_service.get(record_id)
         if record is None:
@@ -326,7 +326,7 @@ def create_mcp_app(
             elif event_status == "pending" and occurrence_date in completed:
                 completed.remove(occurrence_date)
             record.metadata["completed_occurrences"] = completed
-            db.update(record)
+            db.update(record, actor=Actor.API)
             vector_store.update(record)
             return {"status": "updated"}
 
