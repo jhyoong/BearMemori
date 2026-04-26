@@ -505,9 +505,18 @@ def create_webapp_router(
         start: str | None,
         end: str | None,
     ) -> dict:
-        actor_enum = Actor(actor) if actor else None
-        start_dt = datetime.fromisoformat(start) if start else None
-        end_dt = datetime.fromisoformat(end) if end else None
+        try:
+            actor_enum = Actor(actor) if actor else None
+        except ValueError:
+            actor_enum = None
+        try:
+            start_dt = datetime.fromisoformat(start) if start else None
+        except ValueError:
+            start_dt = None
+        try:
+            end_dt = datetime.fromisoformat(end) if end else None
+        except ValueError:
+            end_dt = None
         entries = db.list_audit(
             actor=actor_enum,
             action=action or None,
