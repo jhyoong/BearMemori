@@ -137,17 +137,17 @@ class MemoryService:
         self._vector_store.update(record)
         return record
 
-    def delete(self, record_id: str) -> bool:
+    def delete(self, record_id: str, actor: Actor = Actor.API) -> bool:
         self._delete_image(record_id)
-        deleted = self._db.delete(record_id)
+        deleted = self._db.delete(record_id, actor=actor)
         if deleted:
             self._vector_store.delete(record_id)
         return deleted
 
-    def bulk_delete(self, record_ids: list[str]) -> int:
+    def bulk_delete(self, record_ids: list[str], actor: Actor = Actor.API) -> int:
         count = 0
         for record_id in record_ids:
-            if self.delete(record_id):
+            if self.delete(record_id, actor=actor):
                 count += 1
         return count
 

@@ -241,18 +241,44 @@ class MemoryDatabase:
         row = self._conn.execute("SELECT * FROM memories WHERE id = ?", (record_id,)).fetchone()
         return self._row_to_record(row) if row else None
 
-    def delete(self, record_id: str) -> bool:
+    def delete(self, record_id: str, *, actor: Actor) -> bool:
+        row = self._conn.execute(
+            "SELECT title, category FROM memories WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        if row is None:
+            return False
         cursor = self._conn.execute("DELETE FROM memories WHERE id = ?", (record_id,))
+        self._write_audit(
+            memory_id=record_id,
+            action="delete",
+            actor=actor,
+            title_snapshot=row["title"],
+            category_snapshot=row["category"],
+        )
         self._conn.commit()
         return cursor.rowcount > 0
 
-    def delete_many(self, record_ids: list[str]) -> int:
+    def delete_many(self, record_ids: list[str], *, actor: Actor) -> int:
         if not record_ids:
             return 0
         placeholders = ", ".join("?" * len(record_ids))
+        rows = self._conn.execute(
+            f"SELECT id, title, category FROM memories WHERE id IN ({placeholders})",
+            record_ids,
+        ).fetchall()
+        snapshots = {r["id"]: (r["title"], r["category"]) for r in rows}
         cursor = self._conn.execute(
             f"DELETE FROM memories WHERE id IN ({placeholders})", record_ids
         )
+        for mid, (title, category) in snapshots.items():
+            self._write_audit(
+                memory_id=mid,
+                action="delete",
+                actor=actor,
+                title_snapshot=title,
+                category_snapshot=category,
+            )
         self._conn.commit()
         return cursor.rowcount
 

@@ -48,12 +48,12 @@ def test_get_nonexistent(db):
 
 def test_delete(db):
     db.create(_make_record(), actor=Actor.API)
-    assert db.delete("mem_test1") is True
+    assert db.delete("mem_test1", actor=Actor.API) is True
     assert db.get("mem_test1") is None
 
 
 def test_delete_nonexistent(db):
-    assert db.delete("nonexistent") is False
+    assert db.delete("nonexistent", actor=Actor.API) is False
 
 
 def test_list_all(db):
@@ -185,7 +185,7 @@ def test_delete_many(db, sample_record):
     db.create(sample_record, actor=Actor.API)
     db.create(record2, actor=Actor.API)
     db.create(record3, actor=Actor.API)
-    deleted = db.delete_many([sample_record.id, record2.id])
+    deleted = db.delete_many([sample_record.id, record2.id], actor=Actor.API)
     assert deleted == 2
     assert db.get(sample_record.id) is None
     assert db.get(record2.id) is None

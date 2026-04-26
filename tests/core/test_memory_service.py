@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from bearmemori.core.memory_service import MemoryService
+from bearmemori.storage.models import Actor
 
 
 @pytest.fixture
@@ -38,7 +39,7 @@ def test_delete_calls_db_and_vector_store(service, db, vector_store):
     db.get.return_value = MagicMock(image_path=None)
     db.delete.return_value = True
     service.delete("mem_abc")
-    db.delete.assert_called_once_with("mem_abc")
+    db.delete.assert_called_once_with("mem_abc", actor=Actor.API)
     vector_store.delete.assert_called_once_with("mem_abc")
 
 
