@@ -190,7 +190,7 @@ class MemoryDatabase:
             archived=bool(row["archived"]),
         )
 
-    def create(self, record: MemoryRecord) -> None:
+    def create(self, record: MemoryRecord, *, actor: Actor) -> None:
         event_dt = None
         event_status = None
         event_recurrence = None
@@ -227,6 +227,13 @@ class MemoryDatabase:
                 record.importance,
                 1 if record.archived else 0,
             ),
+        )
+        self._write_audit(
+            memory_id=record.id,
+            action="create",
+            actor=actor,
+            title_snapshot=record.title,
+            category_snapshot=record.category.value,
         )
         self._conn.commit()
 

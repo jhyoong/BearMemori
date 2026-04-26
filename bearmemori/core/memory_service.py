@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import MemoryCategory, MemoryDraft, MemoryRecord
+from bearmemori.storage.models import Actor, MemoryCategory, MemoryDraft, MemoryRecord
 from bearmemori.storage.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -97,10 +97,10 @@ class MemoryService:
     def get(self, record_id: str) -> MemoryRecord | None:
         return self._db.get(record_id)
 
-    def create(self, draft: MemoryDraft) -> MemoryRecord:
+    def create(self, draft: MemoryDraft, actor: Actor = Actor.API) -> MemoryRecord:
         record_id = f"mem_{uuid.uuid4().hex[:12]}"
         record = MemoryRecord.from_draft(draft, record_id=record_id)
-        self._db.create(record)
+        self._db.create(record, actor=actor)
         self._vector_store.add(record)
         logger.info("Created memory: %s", record_id)
         return record

@@ -5,7 +5,7 @@ from pathlib import Path
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import MemoryConfirmed, MemoryDiscarded, MemoryStored
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import MemoryRecord, MemorySource
+from bearmemori.storage.models import Actor, MemoryRecord, MemorySource
 from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
 
@@ -49,7 +49,7 @@ class ConfirmHandler:
             image_file.write_bytes(pending.image_bytes)
             record.image_path = f"{record_id}.jpg"
             logger.info("Saved image to %s", image_file)
-        self._db.create(record)
+        self._db.create(record, actor=Actor.TELEGRAM)
         self._vector_store.add(record)
         self._pending_store.remove(event.pending_id)
 

@@ -19,6 +19,7 @@ from bearmemori.core.triage import run_triage
 from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import (
+    Actor,
     EventFields,
     MemoryCategory,
     MemoryDraft,
@@ -119,7 +120,7 @@ def create_app(
                 chat_id=request.source_chat_id,
             )
 
-        db.create(record)
+        db.create(record, actor=Actor.API)
         vector_store.add(record)
         pending_store.remove(request.pending_id)
 

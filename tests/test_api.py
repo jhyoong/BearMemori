@@ -10,6 +10,7 @@ from bearmemori.core.triage import TriageResult
 from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import (
+    Actor,
     EventFields,
     MemoryCategory,
     MemoryDraft,
@@ -62,7 +63,7 @@ def _seed_memory(db, vector_store, **overrides):
     )
     defaults.update(overrides)
     record = MemoryRecord(**defaults)
-    db.create(record)
+    db.create(record, actor=Actor.API)
     vector_store.add(record)
     return record
 
@@ -186,7 +187,7 @@ def test_upcoming_events(client, db, vector_store):
 
 
 def test_update_memory(client, db, sample_record):
-    db.create(sample_record)
+    db.create(sample_record, actor=Actor.API)
     response = client.put(
         f"/memory/{sample_record.id}",
         json={"title": "Updated Title", "needs_review": True},
@@ -289,8 +290,8 @@ def test_create_memory_no_event_fields_unchanged(client, db):
 
 def test_bulk_delete(client, db, sample_record):
     record2 = sample_record.model_copy(update={"id": "mem_second123"})
-    db.create(sample_record)
-    db.create(record2)
+    db.create(sample_record, actor=Actor.API)
+    db.create(record2, actor=Actor.API)
     response = client.post(
         "/memory/bulk/delete",
         json={"record_ids": [sample_record.id, record2.id]},
@@ -301,8 +302,8 @@ def test_bulk_delete(client, db, sample_record):
 
 def test_bulk_update(client, db, sample_record):
     record2 = sample_record.model_copy(update={"id": "mem_second123"})
-    db.create(sample_record)
-    db.create(record2)
+    db.create(sample_record, actor=Actor.API)
+    db.create(record2, actor=Actor.API)
     response = client.post(
         "/memory/bulk/update",
         json={
@@ -314,9 +315,9 @@ def test_bulk_update(client, db, sample_record):
 
 
 def test_list_memories_needs_review_filter(client, db, sample_record):
-    db.create(sample_record)
+    db.create(sample_record, actor=Actor.API)
     review_record = sample_record.model_copy(update={"id": "mem_review123", "needs_review": True})
-    db.create(review_record)
+    db.create(review_record, actor=Actor.API)
 
     response = client.get("/memory/list?needs_review=true")
     assert response.status_code == 200
@@ -410,7 +411,7 @@ def test_delete_memory_removes_image(client_with_images, db, vector_store):
         tags=[],
         image_path=str(img_file),
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     vector_store.add(record)
 
     assert img_file.exists()
@@ -447,8 +448,8 @@ def test_bulk_delete_removes_images(client_with_images, db, vector_store):
         tags=[],
         image_path=str(img2),
     )
-    db.create(record1)
-    db.create(record2)
+    db.create(record1, actor=Actor.API)
+    db.create(record2, actor=Actor.API)
     vector_store.add(record1)
     vector_store.add(record2)
 
@@ -476,7 +477,7 @@ def test_delete_memory_no_image_path(client_with_images, db, vector_store):
         created_at=datetime.now(UTC),
         tags=[],
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     vector_store.add(record)
 
     response = client.delete("/memory/mem_no_img")

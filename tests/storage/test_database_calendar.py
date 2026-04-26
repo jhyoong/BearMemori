@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import pytest
 
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
+from bearmemori.storage.models import Actor, EventFields, MemoryCategory, MemoryRecord
 
 
 @pytest.fixture
@@ -29,8 +29,9 @@ def _event_record(
 
 
 def test_get_events_in_range_non_recurring(db):
-    db.create(_event_record("mem_001", "2026-04-10T10:00:00+00:00"))
-    db.create(_event_record("mem_002", "2026-05-10T10:00:00+00:00"))  # outside range
+    db.create(_event_record("mem_001", "2026-04-10T10:00:00+00:00"), actor=Actor.API)
+    # outside range
+    db.create(_event_record("mem_002", "2026-05-10T10:00:00+00:00"), actor=Actor.API)
 
     start = datetime(2026, 4, 1, tzinfo=UTC)
     end = datetime(2026, 4, 30, 23, 59, 59, tzinfo=UTC)
@@ -44,7 +45,8 @@ def test_get_events_in_range_non_recurring(db):
 def test_get_events_in_range_includes_recurring_starting_before_range(db):
     # Recurring weekly starting in March -- should appear in April range
     db.create(
-        _event_record("mem_003", "2026-03-03T10:00:00+00:00", recurrence="FREQ=WEEKLY;BYDAY=TU")
+        _event_record("mem_003", "2026-03-03T10:00:00+00:00", recurrence="FREQ=WEEKLY;BYDAY=TU"),
+        actor=Actor.API,
     )
 
     start = datetime(2026, 4, 1, tzinfo=UTC)
@@ -58,7 +60,7 @@ def test_get_events_in_range_includes_recurring_starting_before_range(db):
 def test_get_events_in_range_excludes_done_recurring(db):
     r = _event_record("mem_004", "2026-03-03T10:00:00+00:00", recurrence="FREQ=WEEKLY;BYDAY=TU")
     r.event_fields.status = "done"
-    db.create(r)
+    db.create(r, actor=Actor.API)
 
     start = datetime(2026, 4, 1, tzinfo=UTC)
     end = datetime(2026, 4, 30, 23, 59, 59, tzinfo=UTC)
@@ -70,7 +72,8 @@ def test_get_events_in_range_excludes_done_recurring(db):
 
 def test_get_events_in_range_only_event_task_reminder(db):
     db.create(
-        _event_record("mem_005", "2026-04-10T10:00:00+00:00", category=MemoryCategory.GENERAL)
+        _event_record("mem_005", "2026-04-10T10:00:00+00:00", category=MemoryCategory.GENERAL),
+        actor=Actor.API,
     )
 
     start = datetime(2026, 4, 1, tzinfo=UTC)

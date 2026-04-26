@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from bearmemori.core.memory_service import MemoryService
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import MemoryCategory, MemoryRecord
+from bearmemori.storage.models import Actor, MemoryCategory, MemoryRecord
 from bearmemori.storage.vector_store import VectorStore
 from bearmemori.webapp.auth import WebappAuthMiddleware
 from bearmemori.webapp.router import create_webapp_router
@@ -129,7 +129,7 @@ def test_memory_detail(authed_webapp_client, db):
         created_at=datetime.now(UTC),
         tags=["test"],
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     response = authed_webapp_client.get("/webapp/memories/mem_test1")
     assert response.status_code == 200
     assert "Test Memory" in response.text
@@ -144,7 +144,7 @@ def test_memory_update(authed_webapp_client, db):
         created_at=datetime.now(UTC),
         tags=["test"],
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     response = authed_webapp_client.post(
         "/webapp/memories/mem_test1",
         data={
@@ -172,7 +172,7 @@ def test_memory_delete(authed_webapp_client, db):
         created_at=datetime.now(UTC),
         tags=["test"],
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     response = authed_webapp_client.delete("/webapp/memories/mem_test1")
     assert response.status_code == 200
     assert db.get("mem_test1") is None
@@ -195,8 +195,8 @@ def test_bulk_delete(authed_webapp_client, db):
         created_at=datetime.now(UTC),
         tags=[],
     )
-    db.create(record1)
-    db.create(record2)
+    db.create(record1, actor=Actor.API)
+    db.create(record2, actor=Actor.API)
     response = authed_webapp_client.post(
         "/webapp/memories/bulk/delete",
         data={"record_ids": ["mem_test1", "mem_test2"]},
@@ -225,8 +225,8 @@ def test_bulk_clear_review(authed_webapp_client, db):
         tags=[],
         needs_review=True,
     )
-    db.create(record1)
-    db.create(record2)
+    db.create(record1, actor=Actor.API)
+    db.create(record2, actor=Actor.API)
     response = authed_webapp_client.post(
         "/webapp/memories/bulk/clear-review",
         data={"record_ids": ["mem_test1", "mem_test2"]},
@@ -255,8 +255,8 @@ def test_bulk_approve_review(authed_webapp_client, db):
         tags=[],
         needs_review=True,
     )
-    db.create(record1)
-    db.create(record2)
+    db.create(record1, actor=Actor.API)
+    db.create(record2, actor=Actor.API)
     response = authed_webapp_client.post(
         "/webapp/review/bulk/approve",
         data={"record_ids": ["mem_test1", "mem_test2"]},
@@ -288,7 +288,7 @@ def test_memory_list_shows_event_datetime(authed_webapp_client, db):
             recurrence="every 8 hours",
         ),
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     response = authed_webapp_client.get("/webapp/memories")
     assert response.status_code == 200
     assert "2026/03/25 15:00" in response.text
@@ -311,7 +311,7 @@ def test_memory_detail_shows_event_fields(authed_webapp_client, db):
             recurrence=None,
         ),
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     response = authed_webapp_client.get("/webapp/memories/mem_reminder2")
     assert response.status_code == 200
     assert "2026-03-25T15:00" in response.text
@@ -327,7 +327,7 @@ def test_memory_update_saves_event_fields(authed_webapp_client, db):
         created_at=datetime.now(UTC),
         tags=["health"],
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     response = authed_webapp_client.post(
         "/webapp/memories/mem_reminder3",
         data={
@@ -366,7 +366,7 @@ def test_memory_update_clears_event_fields_when_empty(authed_webapp_client, db):
             recurrence=None,
         ),
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     response = authed_webapp_client.post(
         "/webapp/memories/mem_reminder4",
         data={
@@ -401,7 +401,7 @@ def test_memory_list_shows_local_event_datetime(authed_webapp_client, db):
             status="pending",
         ),
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     response = authed_webapp_client.get("/webapp/memories")
     assert response.status_code == 200
     # The default test timezone is UTC, so should show 15:00
@@ -418,7 +418,7 @@ def test_memory_detail_shows_importance(authed_webapp_client, db):
         tags=[],
         importance=8,
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     response = authed_webapp_client.get("/webapp/memories/mem_imp1")
     assert response.status_code == 200
     assert 'name="importance"' in response.text
@@ -435,7 +435,7 @@ def test_memory_update_saves_importance(authed_webapp_client, db):
         tags=[],
         importance=5,
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     response = authed_webapp_client.post(
         "/webapp/memories/mem_imp2",
         data={
@@ -462,7 +462,7 @@ def test_memory_update_clamps_importance(authed_webapp_client, db):
         tags=[],
         importance=5,
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     # Test above max
     response = authed_webapp_client.post(
         "/webapp/memories/mem_imp3",
@@ -513,7 +513,7 @@ def test_review_queue_with_memories(authed_webapp_client, db):
         tags=[],
         needs_review=True,
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     response = authed_webapp_client.get("/webapp/review")
     assert response.status_code == 200
     assert "Needs Review" in response.text

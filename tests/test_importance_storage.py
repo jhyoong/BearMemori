@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import MemoryCategory, MemoryRecord
+from bearmemori.storage.models import Actor, MemoryCategory, MemoryRecord
 
 
 def test_store_and_retrieve_importance(tmp_path):
@@ -16,7 +16,7 @@ def test_store_and_retrieve_importance(tmp_path):
         created_at=datetime.now(UTC),
         importance=9,
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     retrieved = db.get("mem_imp_test")
 
     assert retrieved is not None
@@ -34,7 +34,7 @@ def test_default_importance_is_5(tmp_path):
         content="Should default to 5",
         created_at=datetime.now(UTC),
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     retrieved = db.get("mem_def_test")
 
     assert retrieved is not None
@@ -53,7 +53,7 @@ def test_update_importance(tmp_path):
         created_at=datetime.now(UTC),
         importance=3,
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
 
     record.importance = 8
     db.update(record)
@@ -75,6 +75,6 @@ def test_migration_adds_importance_column(tmp_path):
         content="Pre-migration record",
         created_at=datetime.now(UTC),
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     retrieved = db.get("mem_mig_test")
     assert retrieved.importance == 5
