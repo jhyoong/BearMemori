@@ -3,6 +3,8 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 from bearmemori.storage.models import (
+    Actor,
+    AuditEntry,
     EventFields,
     MemoryCategory,
     MemoryRecord,
@@ -381,6 +383,75 @@ class MemoryDatabase:
             (since_iso, limit),
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
+
+    def _write_audit(
+        self,
+        memory_id: str,
+        action: str,
+        actor: Actor,
+        title_snapshot: str | None,
+        category_snapshot: str | None,
+    ) -> None:
+        self._conn.execute(
+            """INSERT INTO audit_log
+               (memory_id, action, actor, timestamp, title_snapshot, category_snapshot)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                memory_id,
+                action,
+                actor.value,
+                datetime.now(UTC).isoformat(),
+                title_snapshot,
+                category_snapshot,
+            ),
+        )
+
+    def list_audit(
+        self,
+        actor: Actor | None = None,
+        action: str | None = None,
+        memory_id: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> list[AuditEntry]:
+        limit = min(limit, 500)
+        clauses: list[str] = []
+        params: list = []
+        if actor is not None:
+            clauses.append("actor = ?")
+            params.append(actor.value)
+        if action is not None:
+            clauses.append("action = ?")
+            params.append(action)
+        if memory_id is not None:
+            clauses.append("memory_id = ?")
+            params.append(memory_id)
+        if start is not None:
+            clauses.append("timestamp >= ?")
+            params.append(start.isoformat())
+        if end is not None:
+            clauses.append("timestamp <= ?")
+            params.append(end.isoformat())
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.extend([limit, offset])
+        rows = self._conn.execute(
+            f"SELECT * FROM audit_log{where} ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?",
+            params,
+        ).fetchall()
+        return [
+            AuditEntry(
+                id=r["id"],
+                memory_id=r["memory_id"],
+                action=r["action"],
+                actor=Actor(r["actor"]),
+                timestamp=datetime.fromisoformat(r["timestamp"]),
+                title_snapshot=r["title_snapshot"],
+                category_snapshot=r["category_snapshot"],
+            )
+            for r in rows
+        ]
 
     def update(self, record: MemoryRecord) -> None:
         event_dt = None
