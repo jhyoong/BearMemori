@@ -6,6 +6,7 @@ from bearmemori.core.reflection import ReflectionTask
 from bearmemori.core.triage import run_triage
 from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
+from bearmemori.storage.models import Actor
 from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
 
@@ -253,7 +254,7 @@ def create_mcp_app(
             importance=importance,
             event_fields=event_fields,
         )
-        record = memory_service.create(draft)
+        record = memory_service.create(draft, actor=Actor.API)
         return {"record_id": record.id, "status": "created"}
 
     @mcp.tool(
@@ -280,7 +281,7 @@ def create_mcp_app(
         event_recurrence: str | None = None,
         occurrence_date: str | None = None,
     ) -> dict:
-        from bearmemori.storage.models import Actor, MemoryCategory
+        from bearmemori.storage.models import MemoryCategory
 
         record = memory_service.get(record_id)
         if record is None:
@@ -351,12 +352,12 @@ def create_mcp_app(
         if event_recurrence is not None:
             updates["event_recurrence"] = event_recurrence
 
-        memory_service.update(record_id, updates)
+        memory_service.update(record_id, updates, actor=Actor.API)
         return {"status": "updated"}
 
     @mcp.tool(description="Delete a memory by record_id. This is permanent.")
     def delete_memory(record_id: str) -> dict:
-        deleted = memory_service.delete(record_id)
+        deleted = memory_service.delete(record_id, actor=Actor.API)
         if not deleted:
             return {"error": f"Memory not found: {record_id}"}
         return {"status": "deleted"}

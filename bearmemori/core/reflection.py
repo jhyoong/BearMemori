@@ -70,14 +70,14 @@ class ReflectionTask:
 
             if action == "archive":
                 record.archived = True
-                self._db.update(record, actor=Actor.API)
+                self._db.update(record, actor=Actor.REFLECTION)
                 self._vector_store.delete(record.id)
                 archived += 1
             elif new_importance is not None:
                 clamped = max(1, min(10, int(new_importance)))
                 if clamped != record.importance:
                     record.importance = clamped
-                    self._db.update(record, actor=Actor.API)
+                    self._db.update(record, actor=Actor.REFLECTION)
                     self._vector_store.update(record)
                     reranked += 1
                 else:
