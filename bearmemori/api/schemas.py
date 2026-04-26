@@ -34,3 +34,13 @@ class BulkDeleteRequest(BaseModel):
 class BulkUpdateRequest(BaseModel):
     record_ids: list[str]
     updates: dict
+
+
+class AuditEntryResponse(BaseModel):
+    id: int
+    memory_id: str
+    action: str
+    actor: str
+    timestamp: str
+    title_snapshot: str | None
+    category_snapshot: str | None

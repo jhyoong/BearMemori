@@ -48,6 +48,65 @@ def create_app(
     def health():
         return {"status": "ok"}
 
+    @app.get("/audit")
+    def list_audit(
+        actor: str | None = None,
+        action: str | None = None,
+        memory_id: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ):
+        actor_enum = None
+        if actor is not None:
+            try:
+                actor_enum = Actor(actor)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid actor: {actor}")
+        if action is not None and action not in {"create", "update", "delete", "archive"}:
+            raise HTTPException(status_code=400, detail=f"Invalid action: {action}")
+
+        start_dt = None
+        end_dt = None
+        if start is not None:
+            try:
+                start_dt = datetime.fromisoformat(start)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid 'start' datetime")
+        if end is not None:
+            try:
+                end_dt = datetime.fromisoformat(end)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid 'end' datetime")
+
+        limit = min(limit, 500)
+        entries = db.list_audit(
+            actor=actor_enum,
+            action=action,
+            memory_id=memory_id,
+            start=start_dt,
+            end=end_dt,
+            offset=offset,
+            limit=limit,
+        )
+        return {
+            "entries": [
+                {
+                    "id": e.id,
+                    "memory_id": e.memory_id,
+                    "action": e.action,
+                    "actor": e.actor.value,
+                    "timestamp": e.timestamp.isoformat(),
+                    "title_snapshot": e.title_snapshot,
+                    "category_snapshot": e.category_snapshot,
+                }
+                for e in entries
+            ],
+            "offset": offset,
+            "limit": limit,
+        }
+
     @app.post("/memory/triage")
     async def triage_conversation(request: TriageRequest):
         if llm is None:
