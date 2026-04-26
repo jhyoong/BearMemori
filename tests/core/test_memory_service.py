@@ -38,7 +38,7 @@ def test_get_delegates_to_db(service, db):
 def test_delete_calls_db_and_vector_store(service, db, vector_store):
     db.get.return_value = MagicMock(image_path=None)
     db.delete.return_value = True
-    service.delete("mem_abc")
+    service.delete("mem_abc", actor=Actor.API)
     db.delete.assert_called_once_with("mem_abc", actor=Actor.API)
     vector_store.delete.assert_called_once_with("mem_abc")
 

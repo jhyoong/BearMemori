@@ -254,7 +254,7 @@ def create_app(
 
     @app.delete("/memory/{record_id}")
     def delete_memory(record_id: str):
-        deleted = memory_service.delete(record_id)
+        deleted = memory_service.delete(record_id, actor=Actor.API)
         if not deleted:
             raise HTTPException(status_code=404, detail="Memory not found")
         logger.info("Deleted memory: %s", record_id)
@@ -345,17 +345,19 @@ def create_app(
 
     @app.post("/memory/create")
     def create_memory_direct(draft: MemoryDraft):
-        record = memory_service.create(draft)
+        record = memory_service.create(draft, actor=Actor.API)
         return {"record_id": record.id, "status": "created"}
 
     @app.post("/memory/bulk/delete")
     def bulk_delete(request: BulkDeleteRequest):
-        deleted_count = memory_service.bulk_delete(request.record_ids)
+        deleted_count = memory_service.bulk_delete(request.record_ids, actor=Actor.API)
         return {"deleted": deleted_count}
 
     @app.post("/memory/bulk/update")
     def bulk_update(request: BulkUpdateRequest):
-        updated_count = memory_service.bulk_update(request.record_ids, request.updates)
+        updated_count = memory_service.bulk_update(
+            request.record_ids, request.updates, actor=Actor.API
+        )
         return {"updated": updated_count}
 
     @app.get("/images/{filename}")

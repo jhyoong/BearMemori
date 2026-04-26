@@ -97,7 +97,7 @@ class MemoryService:
     def get(self, record_id: str) -> MemoryRecord | None:
         return self._db.get(record_id)
 
-    def create(self, draft: MemoryDraft, actor: Actor = Actor.API) -> MemoryRecord:
+    def create(self, draft: MemoryDraft, *, actor: Actor) -> MemoryRecord:
         record_id = f"mem_{uuid.uuid4().hex[:12]}"
         record = MemoryRecord.from_draft(draft, record_id=record_id)
         self._db.create(record, actor=actor)
@@ -105,9 +105,7 @@ class MemoryService:
         logger.info("Created memory: %s", record_id)
         return record
 
-    def update(
-        self, record_id: str, updates: dict, actor: Actor = Actor.API
-    ) -> MemoryRecord | None:
+    def update(self, record_id: str, updates: dict, *, actor: Actor) -> MemoryRecord | None:
         record = self._db.get(record_id)
         if record is None:
             return None
@@ -139,24 +137,24 @@ class MemoryService:
         self._vector_store.update(record)
         return record
 
-    def delete(self, record_id: str, actor: Actor = Actor.API) -> bool:
+    def delete(self, record_id: str, *, actor: Actor) -> bool:
         self._delete_image(record_id)
         deleted = self._db.delete(record_id, actor=actor)
         if deleted:
             self._vector_store.delete(record_id)
         return deleted
 
-    def bulk_delete(self, record_ids: list[str], actor: Actor = Actor.API) -> int:
+    def bulk_delete(self, record_ids: list[str], *, actor: Actor) -> int:
         count = 0
         for record_id in record_ids:
             if self.delete(record_id, actor=actor):
                 count += 1
         return count
 
-    def bulk_update(self, record_ids: list[str], updates: dict) -> int:
+    def bulk_update(self, record_ids: list[str], updates: dict, *, actor: Actor) -> int:
         count = 0
         for record_id in record_ids:
-            if self.update(record_id, updates) is not None:
+            if self.update(record_id, updates, actor=actor) is not None:
                 count += 1
         return count
 

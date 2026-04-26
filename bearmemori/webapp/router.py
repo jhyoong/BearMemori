@@ -172,7 +172,7 @@ def create_webapp_router(
             if event_datetime
             else None,
         )
-        memory_service.create(draft)
+        memory_service.create(draft, actor=Actor.WEBAPP)
 
         return_to = request.query_params.get("return", "")
         if return_to == "calendar":
@@ -193,7 +193,7 @@ def create_webapp_router(
         form = await request.form()
         record_ids = form.getlist("record_ids")
         if record_ids:
-            memory_service.bulk_delete(record_ids)
+            memory_service.bulk_delete(record_ids, actor=Actor.WEBAPP)
         # Return updated table
         memories = db.list_all()
         return templates.TemplateResponse(
@@ -204,7 +204,7 @@ def create_webapp_router(
     async def bulk_clear_review(request: Request):
         form = await request.form()
         record_ids = form.getlist("record_ids")
-        memory_service.bulk_update(record_ids, {"needs_review": False})
+        memory_service.bulk_update(record_ids, {"needs_review": False}, actor=Actor.WEBAPP)
         memories = db.list_all()
         return templates.TemplateResponse(
             request, "partials/memory_table.html", {"memories": memories}
@@ -214,7 +214,7 @@ def create_webapp_router(
     async def bulk_approve(request: Request):
         form = await request.form()
         record_ids = form.getlist("record_ids")
-        memory_service.bulk_update(record_ids, {"needs_review": False})
+        memory_service.bulk_update(record_ids, {"needs_review": False}, actor=Actor.WEBAPP)
         memories = db.list_all(needs_review=True)
         return templates.TemplateResponse(
             request, "partials/memory_table.html", {"memories": memories}
@@ -302,7 +302,7 @@ def create_webapp_router(
 
     @r.delete("/memories/{record_id}")
     async def memory_delete(record_id: str):
-        memory_service.delete(record_id)
+        memory_service.delete(record_id, actor=Actor.WEBAPP)
         return ""  # HTMX removes the element
 
     def _occurrences_by_date(start_dt: datetime, end_dt: datetime) -> dict[str, list]:
