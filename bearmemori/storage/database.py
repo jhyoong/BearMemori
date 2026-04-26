@@ -90,6 +90,29 @@ class MemoryDatabase:
                 VALUES (new.rowid, new.title, new.content, new.tags);
             END
         """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                memory_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                title_snapshot TEXT,
+                category_snapshot TEXT
+            )
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp
+            ON audit_log (timestamp DESC)
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_audit_log_memory_id
+            ON audit_log (memory_id)
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_audit_log_actor
+            ON audit_log (actor)
+        """)
         self._conn.commit()
 
     def _migrate(self) -> None:
