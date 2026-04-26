@@ -496,4 +496,57 @@ def create_webapp_router(
         )
         return templates.TemplateResponse(request, "partials/calendar_grid.html", ctx)
 
+    actor_values = [a.value for a in Actor]
+    audit_action_values = ["create", "update", "delete", "archive"]
+
+    def _audit_context(
+        actor: str | None,
+        action: str | None,
+        start: str | None,
+        end: str | None,
+    ) -> dict:
+        actor_enum = Actor(actor) if actor else None
+        start_dt = datetime.fromisoformat(start) if start else None
+        end_dt = datetime.fromisoformat(end) if end else None
+        entries = db.list_audit(
+            actor=actor_enum,
+            action=action or None,
+            start=start_dt,
+            end=end_dt,
+            limit=200,
+        )
+        existing_ids = {e.memory_id for e in entries if db.get(e.memory_id) is not None}
+        return {
+            "entries": entries,
+            "existing_ids": existing_ids,
+            "actors": actor_values,
+            "actions": audit_action_values,
+            "actor": actor or "",
+            "action": action or "",
+            "start": start or "",
+            "end": end or "",
+        }
+
+    @r.get("/audit", response_class=HTMLResponse)
+    async def audit_page(
+        request: Request,
+        actor: str | None = None,
+        action: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+    ):
+        ctx = _audit_context(actor, action, start, end)
+        return templates.TemplateResponse(request, "audit.html", ctx)
+
+    @r.get("/audit/rows", response_class=HTMLResponse)
+    async def audit_rows(
+        request: Request,
+        actor: str | None = None,
+        action: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+    ):
+        ctx = _audit_context(actor, action, start, end)
+        return templates.TemplateResponse(request, "partials/audit_table.html", ctx)
+
     return r

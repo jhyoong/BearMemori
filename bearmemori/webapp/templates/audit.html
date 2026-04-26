@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Audit Log</h2>
+<form id="audit-filters"
+      hx-get="/webapp/audit/rows"
+      hx-target="#audit-rows"
+      hx-trigger="change, submit"
+      hx-swap="innerHTML">
+  <label>Actor:
+    <select name="actor">
+      <option value="">all</option>
+      {% for a in actors %}<option value="{{ a }}" {% if a == actor %}selected{% endif %}>{{ a }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Action:
+    <select name="action">
+      <option value="">all</option>
+      {% for a in actions %}<option value="{{ a }}" {% if a == action %}selected{% endif %}>{{ a }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Start: <input type="datetime-local" name="start" value="{{ start or '' }}"></label>
+  <label>End: <input type="datetime-local" name="end" value="{{ end or '' }}"></label>
+</form>
+<div id="audit-rows">
+  {% include "partials/audit_table.html" %}
+</div>
+{% endblock %}
