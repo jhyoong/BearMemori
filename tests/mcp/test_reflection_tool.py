@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bearmemori.config import Settings
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.core.reflection import ReflectionTask
 from bearmemori.llm.client import LLMClient
 from bearmemori.mcp.server import create_mcp_app
@@ -23,6 +24,7 @@ def mcp_deps():
     settings.image_storage_dir = ""
     llm = MagicMock(spec=LLMClient)
     pending_store = MagicMock(spec=PendingStore)
+    memory_service = MagicMock(spec=MemoryService)
     reflection_task = MagicMock(spec=ReflectionTask)
     reflection_task.run_once = AsyncMock(
         return_value={
@@ -37,11 +39,11 @@ def mcp_deps():
             "decisions": [],
         }
     )
-    return db, vector_store, settings, llm, pending_store, reflection_task
+    return db, vector_store, settings, llm, pending_store, reflection_task, memory_service
 
 
 def test_create_mcp_app_accepts_reflection_task(mcp_deps):
-    db, vector_store, settings, llm, pending_store, reflection_task = mcp_deps
+    db, vector_store, settings, llm, pending_store, reflection_task, memory_service = mcp_deps
     app = create_mcp_app(
         db=db,
         vector_store=vector_store,
@@ -49,12 +51,13 @@ def test_create_mcp_app_accepts_reflection_task(mcp_deps):
         llm=llm,
         pending_store=pending_store,
         reflection_task=reflection_task,
+        memory_service=memory_service,
     )
     assert app is not None
 
 
 def test_create_mcp_app_without_reflection_task(mcp_deps):
-    db, vector_store, settings, llm, pending_store, _ = mcp_deps
+    db, vector_store, settings, llm, pending_store, _, memory_service = mcp_deps
     # Should still work with reflection_task=None
     app = create_mcp_app(
         db=db,
@@ -62,5 +65,6 @@ def test_create_mcp_app_without_reflection_task(mcp_deps):
         settings=settings,
         llm=llm,
         pending_store=pending_store,
+        memory_service=memory_service,
     )
     assert app is not None

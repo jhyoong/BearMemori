@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +16,30 @@ class MemoryCategory(str, Enum):
     REMINDER = "reminder"
 
 
+class Actor(str, Enum):
+    TELEGRAM = "telegram"
+    WEBAPP = "webapp"
+    API = "api"
+    REFLECTION = "reflection"
+
+
+class AuditAction(str, Enum):
+    CREATE = "create"
+    UPDATE = "update"
+    DELETE = "delete"
+    ARCHIVE = "archive"
+
+
+class AuditEntry(BaseModel):
+    id: int
+    memory_id: str
+    action: str  # AuditAction value
+    actor: Actor
+    timestamp: datetime
+    title_snapshot: str | None = None
+    category_snapshot: str | None = None
+
+
 class MemorySource(BaseModel):
     platform: str
     chat_id: str
@@ -23,7 +48,7 @@ class MemorySource(BaseModel):
 
 class EventFields(BaseModel):
     datetime: str  # ISO 8601 string
-    status: str = "pending"
+    status: Literal["pending", "done"] = "pending"
     recurrence: str | None = None
 
 

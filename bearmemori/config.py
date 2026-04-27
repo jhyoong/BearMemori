@@ -30,17 +30,11 @@ class Settings(BaseSettings):
     queue_max_size: int = 1000
     followup_timeout_hours: int = 24
     reminder_poll_interval_seconds: int = 60
-    retrieval_top_k: int = 5
-    upcoming_events_days: int = 7
     api_port: int = 8100
     webapp_secret: str = ""
     webapp_secure_cookie: bool = False
     user_timezone: str = "UTC"
     image_storage_dir: str = "data/images"
-    importance_high_threshold: int = 8
-    importance_low_threshold: int = 2
-    importance_relevance_weight: float = 0.5
-    importance_weight: float = 0.5
     reflection_start_hour: int = 2
     reflection_end_hour: int = 6
     reflection_poll_interval_seconds: int = 3600

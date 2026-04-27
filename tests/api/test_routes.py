@@ -6,8 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from bearmemori.api.routes import create_app
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
+from bearmemori.storage.models import Actor, EventFields, MemoryCategory, MemoryRecord
 from bearmemori.storage.pending_store import PendingStore
 from bearmemori.storage.vector_store import VectorStore
 
@@ -20,7 +21,8 @@ def test_client():
         vs = MagicMock(spec=VectorStore)
         vs.search.return_value = []
         ps = PendingStore()
-        app = create_app(db=db, vector_store=vs, pending_store=ps)
+        memory_service = MemoryService(db=db, vector_store=vs)
+        app = create_app(db=db, vector_store=vs, pending_store=ps, memory_service=memory_service)
         yield TestClient(app), db
 
 
@@ -39,7 +41,7 @@ def test_upcoming_events_with_start_end_returns_occurrences(test_client):
             recurrence="FREQ=WEEKLY;BYDAY=TU",
         ),
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
 
     response = client.get(
         "/memory/events/upcoming",

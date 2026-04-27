@@ -1,52 +1,36 @@
-import pytest
-from httpx import ASGITransport, AsyncClient
-from starlette.applications import Starlette
-from starlette.responses import PlainTextResponse
-from starlette.routing import Route
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
-from bearmemori.mcp.server import BearerAuthMiddleware
+from bearmemori.webapp.auth import WebappAuthMiddleware
 
 
-def _make_dummy_app():
-    """A minimal ASGI app that returns 200 OK."""
+def _make_mcp_app(secret: str) -> TestClient:
+    app = FastAPI()
 
-    async def homepage(request):
-        return PlainTextResponse("ok")
+    @app.get("/mcp/sse")
+    async def mcp_sse():
+        return {"status": "ok"}
 
-    return Starlette(routes=[Route("/", homepage)])
-
-
-@pytest.mark.asyncio
-async def test_auth_middleware_no_secret_allows_all():
-    """When secret is empty, all requests pass through."""
-    app = BearerAuthMiddleware(_make_dummy_app(), secret="")
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/")
-    assert response.status_code == 200
+    app.add_middleware(WebappAuthMiddleware, secret=secret)
+    return TestClient(app, raise_server_exceptions=False)
 
 
-@pytest.mark.asyncio
-async def test_auth_middleware_with_secret_rejects_missing_header():
-    """When secret is set and Authorization header is absent, return 401."""
-    app = BearerAuthMiddleware(_make_dummy_app(), secret="mysecret")
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/")
+def test_mcp_auth_rejects_missing_header():
+    """When Authorization header is absent, /mcp paths return 401."""
+    client = _make_mcp_app("mysecret")
+    response = client.get("/mcp/sse")
     assert response.status_code == 401
 
 
-@pytest.mark.asyncio
-async def test_auth_middleware_with_secret_rejects_wrong_token():
-    """When secret is set and token is wrong, return 401."""
-    app = BearerAuthMiddleware(_make_dummy_app(), secret="mysecret")
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/", headers={"Authorization": "Bearer wrongtoken"})
+def test_mcp_auth_rejects_wrong_token():
+    """When token is wrong, /mcp paths return 401."""
+    client = _make_mcp_app("mysecret")
+    response = client.get("/mcp/sse", headers={"Authorization": "Bearer wrongtoken"})
     assert response.status_code == 401
 
 
-@pytest.mark.asyncio
-async def test_auth_middleware_with_secret_allows_correct_token():
-    """When secret is set and token matches, request passes through."""
-    app = BearerAuthMiddleware(_make_dummy_app(), secret="mysecret")
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/", headers={"Authorization": "Bearer mysecret"})
+def test_mcp_auth_allows_correct_token():
+    """When token matches secret, /mcp paths return 200."""
+    client = _make_mcp_app("mysecret")
+    response = client.get("/mcp/sse", headers={"Authorization": "Bearer mysecret"})
     assert response.status_code == 200

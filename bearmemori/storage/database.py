@@ -3,6 +3,8 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 from bearmemori.storage.models import (
+    Actor,
+    AuditEntry,
     EventFields,
     MemoryCategory,
     MemoryRecord,
@@ -90,6 +92,29 @@ class MemoryDatabase:
                 VALUES (new.rowid, new.title, new.content, new.tags);
             END
         """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                memory_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                title_snapshot TEXT,
+                category_snapshot TEXT
+            )
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp
+            ON audit_log (timestamp DESC)
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_audit_log_memory_id
+            ON audit_log (memory_id)
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_audit_log_actor
+            ON audit_log (actor)
+        """)
         self._conn.commit()
 
     def _migrate(self) -> None:
@@ -165,7 +190,7 @@ class MemoryDatabase:
             archived=bool(row["archived"]),
         )
 
-    def create(self, record: MemoryRecord) -> None:
+    def create(self, record: MemoryRecord, *, actor: Actor) -> None:
         event_dt = None
         event_status = None
         event_recurrence = None
@@ -203,24 +228,57 @@ class MemoryDatabase:
                 1 if record.archived else 0,
             ),
         )
+        self._write_audit(
+            memory_id=record.id,
+            action="create",
+            actor=actor,
+            title_snapshot=record.title,
+            category_snapshot=record.category.value,
+        )
         self._conn.commit()
 
     def get(self, record_id: str) -> MemoryRecord | None:
         row = self._conn.execute("SELECT * FROM memories WHERE id = ?", (record_id,)).fetchone()
         return self._row_to_record(row) if row else None
 
-    def delete(self, record_id: str) -> bool:
+    def delete(self, record_id: str, *, actor: Actor) -> bool:
+        row = self._conn.execute(
+            "SELECT title, category FROM memories WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        if row is None:
+            return False
         cursor = self._conn.execute("DELETE FROM memories WHERE id = ?", (record_id,))
+        self._write_audit(
+            memory_id=record_id,
+            action="delete",
+            actor=actor,
+            title_snapshot=row["title"],
+            category_snapshot=row["category"],
+        )
         self._conn.commit()
         return cursor.rowcount > 0
 
-    def delete_many(self, record_ids: list[str]) -> int:
+    def delete_many(self, record_ids: list[str], *, actor: Actor) -> int:
         if not record_ids:
             return 0
         placeholders = ", ".join("?" * len(record_ids))
+        rows = self._conn.execute(
+            f"SELECT id, title, category FROM memories WHERE id IN ({placeholders})",
+            record_ids,
+        ).fetchall()
+        snapshots = {r["id"]: (r["title"], r["category"]) for r in rows}
         cursor = self._conn.execute(
             f"DELETE FROM memories WHERE id IN ({placeholders})", record_ids
         )
+        for mid, (title, category) in snapshots.items():
+            self._write_audit(
+                memory_id=mid,
+                action="delete",
+                actor=actor,
+                title_snapshot=title,
+                category_snapshot=category,
+            )
         self._conn.commit()
         return cursor.rowcount
 
@@ -359,7 +417,83 @@ class MemoryDatabase:
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
-    def update(self, record: MemoryRecord) -> None:
+    def _write_audit(
+        self,
+        memory_id: str,
+        action: str,
+        actor: Actor,
+        title_snapshot: str | None,
+        category_snapshot: str | None,
+    ) -> None:
+        self._conn.execute(
+            """INSERT INTO audit_log
+               (memory_id, action, actor, timestamp, title_snapshot, category_snapshot)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                memory_id,
+                action,
+                actor.value,
+                datetime.now(UTC).isoformat(),
+                title_snapshot,
+                category_snapshot,
+            ),
+        )
+
+    def list_audit(
+        self,
+        actor: Actor | None = None,
+        action: str | None = None,
+        memory_id: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> list[AuditEntry]:
+        limit = min(limit, 500)
+        clauses: list[str] = []
+        params: list = []
+        if actor is not None:
+            clauses.append("actor = ?")
+            params.append(actor.value)
+        if action is not None:
+            clauses.append("action = ?")
+            params.append(action)
+        if memory_id is not None:
+            clauses.append("memory_id = ?")
+            params.append(memory_id)
+        if start is not None:
+            clauses.append("timestamp >= ?")
+            params.append(start.isoformat())
+        if end is not None:
+            clauses.append("timestamp <= ?")
+            params.append(end.isoformat())
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.extend([limit, offset])
+        rows = self._conn.execute(
+            f"SELECT * FROM audit_log{where} ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?",
+            params,
+        ).fetchall()
+        return [
+            AuditEntry(
+                id=r["id"],
+                memory_id=r["memory_id"],
+                action=r["action"],
+                actor=Actor(r["actor"]),
+                timestamp=datetime.fromisoformat(r["timestamp"]),
+                title_snapshot=r["title_snapshot"],
+                category_snapshot=r["category_snapshot"],
+            )
+            for r in rows
+        ]
+
+    def update(self, record: MemoryRecord, *, actor: Actor) -> None:
+        prev = self._conn.execute(
+            "SELECT archived FROM memories WHERE id = ?", (record.id,)
+        ).fetchone()
+        prev_archived = bool(prev["archived"]) if prev else False
+        becoming_archived = (not prev_archived) and record.archived
+        action = "archive" if becoming_archived else "update"
+
         event_dt = None
         event_status = None
         event_recurrence = None
@@ -395,5 +529,12 @@ class MemoryDatabase:
                 1 if record.archived else 0,
                 record.id,
             ),
+        )
+        self._write_audit(
+            memory_id=record.id,
+            action=action,
+            actor=actor,
+            title_snapshot=record.title,
+            category_snapshot=record.category.value,
         )
         self._conn.commit()

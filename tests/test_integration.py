@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from bearmemori.api.routes import create_app
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.core.triage import TriageResult
 from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
@@ -20,10 +21,12 @@ def full_stack(tmp_path):
     vs = VectorStore(persist_dir=str(tmp_path / "chroma"))
     vs.init()
     ps = PendingStore()
+    memory_service = MemoryService(db=db, vector_store=vs)
     app = create_app(
         db=db,
         vector_store=vs,
         pending_store=ps,
+        memory_service=memory_service,
         llm=MagicMock(spec=LLMClient),
     )
     return TestClient(app), db, vs, ps

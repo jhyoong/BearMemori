@@ -97,3 +97,36 @@ def test_static_files_accessible_without_auth():
     response = client.get("/webapp/static/css/style.css")
     assert response.status_code == 200
     assert response.json()["path"] == "css/style.css"
+
+
+def _make_mcp_app(secret: str) -> TestClient:
+    app = FastAPI()
+
+    @app.get("/mcp/health")
+    async def mcp_health():
+        return {"status": "ok"}
+
+    app.add_middleware(WebappAuthMiddleware, secret=secret)
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_mcp_bearer_auth_accepted():
+    """Bearer token matching the secret should grant access to /mcp paths."""
+    secret = "test-secret"
+    client = _make_mcp_app(secret)
+    response = client.get("/mcp/health", headers={"Authorization": f"Bearer {secret}"})
+    assert response.status_code == 200
+
+
+def test_mcp_bearer_auth_rejected():
+    """Bearer token not matching the secret should be rejected."""
+    client = _make_mcp_app("test-secret")
+    response = client.get("/mcp/health", headers={"Authorization": "Bearer wrongsecret"})
+    assert response.status_code == 401
+
+
+def test_mcp_no_auth_rejected():
+    """Requests to /mcp paths without auth should be rejected."""
+    client = _make_mcp_app("test-secret")
+    response = client.get("/mcp/health")
+    assert response.status_code == 401

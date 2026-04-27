@@ -9,6 +9,24 @@ from bearmemori.utils.time import get_server_time
 
 logger = logging.getLogger(__name__)
 
+_CATEGORY_ENUM = (
+    "Categories:\n"
+    '- "profile": Stable facts about the user (preferences, identity, relationships)\n'
+    '- "general": Non-time-bound useful information (prices, recommendations, facts)\n'
+    '- "event": Time-bound commitments, reminders, appointments\n'
+    '- "location": Places, addresses, venues the user mentions\n'
+    '- "task": Action items, to-dos\n'
+    '- "reminder": Triggered notifications with scheduling'
+)
+
+_IMPORTANCE_SCALE = (
+    "Importance (1-10 integer):\n"
+    "- 1-3: Low importance (trivial facts, casual mentions)\n"
+    "- 4-6: Medium importance (useful information, general preferences)\n"
+    "- 7-8: High importance (key personal facts, significant events, strong preferences)\n"
+    "- 9-10: Critical importance (core identity, health/safety, major life events)"
+)
+
 
 def _get_content(message) -> str:
     """Extract text content from a chat completion message.
@@ -91,9 +109,6 @@ _EXTRACT_SYSTEM_TEMPLATE = (
     "For non-event categories, set event_fields to null"
 )
 
-# Backward-compatible alias
-EXTRACT_SYSTEM_PROMPT = _EXTRACT_SYSTEM_TEMPLATE.format(current_time="(not provided)")
-
 FOLLOWUP_SYSTEM_PROMPT = (
     "You are a helpful assistant gathering information for a personal memory store.\n"
     "Ask a single, clear clarifying question to better understand "
@@ -101,104 +116,82 @@ FOLLOWUP_SYSTEM_PROMPT = (
     "Keep your question short and direct."
 )
 
-_TRIAGE_SYSTEM_TEMPLATE = """\
-You are a memory triage agent. Given a conversation, decide if any information \
-is worth saving as a long-term memory.
+_TRIAGE_SYSTEM_TEMPLATE = (
+    "You are a memory triage agent. Given a conversation, decide if any information "
+    "is worth saving as a long-term memory.\n"
+    "\n"
+    "Current date and time: {current_time}\n"
+    'When the user mentions relative times (e.g. "in 10 minutes", "tomorrow", "next week"), '
+    "use the current date and time above to compute the absolute ISO 8601 datetime"
+    " for event_fields.\n"
+    "\n" + _CATEGORY_ENUM + "\n"
+    "\n"
+    "You MUST respond with a single valid JSON object and nothing else. No explanation, "
+    "no commentary, no markdown formatting.\n"
+    "\n" + _IMPORTANCE_SCALE + "\n"
+    "\n"
+    "If the conversation contains memory-worthy information:\n"
+    '{{"should_save": true, "category": "<category>", "title": "<short title>", '
+    '"content": "<key information>", "tags": ["tag1", "tag2"], '
+    '"importance": <1-10>, "event_fields": null}}\n'
+    "\n"
+    "For events/tasks/reminders, set event_fields to:\n"
+    '{{"datetime": "ISO 8601", "status": "pending", "recurrence": null}}\n'
+    "\n"
+    "If nothing is worth saving:\n"
+    '{{"should_save": false}}\n'
+    "\n"
+    "IMPORTANT: Reminders and events are always worth saving. A reminder about a\n"
+    'future action (e.g., "pack my bag in 10 minutes") is valuable user\n'
+    "information - do NOT treat it as trivial. Set importance 5-8 for\n"
+    "reminders, 6-9 for events/tasks.\n"
+    "\n"
+    "When in doubt, lean toward saving. It is better to save something "
+    "the user can dismiss than to lose information they wanted kept.\n"
+    "\n"
+    "The conversation may contain information spread across multiple messages. "
+    "Synthesize the full conversation to extract the complete memory, not just "
+    "the last message.\n"
+    "\n"
+    "If the conversation covers multiple unrelated topics, focus on the most "
+    "recent topic that contains memory-worthy information.\n"
+    "\n"
+    "Save specific, actionable information. Skip only:\n"
+    "- Greetings or small talk\n"
+    "- Questions without answers\n"
+    "- Truly trivial information (e.g., casual mentions without context)\n"
+)
 
-Current date and time: {current_time}
-When the user mentions relative times (e.g. "in 10 minutes", "tomorrow", "next week"), \
-use the current date and time above to compute the absolute ISO 8601 datetime for event_fields.
-
-Categories:
-- "profile": Stable facts about the user (preferences, identity, relationships)
-- "general": Non-time-bound useful information (prices, recommendations, facts)
-- "event": Time-bound commitments, reminders, appointments
-- "location": Places, addresses, venues the user mentions
-- "task": Action items, to-dos
-- "reminder": Triggered notifications with scheduling
-
-You MUST respond with a single valid JSON object and nothing else. No explanation, \
-no commentary, no markdown formatting.
-
-Importance (1-10 integer):
-- 1-3: Low importance (trivial facts, casual mentions)
-- 4-6: Medium importance (useful information, general preferences)
-- 7-8: High importance (key personal facts, significant events, strong preferences)
-- 9-10: Critical importance (core identity, health/safety, major life events)
-
-If the conversation contains memory-worthy information:
-{{"should_save": true, "category": "<category>", "title": "<short title>", \
-"content": "<key information>", "tags": ["tag1", "tag2"], \
-"importance": <1-10>, "event_fields": null}}
-
-For events/tasks/reminders, set event_fields to:
-{{"datetime": "ISO 8601", "status": "pending", "recurrence": null}}
-
-If nothing is worth saving:
-{{"should_save": false}}
-
-IMPORTANT: Reminders and events are always worth saving. A reminder about a
-future action (e.g., "pack my bag in 10 minutes") is valuable user
-information - do NOT treat it as trivial. Set importance 5-8 for
-reminders, 6-9 for events/tasks.
-
-When in doubt, lean toward saving. It is better to save something \
-the user can dismiss than to lose information they wanted kept.
-
-The conversation may contain information spread across multiple messages. \
-Synthesize the full conversation to extract the complete memory, not just \
-the last message.
-
-If the conversation covers multiple unrelated topics, focus on the most \
-recent topic that contains memory-worthy information.
-
-Save specific, actionable information. Skip only:
-- Greetings or small talk
-- Questions without answers
-- Truly trivial information (e.g., casual mentions without context)
-"""
-
-_EXTRACTION_SYSTEM_TEMPLATE = """\
-You are a memory extraction agent. The following conversation contains \
-information that should be saved as a long-term memory.
-
-Current date and time: {current_time}
-When the user mentions relative times (e.g. "in 10 minutes", "tomorrow", "next week"), \
-use the current date and time above to compute the absolute ISO 8601 datetime for event_fields.
-
-Extract the memory details from the conversation. You MUST respond with a \
-single valid JSON object and nothing else. No explanation, no commentary, \
-no markdown formatting.
-
-Categories:
-- "profile": Stable facts about the user (preferences, identity, relationships)
-- "general": Non-time-bound useful information (prices, recommendations, facts)
-- "event": Time-bound commitments, reminders, appointments
-- "location": Places, addresses, venues the user mentions
-- "task": Action items, to-dos
-- "reminder": Triggered notifications with scheduling
-
-Importance (1-10 integer):
-- 1-3: Low importance (trivial facts, casual mentions)
-- 4-6: Medium importance (useful information, general preferences)
-- 7-8: High importance (key personal facts, significant events, strong preferences)
-- 9-10: Critical importance (core identity, health/safety, major life events)
-
-Respond with:
-{{"category": "<category>", "title": "<short title>", \
-"content": "<key information>", "tags": ["tag1", "tag2"], \
-"importance": <1-10>, "event_fields": null}}
-
-For events/tasks/reminders, set event_fields to:
-{{"datetime": "ISO 8601", "status": "pending", "recurrence": null}}
-
-IMPORTANT: Reminders and events should have importance 5-8 for reminders, \
-6-9 for events/tasks.
-
-The conversation may contain information spread across multiple messages. \
-Synthesize the full conversation to extract the complete memory, not just \
-the last message.
-"""
+_EXTRACTION_SYSTEM_TEMPLATE = (
+    "You are a memory extraction agent. The following conversation contains "
+    "information that should be saved as a long-term memory.\n"
+    "\n"
+    "Current date and time: {current_time}\n"
+    'When the user mentions relative times (e.g. "in 10 minutes", "tomorrow", "next week"), '
+    "use the current date and time above to compute the absolute ISO 8601 datetime"
+    " for event_fields.\n"
+    "\n"
+    "Extract the memory details from the conversation. You MUST respond with a "
+    "single valid JSON object and nothing else. No explanation, no commentary, "
+    "no markdown formatting.\n"
+    "\n" + _CATEGORY_ENUM + "\n"
+    "\n" + _IMPORTANCE_SCALE + "\n"
+    "\n"
+    "Respond with:\n"
+    '{{"category": "<category>", "title": "<short title>", '
+    '"content": "<key information>", "tags": ["tag1", "tag2"], '
+    '"importance": <1-10>, "event_fields": null}}\n'
+    "\n"
+    "For events/tasks/reminders, set event_fields to:\n"
+    '{{"datetime": "ISO 8601", "status": "pending", "recurrence": null}}\n'
+    "\n"
+    "IMPORTANT: Reminders and events should have importance 5-8 for reminders, "
+    "6-9 for events/tasks.\n"
+    "\n"
+    "The conversation may contain information spread across multiple messages. "
+    "Synthesize the full conversation to extract the complete memory, not just "
+    "the last message.\n"
+)
 
 _REFLECT_SYSTEM_PROMPT = """\
 You are a memory reflection agent. Review the following memory and decide whether \
@@ -253,35 +246,6 @@ def _clamp_importance(data: dict) -> dict:
     return data
 
 
-class _AsyncCompletionsWrapper:
-    """Thin wrapper so that `create` is a proper coroutine function.
-
-    `patch.object` auto-selects AsyncMock only when the target attribute is
-    detected as a coroutine function via `inspect.iscoroutinefunction`. The
-    openai SDK's AsyncCompletions.create is implemented differently and is not
-    detected that way, so this wrapper ensures tests can patch it correctly.
-    """
-
-    def __init__(self, completions) -> None:
-        self._completions = completions
-
-    async def create(self, **kwargs):
-        return await self._completions.create(**kwargs)
-
-
-class _ChatWrapper:
-    def __init__(self, chat) -> None:
-        self.completions = _AsyncCompletionsWrapper(chat.completions)
-
-
-class _ClientWrapper:
-    """Wraps AsyncOpenAI so that chat.completions.create is patchable."""
-
-    def __init__(self, base_url: str, api_key: str) -> None:
-        self._openai = AsyncOpenAI(base_url=base_url, api_key=api_key)
-        self.chat = _ChatWrapper(self._openai.chat)
-
-
 class LLMClient:
     def __init__(
         self,
@@ -289,8 +253,9 @@ class LLMClient:
         model: str,
         api_key: str = "not-needed",
         user_timezone: str = "UTC",
+        _client=None,  # injectable for tests
     ) -> None:
-        self._client = _ClientWrapper(base_url=base_url, api_key=api_key)
+        self._client = _client or AsyncOpenAI(base_url=base_url, api_key=api_key)
         self._model = model
         self._user_timezone = user_timezone
 
