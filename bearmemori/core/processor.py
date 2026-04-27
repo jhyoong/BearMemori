@@ -35,17 +35,7 @@ class Processor:
         classification = await self._llm.classify_input(text)
 
         if classification.action == "followup":
-            question = await self._llm.generate_followup(text, item.context)
-            context = item.context or {"messages": []}
-            context["messages"].append({"role": "user", "content": text})
-            context["messages"].append({"role": "assistant", "content": question})
-            await self._bus.emit(
-                FollowUpRequired(
-                    question=question,
-                    source_chat_id=item.source_chat_id,
-                    context=context,
-                )
-            )
+            await self._emit_followup_required(item, text)
             return
 
         extraction = await self._llm.extract_memory(text, item.context)
@@ -77,6 +67,19 @@ class Processor:
             image_bytes=pending.image_bytes,
         )
 
+    async def _emit_followup_required(self, item: QueueItem, text: str) -> None:
+        question = await self._llm.generate_followup(text, item.context)
+        context = item.context or {"messages": []}
+        context["messages"].append({"role": "user", "content": text})
+        context["messages"].append({"role": "assistant", "content": question})
+        await self._bus.emit(
+            FollowUpRequired(
+                question=question,
+                source_chat_id=item.source_chat_id,
+                context=context,
+            )
+        )
+
     async def _process_image(self, item: QueueItem) -> None:
         image_bytes = item.content.get("image_bytes", b"")
         caption = item.content.get("caption", "")
@@ -84,17 +87,7 @@ class Processor:
         if caption:
             classification = await self._llm.classify_input(caption)
             if classification.action == "followup":
-                question = await self._llm.generate_followup(caption, item.context)
-                context = item.context or {"messages": []}
-                context["messages"].append({"role": "user", "content": caption})
-                context["messages"].append({"role": "assistant", "content": question})
-                await self._bus.emit(
-                    FollowUpRequired(
-                        question=question,
-                        source_chat_id=item.source_chat_id,
-                        context=context,
-                    )
-                )
+                await self._emit_followup_required(item, caption)
                 return
             extraction = await self._llm.extract_memory(caption, item.context)
         else:

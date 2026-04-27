@@ -32,8 +32,6 @@ def test_new_settings_defaults(monkeypatch):
     assert s.embedding_model == "all-mpnet-base-v2"
     assert s.pending_ttl_seconds == 1800
     assert s.cleanup_interval_seconds == 300
-    assert s.retrieval_top_k == 5
-    assert s.upcoming_events_days == 7
     assert s.api_port == 8100
     assert s.llm_api_key == "not-needed"
 

@@ -8,7 +8,7 @@ from bearmemori.core.scheduler import ReminderScheduler
 from bearmemori.events.bus import EventBus
 from bearmemori.events.domain import ReminderDue
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
+from bearmemori.storage.models import Actor, EventFields, MemoryCategory, MemoryRecord
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ async def test_recurring_fires_due_occurrence_and_marks_completed(db, bus):
             recurrence="FREQ=DAILY",
         ),
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
 
     scheduler = ReminderScheduler(bus, db)
     await scheduler.check_reminders()
@@ -76,7 +76,7 @@ async def test_recurring_does_not_refire_completed_occurrence(db, bus):
         ),
         metadata={"completed_occurrences": [occ_date_str]},
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
 
     scheduler = ReminderScheduler(bus, db)
     await scheduler.check_reminders()
@@ -97,7 +97,7 @@ async def test_non_recurring_still_marks_done(db, bus):
             status="pending",
         ),
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
 
     scheduler = ReminderScheduler(bus, db)
     await scheduler.check_reminders()

@@ -10,6 +10,7 @@ from bearmemori.config import Settings
 from bearmemori.core.cleanup import PendingCleanupTask
 from bearmemori.core.confirm import ConfirmHandler
 from bearmemori.core.followup import FollowUpManager
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.core.processor import Processor
 from bearmemori.core.queue import QueueManager
 from bearmemori.core.reflection import ReflectionTask
@@ -34,38 +35,6 @@ from bearmemori.webapp.auth import WebappAuthMiddleware
 from bearmemori.webapp.router import create_webapp_router
 
 logger = logging.getLogger(__name__)
-
-
-class Application:
-    def __init__(
-        self,
-        bus: EventBus,
-        db: MemoryDatabase,
-        vector_store: VectorStore,
-        pending_store: PendingStore,
-        queue_manager: QueueManager,
-        processor: Processor,
-        followup_manager: FollowUpManager,
-        confirm_handler: ConfirmHandler,
-        cleanup_task: PendingCleanupTask,
-        telegram: TelegramInterface | None,
-        settings: Settings,
-        scheduler: ReminderScheduler,
-        reflection_task: ReflectionTask,
-    ) -> None:
-        self.bus = bus
-        self.db = db
-        self.vector_store = vector_store
-        self.pending_store = pending_store
-        self.queue_manager = queue_manager
-        self.processor = processor
-        self.followup_manager = followup_manager
-        self.confirm_handler = confirm_handler
-        self.cleanup_task = cleanup_task
-        self.telegram = telegram
-        self.settings = settings
-        self.scheduler = scheduler
-        self.reflection_task = reflection_task
 
 
 def create_application(settings: Settings) -> FastAPI:
@@ -141,20 +110,10 @@ def create_application(settings: Settings) -> FastAPI:
     bus.on(MemoryConfirmed, confirm_handler.handle_confirmed)
     bus.on(MemoryDiscarded, confirm_handler.handle_discarded)
 
-    application = Application(
-        bus=bus,
+    memory_service = MemoryService(
         db=db,
         vector_store=vector_store,
-        pending_store=pending_store,
-        queue_manager=queue_manager,
-        processor=processor,
-        followup_manager=followup_manager,
-        confirm_handler=confirm_handler,
-        cleanup_task=cleanup_task,
-        telegram=telegram,
-        settings=settings,
-        scheduler=scheduler,
-        reflection_task=reflection_task,
+        image_storage_dir=settings.image_storage_dir,
     )
 
     # Create FastAPI app
@@ -162,6 +121,7 @@ def create_application(settings: Settings) -> FastAPI:
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
+        memory_service=memory_service,
         llm=llm,
         reflection_task=reflection_task,
         user_timezone=settings.user_timezone,
@@ -171,12 +131,13 @@ def create_application(settings: Settings) -> FastAPI:
     # Mount webapp if secret is configured
     if settings.webapp_secret:
         webapp_auth = WebappAuthMiddleware(
-            api, settings.webapp_secret, secure_cookie=settings.webapp_secure_cookie
+            None, settings.webapp_secret, secure_cookie=settings.webapp_secure_cookie
         )
         webapp_router = create_webapp_router(
             db,
             vector_store,
             webapp_auth,
+            memory_service=memory_service,
             image_storage_dir=settings.image_storage_dir,
             user_timezone=settings.user_timezone,
         )
@@ -201,10 +162,23 @@ def create_application(settings: Settings) -> FastAPI:
         llm=llm,
         pending_store=pending_store,
         reflection_task=reflection_task,
+        memory_service=memory_service,
     )
     api.mount("/mcp", mcp_asgi)
 
-    # Store application in app state for access by __main__.py
-    api.state.application = application
+    # Store components in app state for access by __main__.py
+    api.state.bus = bus
+    api.state.db = db
+    api.state.vector_store = vector_store
+    api.state.pending_store = pending_store
+    api.state.queue_manager = queue_manager
+    api.state.processor = processor
+    api.state.followup_manager = followup_manager
+    api.state.confirm_handler = confirm_handler
+    api.state.cleanup_task = cleanup_task
+    api.state.telegram = telegram
+    api.state.settings = settings
+    api.state.scheduler = scheduler
+    api.state.reflection_task = reflection_task
 
     return api

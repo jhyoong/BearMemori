@@ -1,5 +1,4 @@
 import calendar as cal_module
-import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,8 +7,9 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.storage.database import MemoryDatabase
-from bearmemori.storage.models import EventFields, MemoryCategory, MemoryRecord
+from bearmemori.storage.models import Actor, EventFields, MemoryCategory, MemoryDraft
 from bearmemori.storage.vector_store import VectorStore
 from bearmemori.utils.time import utc_to_local_iso
 from bearmemori.webapp.auth import WebappAuthMiddleware
@@ -27,6 +27,7 @@ def create_webapp_router(
     db: MemoryDatabase,
     vector_store: VectorStore,
     auth: WebappAuthMiddleware,
+    memory_service: MemoryService | None = None,
     image_storage_dir: str = "",
     user_timezone: str = "UTC",
 ) -> APIRouter:
@@ -50,15 +51,6 @@ def create_webapp_router(
 
     templates.env.filters["event_datetime"] = _format_event_dt
     templates.env.filters["event_datetime_input"] = _format_event_dt_input
-
-    def _delete_image_file(record_id: str) -> None:
-        if not image_storage_dir:
-            return
-        record = db.get(record_id)
-        if record and record.image_path:
-            file_path = Path(image_storage_dir) / record.image_path
-            if file_path.exists():
-                file_path.unlink()
 
     @r.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request):
@@ -165,25 +157,22 @@ def create_webapp_router(
             bymonthday=rrule_bymonthday,
             until=rrule_until,
         )
-        record_id = f"mem_{uuid.uuid4().hex[:12]}"
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-        record = MemoryRecord(
-            id=record_id,
+        draft = MemoryDraft(
             category=MemoryCategory(category),
             title=title,
             content=content,
-            created_at=datetime.now(UTC),
             tags=tag_list,
             importance=max(1, min(10, importance)),
-        )
-        if event_datetime:
-            record.event_fields = EventFields(
+            event_fields=EventFields(
                 datetime=event_datetime,
                 status="pending",
                 recurrence=recurrence if recurrence else None,
             )
-        db.create(record)
-        vector_store.add(record)
+            if event_datetime
+            else None,
+        )
+        memory_service.create(draft, actor=Actor.WEBAPP)
 
         return_to = request.query_params.get("return", "")
         if return_to == "calendar":
@@ -192,7 +181,7 @@ def create_webapp_router(
 
     @r.get("/review", response_class=HTMLResponse)
     async def review_queue(request: Request):
-        memories = db.list_all(needs_review=True)
+        memories = memory_service.list(needs_review=True)
         return templates.TemplateResponse(
             request,
             "review_queue.html",
@@ -204,10 +193,7 @@ def create_webapp_router(
         form = await request.form()
         record_ids = form.getlist("record_ids")
         if record_ids:
-            for rid in record_ids:
-                _delete_image_file(rid)
-            db.delete_many(record_ids)
-            vector_store.delete_many(record_ids)
+            memory_service.bulk_delete(record_ids, actor=Actor.WEBAPP)
         # Return updated table
         memories = db.list_all()
         return templates.TemplateResponse(
@@ -218,11 +204,7 @@ def create_webapp_router(
     async def bulk_clear_review(request: Request):
         form = await request.form()
         record_ids = form.getlist("record_ids")
-        for rid in record_ids:
-            record = db.get(rid)
-            if record:
-                record.needs_review = False
-                db.update(record)
+        memory_service.bulk_update(record_ids, {"needs_review": False}, actor=Actor.WEBAPP)
         memories = db.list_all()
         return templates.TemplateResponse(
             request, "partials/memory_table.html", {"memories": memories}
@@ -232,11 +214,7 @@ def create_webapp_router(
     async def bulk_approve(request: Request):
         form = await request.form()
         record_ids = form.getlist("record_ids")
-        for rid in record_ids:
-            record = db.get(rid)
-            if record:
-                record.needs_review = False
-                db.update(record)
+        memory_service.bulk_update(record_ids, {"needs_review": False}, actor=Actor.WEBAPP)
         memories = db.list_all(needs_review=True)
         return templates.TemplateResponse(
             request, "partials/memory_table.html", {"memories": memories}
@@ -247,7 +225,7 @@ def create_webapp_router(
     async def memory_detail(request: Request, record_id: str):
         from bearmemori.core.recurrence import parse_rrule_to_form
 
-        record = db.get(record_id)
+        record = memory_service.get(record_id)
         if not record:
             return RedirectResponse(url="/webapp/memories", status_code=302)
         rrule_form = parse_rrule_to_form(
@@ -288,7 +266,7 @@ def create_webapp_router(
     ):
         from bearmemori.core.recurrence import build_rrule_from_form
 
-        record = db.get(record_id)
+        record = memory_service.get(record_id)
         if not record:
             return RedirectResponse(url="/webapp/memories", status_code=302)
 
@@ -314,7 +292,7 @@ def create_webapp_router(
             )
         else:
             record.event_fields = None
-        db.update(record)
+        db.update(record, actor=Actor.WEBAPP)
         vector_store.update(record)
 
         return_to = request.query_params.get("return", "")
@@ -324,9 +302,7 @@ def create_webapp_router(
 
     @r.delete("/memories/{record_id}")
     async def memory_delete(record_id: str):
-        _delete_image_file(record_id)
-        db.delete(record_id)
-        vector_store.delete(record_id)
+        memory_service.delete(record_id, actor=Actor.WEBAPP)
         return ""  # HTMX removes the element
 
     def _occurrences_by_date(start_dt: datetime, end_dt: datetime) -> dict[str, list]:
@@ -509,7 +485,7 @@ def create_webapp_router(
                     status=new_status,
                     recurrence=None,
                 )
-            db.update(record)
+            db.update(record, actor=Actor.WEBAPP)
 
         today = datetime.now(UTC)
         ctx = _build_calendar_context(
@@ -519,5 +495,67 @@ def create_webapp_router(
             week_start or None,
         )
         return templates.TemplateResponse(request, "partials/calendar_grid.html", ctx)
+
+    actor_values = [a.value for a in Actor]
+    audit_action_values = ["create", "update", "delete", "archive"]
+
+    def _audit_context(
+        actor: str | None,
+        action: str | None,
+        start: str | None,
+        end: str | None,
+    ) -> dict:
+        try:
+            actor_enum = Actor(actor) if actor else None
+        except ValueError:
+            actor_enum = None
+        try:
+            start_dt = datetime.fromisoformat(start) if start else None
+        except ValueError:
+            start_dt = None
+        try:
+            end_dt = datetime.fromisoformat(end) if end else None
+        except ValueError:
+            end_dt = None
+        entries = db.list_audit(
+            actor=actor_enum,
+            action=action or None,
+            start=start_dt,
+            end=end_dt,
+            limit=200,
+        )
+        existing_ids = {e.memory_id for e in entries if db.get(e.memory_id) is not None}
+        return {
+            "entries": entries,
+            "existing_ids": existing_ids,
+            "actors": actor_values,
+            "actions": audit_action_values,
+            "actor": actor or "",
+            "action": action or "",
+            "start": start or "",
+            "end": end or "",
+        }
+
+    @r.get("/audit", response_class=HTMLResponse)
+    async def audit_page(
+        request: Request,
+        actor: str | None = None,
+        action: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+    ):
+        ctx = _audit_context(actor, action, start, end)
+        return templates.TemplateResponse(request, "audit.html", ctx)
+
+    @r.get("/audit/rows", response_class=HTMLResponse)
+    async def audit_rows(
+        request: Request,
+        actor: str | None = None,
+        action: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+    ):
+        ctx = _audit_context(actor, action, start, end)
+        return templates.TemplateResponse(request, "partials/audit_table.html", ctx)
 
     return r

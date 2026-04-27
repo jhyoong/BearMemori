@@ -5,10 +5,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from bearmemori.api.routes import create_app
+from bearmemori.core.memory_service import MemoryService
 from bearmemori.core.triage import TriageResult
 from bearmemori.llm.client import LLMClient
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import (
+    Actor,
     EventFields,
     MemoryCategory,
     MemoryDraft,
@@ -39,10 +41,12 @@ def pending_store():
 
 @pytest.fixture
 def client(db, vector_store, pending_store):
+    memory_service = MemoryService(db=db, vector_store=vector_store)
     app = create_app(
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
+        memory_service=memory_service,
         llm=MagicMock(spec=LLMClient),
     )
     return TestClient(app)
@@ -59,7 +63,7 @@ def _seed_memory(db, vector_store, **overrides):
     )
     defaults.update(overrides)
     record = MemoryRecord(**defaults)
-    db.create(record)
+    db.create(record, actor=Actor.API)
     vector_store.add(record)
     return record
 
@@ -183,7 +187,7 @@ def test_upcoming_events(client, db, vector_store):
 
 
 def test_update_memory(client, db, sample_record):
-    db.create(sample_record)
+    db.create(sample_record, actor=Actor.API)
     response = client.put(
         f"/memory/{sample_record.id}",
         json={"title": "Updated Title", "needs_review": True},
@@ -220,7 +224,7 @@ def test_create_memory_with_event_fields(client, db):
             "category": "reminder",
             "title": "Call dentist",
             "content": "Schedule cleaning",
-            "event_datetime": "2026-04-10T14:00:00+00:00",
+            "event_fields": {"datetime": "2026-04-10T14:00:00+00:00"},
         },
     )
     assert response.status_code == 200
@@ -240,9 +244,11 @@ def test_create_memory_with_event_recurrence(client, db):
             "category": "task",
             "title": "Weekly review",
             "content": "Review tasks",
-            "event_datetime": "2026-04-07T09:00:00+00:00",
-            "event_status": "pending",
-            "event_recurrence": "FREQ=WEEKLY;BYDAY=MO",
+            "event_fields": {
+                "datetime": "2026-04-07T09:00:00+00:00",
+                "status": "pending",
+                "recurrence": "FREQ=WEEKLY;BYDAY=MO",
+            },
         },
     )
     assert response.status_code == 200
@@ -258,8 +264,10 @@ def test_create_memory_invalid_event_status(client):
             "category": "reminder",
             "title": "Bad status",
             "content": "Test",
-            "event_datetime": "2026-04-10T14:00:00+00:00",
-            "event_status": "invalid",
+            "event_fields": {
+                "datetime": "2026-04-10T14:00:00+00:00",
+                "status": "invalid",
+            },
         },
     )
     assert response.status_code == 422
@@ -282,8 +290,8 @@ def test_create_memory_no_event_fields_unchanged(client, db):
 
 def test_bulk_delete(client, db, sample_record):
     record2 = sample_record.model_copy(update={"id": "mem_second123"})
-    db.create(sample_record)
-    db.create(record2)
+    db.create(sample_record, actor=Actor.API)
+    db.create(record2, actor=Actor.API)
     response = client.post(
         "/memory/bulk/delete",
         json={"record_ids": [sample_record.id, record2.id]},
@@ -294,8 +302,8 @@ def test_bulk_delete(client, db, sample_record):
 
 def test_bulk_update(client, db, sample_record):
     record2 = sample_record.model_copy(update={"id": "mem_second123"})
-    db.create(sample_record)
-    db.create(record2)
+    db.create(sample_record, actor=Actor.API)
+    db.create(record2, actor=Actor.API)
     response = client.post(
         "/memory/bulk/update",
         json={
@@ -307,9 +315,9 @@ def test_bulk_update(client, db, sample_record):
 
 
 def test_list_memories_needs_review_filter(client, db, sample_record):
-    db.create(sample_record)
+    db.create(sample_record, actor=Actor.API)
     review_record = sample_record.model_copy(update={"id": "mem_review123", "needs_review": True})
-    db.create(review_record)
+    db.create(review_record, actor=Actor.API)
 
     response = client.get("/memory/list?needs_review=true")
     assert response.status_code == 200
@@ -333,10 +341,14 @@ def sample_record():
 def client_with_images(db, vector_store, pending_store, tmp_path):
     image_dir = tmp_path / "images"
     image_dir.mkdir()
+    memory_service = MemoryService(
+        db=db, vector_store=vector_store, image_storage_dir=str(image_dir)
+    )
     app = create_app(
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
+        memory_service=memory_service,
         llm=MagicMock(spec=LLMClient),
         image_storage_dir=str(image_dir),
     )
@@ -359,10 +371,12 @@ def test_get_image_not_found(client_with_images):
 
 
 def test_get_image_no_storage_configured(db, vector_store, pending_store):
+    memory_service = MemoryService(db=db, vector_store=vector_store)
     app = create_app(
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
+        memory_service=memory_service,
         llm=MagicMock(spec=LLMClient),
         image_storage_dir="",
     )
@@ -397,7 +411,7 @@ def test_delete_memory_removes_image(client_with_images, db, vector_store):
         tags=[],
         image_path=str(img_file),
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     vector_store.add(record)
 
     assert img_file.exists()
@@ -434,8 +448,8 @@ def test_bulk_delete_removes_images(client_with_images, db, vector_store):
         tags=[],
         image_path=str(img2),
     )
-    db.create(record1)
-    db.create(record2)
+    db.create(record1, actor=Actor.API)
+    db.create(record2, actor=Actor.API)
     vector_store.add(record1)
     vector_store.add(record2)
 
@@ -463,7 +477,7 @@ def test_delete_memory_no_image_path(client_with_images, db, vector_store):
         created_at=datetime.now(UTC),
         tags=[],
     )
-    db.create(record)
+    db.create(record, actor=Actor.API)
     vector_store.add(record)
 
     response = client.delete("/memory/mem_no_img")
@@ -713,7 +727,6 @@ def test_confirm_with_source_chat_id(client, db):
     assert record.source is not None
     assert record.source.chat_id == "46646397"
     assert record.source.platform == "telegram"
-    assert record.metadata["source_chat_id"] == "46646397"
 
 
 def test_update_event_status(client, db, vector_store):
@@ -865,10 +878,14 @@ def client_with_reflection():
             "decisions": [],
         }
     )
+    from bearmemori.core.memory_service import MemoryService as _MemoryService
+
+    memory_service = _MemoryService(db=db, vector_store=vector_store)
     app = create_app(
         db=db,
         vector_store=vector_store,
         pending_store=pending_store,
+        memory_service=memory_service,
         reflection_task=reflection_task,
     )
     return TestClient(app)

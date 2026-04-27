@@ -1,9 +1,10 @@
 import hashlib
 import hmac
 
-from fastapi import Request, Response
+from fastapi import Request
 from fastapi.responses import RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 
 class WebappAuthMiddleware(BaseHTTPMiddleware):
@@ -14,18 +15,23 @@ class WebappAuthMiddleware(BaseHTTPMiddleware):
         self._secure_cookie = secure_cookie
 
     async def dispatch(self, request: Request, call_next):
-        if not request.url.path.startswith("/webapp"):
-            return await call_next(request)
+        path = request.url.path
 
-        # Allow login page and static files
-        if request.url.path in ("/webapp/login",) or request.url.path.startswith("/webapp/static"):
-            return await call_next(request)
+        # MCP paths: accept Bearer token
+        if path.startswith("/mcp"):
+            auth = request.headers.get("authorization", "")
+            if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:], self._secret):
+                return await call_next(request)
+            return Response("Unauthorized", status_code=401)
 
-        # Check session cookie
+        # Webapp paths: existing cookie logic
+        if not path.startswith("/webapp"):
+            return await call_next(request)
+        if path in ("/webapp/login",) or path.startswith("/webapp/static"):
+            return await call_next(request)
         session_token = request.cookies.get("webapp_session")
         if not session_token or not hmac.compare_digest(session_token, self._token):
             return RedirectResponse(url="/webapp/login", status_code=302)
-
         return await call_next(request)
 
     def create_session_cookie(self, response: Response) -> Response:

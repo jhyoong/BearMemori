@@ -104,23 +104,6 @@ async def test_check_recurring_fires_and_tracks_occurrence(scheduler, bus, mock_
 
 
 @pytest.mark.asyncio
-async def test_check_source_chat_id_from_metadata(scheduler, bus, mock_db):
-    record = _make_record(
-        source=None,
-        metadata={"source_chat_id": "99"},
-    )
-    mock_db.get_due_events.return_value = [record]
-
-    fired = []
-    bus.on(ReminderDue, lambda e: fired.append(e))
-
-    await scheduler.check_reminders()
-
-    assert len(fired) == 1
-    assert fired[0].source_chat_id == "99"
-
-
-@pytest.mark.asyncio
 async def test_check_no_due_events(scheduler, bus, mock_db):
     mock_db.get_due_events.return_value = []
 

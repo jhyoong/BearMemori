@@ -26,7 +26,7 @@ async def test_handle_input_queues_item(queue, bus):
     event = InputReceived(input_type="text", content="hello", source_chat_id="123")
     await queue.handle_input(event)
 
-    assert queue.size() == 1
+    assert len(queue._heap) == 1
     assert len(queued_events) == 1
 
 

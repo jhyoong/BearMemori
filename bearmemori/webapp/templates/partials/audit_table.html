@@ -1,0 +1,28 @@
+<table>
+  <thead>
+    <tr>
+      <th>Timestamp</th>
+      <th>Action</th>
+      <th>Actor</th>
+      <th>Memory</th>
+      <th>Category</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in entries %}
+    <tr>
+      <td>{{ e.timestamp.isoformat() }}</td>
+      <td>{{ e.action }}</td>
+      <td>{{ e.actor.value }}</td>
+      <td>
+        {% if e.memory_id in existing_ids %}
+          <a href="/webapp/memories/{{ e.memory_id }}">{{ e.title_snapshot or e.memory_id }}</a>
+        {% else %}
+          {{ e.title_snapshot or e.memory_id }} <small>(deleted)</small>
+        {% endif %}
+      </td>
+      <td>{{ e.category_snapshot or "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

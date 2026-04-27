@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bearmemori.events.domain import SendMessage
-from bearmemori.storage.models import MemoryRecord
+from bearmemori.storage.models import Actor, MemoryRecord
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +70,14 @@ class ReflectionTask:
 
             if action == "archive":
                 record.archived = True
-                self._db.update(record)
+                self._db.update(record, actor=Actor.REFLECTION)
                 self._vector_store.delete(record.id)
                 archived += 1
             elif new_importance is not None:
                 clamped = max(1, min(10, int(new_importance)))
                 if clamped != record.importance:
                     record.importance = clamped
-                    self._db.update(record)
+                    self._db.update(record, actor=Actor.REFLECTION)
                     self._vector_store.update(record)
                     reranked += 1
                 else:
@@ -160,12 +160,11 @@ class ReflectionTask:
         )
         while True:
             await asyncio.sleep(self._settings.reflection_poll_interval_seconds)
-            now_local_hour = datetime.now(UTC).hour
             try:
                 tz = zoneinfo.ZoneInfo(self._settings.user_timezone)
                 now_local_hour = datetime.now(tz).hour
             except Exception:
-                pass
+                now_local_hour = datetime.now(UTC).hour  # fallback to UTC
 
             if _is_within_window(
                 now_local_hour,
