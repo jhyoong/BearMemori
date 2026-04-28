@@ -115,3 +115,130 @@ def test_is_within_window_equal_means_no_restriction():
     from bearmemori.core.reflection import _is_within_window
 
     assert _is_within_window(current_hour=15, start_hour=4, end_hour=4) is True
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pass_writes_merge_proposal(db, vector_store, llm, bus, settings):
+    a = _make_record("mem_a", importance=5, age_days=10)
+    b = _make_record("mem_b", importance=5, age_days=5)
+    db.list_all.return_value = [a, b]
+
+    vector_store.search.return_value = [
+        _vs_neighbor("mem_a", 0.0),
+        _vs_neighbor("mem_b", 0.1),  # similarity 0.9 >= 0.85
+    ]
+    llm.reflect_duplicates = AsyncMock(
+        return_value={"is_duplicate": True, "keep_id": "mem_a", "reasoning": "dup"}
+    )
+
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")
+
+    assert summary["merge_proposals"] == 1
+    db.create_proposal.assert_called_once()
+    proposal = db.create_proposal.call_args[0][0]
+    assert proposal.proposal_type == "merge"
+    assert set(proposal.memory_ids) == {"mem_a", "mem_b"}
+    assert proposal.recommended_keep_id == "mem_a"
+    assert proposal.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pass_drops_below_threshold(db, vector_store, llm, bus, settings):
+    a = _make_record("mem_a", importance=5)
+    b = _make_record("mem_b", importance=5)
+    db.list_all.return_value = [a, b]
+    vector_store.search.return_value = [
+        _vs_neighbor("mem_a", 0.0),
+        _vs_neighbor("mem_b", 0.5),  # similarity 0.5 < 0.85
+    ]
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")
+    assert summary["merge_proposals"] == 0
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pass_drops_different_categories(db, vector_store, llm, bus, settings):
+    a = _make_record("mem_a")
+    b = _make_record("mem_b")
+    b.category = MemoryCategory.EVENT
+    db.list_all.return_value = [a, b]
+    vector_store.search.return_value = [
+        _vs_neighbor("mem_a", 0.0),
+        _vs_neighbor("mem_b", 0.05),
+    ]
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")
+    assert summary["merge_proposals"] == 0
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pass_llm_says_not_duplicate(db, vector_store, llm, bus, settings):
+    a = _make_record("mem_a")
+    b = _make_record("mem_b")
+    db.list_all.return_value = [a, b]
+    vector_store.search.return_value = [
+        _vs_neighbor("mem_a", 0.0),
+        _vs_neighbor("mem_b", 0.05),
+    ]
+    llm.reflect_duplicates = AsyncMock(
+        return_value={"is_duplicate": False, "keep_id": "", "reasoning": ""}
+    )
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")
+    assert summary["merge_proposals"] == 0
+    db.create_proposal.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pass_skips_recently_rejected_group(db, vector_store, llm, bus, settings):
+    a = _make_record("mem_a")
+    b = _make_record("mem_b")
+    db.list_all.return_value = [a, b]
+    vector_store.search.return_value = [
+        _vs_neighbor("mem_a", 0.0),
+        _vs_neighbor("mem_b", 0.05),
+    ]
+    db.merge_group_recently_rejected.return_value = True
+
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")
+    assert summary["merge_proposals"] == 0
+    llm.reflect_duplicates.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pass_does_not_propose_same_group_twice(
+    db, vector_store, llm, bus, settings
+):
+    """Visiting both A and B during the scan should still produce one merge proposal."""
+    a = _make_record("mem_a")
+    b = _make_record("mem_b")
+    db.list_all.return_value = [a, b]
+    vector_store.search.return_value = [
+        _vs_neighbor("mem_a", 0.0),
+        _vs_neighbor("mem_b", 0.05),
+    ]
+    llm.reflect_duplicates = AsyncMock(
+        return_value={"is_duplicate": True, "keep_id": "mem_a", "reasoning": "dup"}
+    )
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")
+    assert summary["merge_proposals"] == 1
+    assert llm.reflect_duplicates.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_duplicate_pass_swallows_llm_failure(db, vector_store, llm, bus, settings):
+    a = _make_record("mem_a")
+    b = _make_record("mem_b")
+    db.list_all.return_value = [a, b]
+    vector_store.search.return_value = [
+        _vs_neighbor("mem_a", 0.0),
+        _vs_neighbor("mem_b", 0.05),
+    ]
+    llm.reflect_duplicates = AsyncMock(side_effect=RuntimeError("boom"))
+
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")  # must not raise
+    assert summary["merge_proposals"] == 0

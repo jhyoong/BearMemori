@@ -8,7 +8,7 @@ from pathlib import Path
 
 from bearmemori.core.reflection_state import ReflectionState
 from bearmemori.events.domain import SendMessage
-from bearmemori.storage.models import MemoryRecord
+from bearmemori.storage.models import MemoryRecord, ReflectionProposal
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +84,89 @@ class ReflectionTask:
         )
         return summary
 
-    async def _duplicate_pass(self, in_scope, all_records, skip_ids):
-        # Filled in by Task 2.
-        return 0, set()
+    async def _duplicate_pass(
+        self,
+        in_scope: list[MemoryRecord],
+        all_records: list[MemoryRecord],
+        skip_ids: set[str],
+    ) -> tuple[int, set[str]]:
+        threshold = self._settings.reflection_duplicate_similarity_threshold
+        top_k = self._settings.reflection_duplicate_top_k
+        cooldown = self._settings.reflection_reject_cooldown_days
+
+        by_id = {r.id: r for r in all_records}
+        seen_groups: set[tuple[str, ...]] = set()
+        consumed: set[str] = set()
+        proposals_created = 0
+
+        for memory in in_scope:
+            if memory.id in skip_ids or memory.id in consumed:
+                continue
+
+            query_text = f"{memory.title}: {memory.content}"
+            try:
+                neighbors = self._vector_store.search(query_text, top_k=top_k)
+            except Exception as e:
+                logger.warning("vector_store.search failed for %s: %s", memory.id, e)
+                continue
+
+            group_ids: set[str] = {memory.id}
+            for n in neighbors:
+                nid = n.get("id")
+                if nid is None or nid == memory.id or nid in skip_ids:
+                    continue
+                distance = n.get("distance")
+                if distance is None:
+                    continue
+                similarity = 1.0 - float(distance)
+                if similarity < threshold:
+                    continue
+                other = by_id.get(nid)
+                if other is None or other.archived:
+                    continue
+                if other.category != memory.category:
+                    continue
+                group_ids.add(nid)
+
+            if len(group_ids) < 2:
+                continue
+
+            key = tuple(sorted(group_ids))
+            if key in seen_groups:
+                continue
+            seen_groups.add(key)
+
+            if self._db.merge_group_recently_rejected(memory_ids=list(key), cooldown_days=cooldown):
+                continue
+
+            records = [by_id[i] for i in key]
+            try:
+                decision = await self._llm.reflect_duplicates(records)
+            except Exception as e:
+                logger.warning("reflect_duplicates failed for %s: %s", key, e)
+                continue
+
+            if not decision.get("is_duplicate"):
+                continue
+
+            keep_id = decision.get("keep_id")
+            if keep_id not in group_ids:
+                keep_id = sorted(group_ids)[0]
+
+            proposal = ReflectionProposal(
+                id=f"prop_{uuid.uuid4().hex[:12]}",
+                proposal_type="merge",
+                status="pending",
+                memory_ids=list(key),
+                recommended_keep_id=keep_id,
+                reasoning=decision.get("reasoning", ""),
+                created_at=datetime.now(UTC),
+            )
+            self._db.create_proposal(proposal)
+            proposals_created += 1
+            consumed.update(group_ids)
+
+        return proposals_created, consumed
 
     async def _archive_rerank_pass(self, in_scope, skip_ids, consumed_ids):
         # Filled in by Task 3.
