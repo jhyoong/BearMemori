@@ -88,13 +88,14 @@ class ProposalService:
         notes = []
         if proposal.proposal_type == "merge":
             rec_keep = proposal.recommended_keep_id
-            used_keep = overrides.get("keep_id") or rec_keep
+            override_keep = overrides.get("keep_id")
+            used_keep = override_keep if override_keep is not None else rec_keep
             if used_keep and used_keep != rec_keep:
                 notes.append(f"keep_id override: {rec_keep} -> {used_keep}")
         if proposal.proposal_type == "rerank":
             rec_imp = proposal.recommended_importance
             override_imp = overrides.get("importance")
             used_imp = override_imp if override_imp is not None else rec_imp
-            if used_imp and used_imp != rec_imp:
+            if used_imp is not None and used_imp != rec_imp:
                 notes.append(f"importance override: {rec_imp} -> {used_imp}")
         return "; ".join(notes) if notes else None
