@@ -20,7 +20,7 @@ def test_settings_loads_defaults():
 def test_reminder_poll_interval_default(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test")
     monkeypatch.setenv("TELEGRAM_ALLOWED_USER_ID", "123")
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.reminder_poll_interval_seconds == 60
 
 

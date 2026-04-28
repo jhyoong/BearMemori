@@ -32,7 +32,6 @@ def mcp_deps():
             "triggered_by": "mcp",
             "started_at": "2026-04-11T03:00:00+00:00",
             "finished_at": "2026-04-11T03:00:01+00:00",
-            "candidates_evaluated": 0,
             "scanned": 0,
             "skipped": 0,
             "proposals_created": 0,

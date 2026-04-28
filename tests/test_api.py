@@ -871,7 +871,6 @@ def client_with_reflection():
             "triggered_by": "api",
             "started_at": "2026-04-11T03:00:00+00:00",
             "finished_at": "2026-04-11T03:00:05+00:00",
-            "candidates_evaluated": 0,
             "scanned": 0,
             "skipped": 0,
             "proposals_created": 0,
