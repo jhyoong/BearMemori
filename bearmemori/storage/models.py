@@ -102,3 +102,16 @@ class PendingMemory(BaseModel):
     chat_id: str = ""
     message_id: int | None = None
     image_bytes: bytes | None = None
+
+
+class ReflectionProposal(BaseModel):
+    id: str
+    proposal_type: Literal["merge", "archive", "rerank"]
+    status: Literal["pending", "approved", "rejected"]
+    memory_ids: list[str]
+    recommended_keep_id: str | None = None
+    recommended_importance: int | None = None
+    reasoning: str
+    resolution_note: str | None = None
+    created_at: datetime
+    resolved_at: datetime | None = None
