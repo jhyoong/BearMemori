@@ -62,6 +62,25 @@ class ProposalService:
         self._vector_store.delete(memory_id)
         return {"archived_ids": [memory_id], "updated_ids": []}
 
+    def _approve_rerank(self, proposal, overrides: dict) -> dict:
+        memory_id = proposal.memory_ids[0]
+        record = self._db.get(memory_id)
+        if record is None:
+            raise ProposalValidationError(f"memory not found: {memory_id}")
+        if record.archived:
+            raise ProposalValidationError(f"memory is archived: {memory_id}")
+
+        new_importance = overrides.get("importance") or proposal.recommended_importance
+        if new_importance is None:
+            raise ProposalValidationError("importance is required for rerank")
+        if not (1 <= int(new_importance) <= 10):
+            raise ProposalValidationError(f"importance out of range: {new_importance}")
+
+        record.importance = int(new_importance)
+        self._db.update(record, actor=Actor.REFLECTION)
+        self._vector_store.update(record)
+        return {"archived_ids": [], "updated_ids": [memory_id]}
+
     def _build_resolution_note(self, proposal, overrides: dict) -> str | None:
         notes = []
         if proposal.proposal_type == "merge":

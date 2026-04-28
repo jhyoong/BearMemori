@@ -5,6 +5,7 @@ from bearmemori.core.proposal_service import (
     ProposalAlreadyResolvedError,
     ProposalNotFoundError,
     ProposalService,
+    ProposalValidationError,
 )
 from bearmemori.storage.models import MemoryCategory, MemoryRecord, ReflectionProposal
 
@@ -20,6 +21,18 @@ def _proposal(**overrides):
     )
     base.update(overrides)
     return ReflectionProposal(**base)
+
+
+def _record(record_id: str, importance: int = 5, archived: bool = False) -> MemoryRecord:
+    return MemoryRecord(
+        id=record_id,
+        category=MemoryCategory.GENERAL,
+        title=f"Title {record_id}",
+        content=f"Content {record_id}",
+        created_at=datetime.now(UTC),
+        importance=importance,
+        archived=archived,
+    )
 
 
 def test_reject_resolves_proposal_with_note():
@@ -56,18 +69,6 @@ def test_reject_already_resolved_raises():
     raise AssertionError("expected ProposalAlreadyResolvedError")
 
 
-def _record(record_id: str, importance: int = 5, archived: bool = False) -> MemoryRecord:
-    return MemoryRecord(
-        id=record_id,
-        category=MemoryCategory.GENERAL,
-        title=f"Title {record_id}",
-        content=f"Content {record_id}",
-        created_at=datetime.now(UTC),
-        importance=importance,
-        archived=archived,
-    )
-
-
 def test_approve_archive_archives_the_memory():
     db = MagicMock()
     db.get_proposal.return_value = _proposal(proposal_type="archive", memory_ids=["mem_a"])
@@ -98,3 +99,67 @@ def test_approve_archive_already_archived_is_noop_but_resolves_proposal():
     vs.delete.assert_not_called()
     db.resolve_proposal.assert_called_once()
     assert result["applied"]["archived_ids"] == []
+
+
+def test_approve_rerank_updates_importance():
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(
+        proposal_type="rerank",
+        memory_ids=["mem_b"],
+        recommended_importance=7,
+    )
+    db.get.return_value = _record("mem_b", importance=5)
+    vs = MagicMock()
+    svc = ProposalService(db=db, vector_store=vs)
+
+    result = svc.approve("p1", overrides={})
+
+    args, _ = db.update.call_args
+    updated = args[0]
+    assert updated.importance == 7
+    vs.update.assert_called_once_with(updated)
+    assert result["applied"]["updated_ids"] == ["mem_b"]
+
+
+def test_approve_rerank_with_user_override():
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(
+        proposal_type="rerank", memory_ids=["mem_b"], recommended_importance=7
+    )
+    db.get.return_value = _record("mem_b", importance=5)
+    svc = ProposalService(db=db, vector_store=MagicMock())
+
+    svc.approve("p1", overrides={"importance": 9})
+
+    updated = db.update.call_args[0][0]
+    assert updated.importance == 9
+
+
+def test_approve_rerank_invalid_importance_raises():
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(
+        proposal_type="rerank", memory_ids=["mem_b"], recommended_importance=7
+    )
+    db.get.return_value = _record("mem_b", importance=5)
+    svc = ProposalService(db=db, vector_store=MagicMock())
+
+    try:
+        svc.approve("p1", overrides={"importance": 99})
+    except ProposalValidationError:
+        return
+    raise AssertionError("expected ProposalValidationError")
+
+
+def test_approve_rerank_archived_memory_raises():
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(
+        proposal_type="rerank", memory_ids=["mem_b"], recommended_importance=7
+    )
+    db.get.return_value = _record("mem_b", archived=True)
+    svc = ProposalService(db=db, vector_store=MagicMock())
+
+    try:
+        svc.approve("p1", overrides={})
+    except ProposalValidationError:
+        return
+    raise AssertionError("expected ProposalValidationError")
