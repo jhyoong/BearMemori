@@ -487,6 +487,39 @@ class MemoryDatabase:
         ).fetchone()
         return self._row_to_proposal(row) if row else None
 
+    def list_proposals(
+        self,
+        status: str | None = None,
+        proposal_type: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> list[ReflectionProposal]:
+        clauses: list[str] = []
+        params: list = []
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        if proposal_type is not None:
+            clauses.append("proposal_type = ?")
+            params.append(proposal_type)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.extend([limit, offset])
+        rows = self._conn.execute(
+            f"SELECT * FROM reflection_proposals{where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            params,
+        ).fetchall()
+        return [self._row_to_proposal(r) for r in rows]
+
+    def count_proposals(self, status: str | None = None) -> int:
+        if status is None:
+            row = self._conn.execute("SELECT COUNT(*) FROM reflection_proposals").fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM reflection_proposals WHERE status = ?",
+                (status,),
+            ).fetchone()
+        return row[0]
+
     def memory_ids_in_pending_proposals(self) -> set[str]:
         rows = self._conn.execute(
             """SELECT DISTINCT m.memory_id
