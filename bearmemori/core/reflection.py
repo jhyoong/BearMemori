@@ -6,24 +6,20 @@ import zoneinfo
 from datetime import UTC, datetime
 from pathlib import Path
 
+from bearmemori.core.reflection_state import ReflectionState
 from bearmemori.events.domain import SendMessage
-from bearmemori.storage.models import Actor, MemoryRecord
+from bearmemori.storage.models import MemoryRecord
 
 logger = logging.getLogger(__name__)
 
 
 def _is_within_window(current_hour: int, start_hour: int, end_hour: int) -> bool:
-    """Return True if current_hour is within [start_hour, end_hour).
-
-    If start_hour == end_hour, always returns True (no restriction).
-    """
     if start_hour == end_hour:
         return True
     return start_hour <= current_hour < end_hour
 
 
-def _is_candidate(record: MemoryRecord, settings) -> bool:
-    """Return True if the record should be reviewed by reflection."""
+def _is_age_candidate(record: MemoryRecord, settings) -> bool:
     age_days = (datetime.now(UTC) - record.created_at).days
     if record.importance <= 2 and age_days >= settings.reflection_low_importance_age_days:
         return True
@@ -41,84 +37,60 @@ class ReflectionTask:
         self._llm = llm
         self._bus = bus
         self._settings = settings
+        self._state = ReflectionState(settings.reflection_state_path)
 
     async def run_once(self, triggered_by: str = "scheduler") -> dict:
         run_id = f"ref_{uuid.uuid4().hex[:8]}"
         started_at = datetime.now(UTC)
         logger.info("Reflection run started: %s (triggered_by=%s)", run_id, triggered_by)
 
+        last_run = self._state.load_last_run()
         all_records = self._db.list_all(limit=10000)
-        candidates = [r for r in all_records if _is_candidate(r, self._settings)]
 
-        archived = 0
-        reranked = 0
-        kept_unchanged = 0
-        decisions = []
+        if last_run is None:
+            in_scope = list(all_records)
+        else:
+            in_scope = [r for r in all_records if r.created_at > last_run]
 
-        for record in candidates:
-            try:
-                decision = await self._llm.reflect_memory(record)
-            except Exception as e:
-                logger.warning("reflect_memory failed for %s: %s", record.id, e)
-                continue
+        skip_ids = self._db.memory_ids_in_pending_proposals()
 
-            action = decision.get("action", "keep")
-            new_importance = decision.get("new_importance")
-            reason = decision.get("reason", "")
-
-            old_importance = record.importance
-
-            if action == "archive":
-                record.archived = True
-                self._db.update(record, actor=Actor.REFLECTION)
-                self._vector_store.delete(record.id)
-                archived += 1
-            elif new_importance is not None:
-                clamped = max(1, min(10, int(new_importance)))
-                if clamped != record.importance:
-                    record.importance = clamped
-                    self._db.update(record, actor=Actor.REFLECTION)
-                    self._vector_store.update(record)
-                    reranked += 1
-                else:
-                    kept_unchanged += 1
-            else:
-                kept_unchanged += 1
-
-            decisions.append(
-                {
-                    "memory_id": record.id,
-                    "action": action,
-                    "old_importance": old_importance,
-                    "new_importance": new_importance,
-                    "reason": reason,
-                }
-            )
+        merge_count, consumed = await self._duplicate_pass(in_scope, all_records, skip_ids)
+        archive_count, rerank_count = await self._archive_rerank_pass(in_scope, skip_ids, consumed)
 
         finished_at = datetime.now(UTC)
+        self._state.save_last_run(finished_at)
+
         summary = {
             "run_id": run_id,
             "triggered_by": triggered_by,
             "started_at": started_at.isoformat(),
             "finished_at": finished_at.isoformat(),
-            "candidates_evaluated": len(candidates),
-            "archived": archived,
-            "reranked": reranked,
-            "kept_unchanged": kept_unchanged,
-            "decisions": decisions,
+            "scanned": len(in_scope),
+            "skipped": len(skip_ids),
+            "proposals_created": merge_count + archive_count + rerank_count,
+            "merge_proposals": merge_count,
+            "archive_proposals": archive_count,
+            "rerank_proposals": rerank_count,
         }
-
         self._write_log(summary)
         await self._notify(summary)
-
         logger.info(
-            "Reflection run complete: %s — archived=%d reranked=%d kept=%d",
+            "Reflection run complete: %s — proposals=%d (merge=%d archive=%d rerank=%d)",
             run_id,
-            archived,
-            reranked,
-            kept_unchanged,
+            summary["proposals_created"],
+            merge_count,
+            archive_count,
+            rerank_count,
         )
         return summary
+
+    async def _duplicate_pass(self, in_scope, all_records, skip_ids):
+        # Filled in by Task 2.
+        return 0, set()
+
+    async def _archive_rerank_pass(self, in_scope, skip_ids, consumed_ids):
+        # Filled in by Task 3.
+        return 0, 0
 
     def _write_log(self, summary: dict) -> None:
         log_path = self._settings.reflection_log_path
@@ -132,23 +104,13 @@ class ReflectionTask:
             logger.error("Failed to write reflection log: %s", e)
 
     async def _notify(self, summary: dict) -> None:
-        archived = summary["archived"]
-        reranked = summary["reranked"]
-        kept = summary["kept_unchanged"]
-        run_id = summary["run_id"]
-        triggered_by = summary["triggered_by"]
-
-        archived_titles = [d["memory_id"] for d in summary["decisions"] if d["action"] == "archive"]
-
         lines = [
-            f"Reflection complete ({run_id}, triggered by {triggered_by}):",
-            f"  Archived: {archived}",
-            f"  Reranked: {reranked}",
-            f"  Kept unchanged: {kept}",
+            f"Reflection complete ({summary['run_id']}, triggered by {summary['triggered_by']}):",
+            f"  Proposals created: {summary['proposals_created']}",
+            f"    merge: {summary['merge_proposals']}",
+            f"    archive: {summary['archive_proposals']}",
+            f"    rerank: {summary['rerank_proposals']}",
         ]
-        if archived_titles:
-            lines.append("  Archived memories: " + ", ".join(archived_titles[:10]))
-
         await self._bus.emit(SendMessage(chat_id="", text="\n".join(lines)))
 
     async def run(self) -> None:
@@ -164,7 +126,7 @@ class ReflectionTask:
                 tz = zoneinfo.ZoneInfo(self._settings.user_timezone)
                 now_local_hour = datetime.now(tz).hour
             except Exception:
-                now_local_hour = datetime.now(UTC).hour  # fallback to UTC
+                now_local_hour = datetime.now(UTC).hour
 
             if _is_within_window(
                 now_local_hour,
