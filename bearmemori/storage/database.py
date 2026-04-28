@@ -9,6 +9,7 @@ from bearmemori.storage.models import (
     MemoryCategory,
     MemoryRecord,
     MemorySource,
+    ReflectionProposal,
 )
 
 
@@ -437,7 +438,7 @@ class MemoryDatabase:
         ).fetchone()
         return row[0]
 
-    def create_proposal(self, proposal) -> None:
+    def create_proposal(self, proposal: ReflectionProposal) -> None:
         """Insert a ReflectionProposal and its memory_id rows in one transaction."""
         self._conn.execute(
             """INSERT INTO reflection_proposals
@@ -466,9 +467,7 @@ class MemoryDatabase:
             )
         self._conn.commit()
 
-    def _row_to_proposal(self, row):
-        from bearmemori.storage.models import ReflectionProposal
-
+    def _row_to_proposal(self, row: sqlite3.Row) -> ReflectionProposal:
         return ReflectionProposal(
             id=row["id"],
             proposal_type=row["proposal_type"],
@@ -482,7 +481,7 @@ class MemoryDatabase:
             resolved_at=datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None,
         )
 
-    def get_proposal(self, proposal_id: str):
+    def get_proposal(self, proposal_id: str) -> ReflectionProposal | None:
         row = self._conn.execute(
             "SELECT * FROM reflection_proposals WHERE id = ?", (proposal_id,)
         ).fetchone()
