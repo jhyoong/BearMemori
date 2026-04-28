@@ -872,10 +872,12 @@ def client_with_reflection():
             "started_at": "2026-04-11T03:00:00+00:00",
             "finished_at": "2026-04-11T03:00:05+00:00",
             "candidates_evaluated": 0,
-            "archived": 0,
-            "reranked": 0,
-            "kept_unchanged": 0,
-            "decisions": [],
+            "scanned": 0,
+            "skipped": 0,
+            "proposals_created": 0,
+            "merge_proposals": 0,
+            "archive_proposals": 0,
+            "rerank_proposals": 0,
         }
     )
     from bearmemori.core.memory_service import MemoryService as _MemoryService
@@ -896,8 +898,9 @@ def test_reflection_run_returns_summary(client_with_reflection):
     assert response.status_code == 200
     data = response.json()
     assert "run_id" in data
-    assert "archived" in data
-    assert "reranked" in data
+    assert "proposals_created" in data
+    assert "archive_proposals" in data
+    assert "rerank_proposals" in data
     assert data["triggered_by"] == "api"
 
 

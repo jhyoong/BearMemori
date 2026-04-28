@@ -33,10 +33,12 @@ def mcp_deps():
             "started_at": "2026-04-11T03:00:00+00:00",
             "finished_at": "2026-04-11T03:00:01+00:00",
             "candidates_evaluated": 0,
-            "archived": 0,
-            "reranked": 0,
-            "kept_unchanged": 0,
-            "decisions": [],
+            "scanned": 0,
+            "skipped": 0,
+            "proposals_created": 0,
+            "merge_proposals": 0,
+            "archive_proposals": 0,
+            "rerank_proposals": 0,
         }
     )
     return db, vector_store, settings, llm, pending_store, reflection_task, memory_service
