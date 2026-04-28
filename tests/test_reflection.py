@@ -242,3 +242,96 @@ async def test_duplicate_pass_swallows_llm_failure(db, vector_store, llm, bus, s
     task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
     summary = await task.run_once(triggered_by="api")  # must not raise
     assert summary["merge_proposals"] == 0
+
+
+@pytest.mark.asyncio
+async def test_archive_pass_writes_archive_proposal(db, vector_store, llm, bus, settings):
+    a = _make_record("mem_old", importance=2, age_days=40)
+    db.list_all.return_value = [a]
+    vector_store.search.return_value = []  # no neighbors
+
+    llm.reflect_memory = AsyncMock(
+        return_value={"action": "archive", "new_importance": None, "reason": "obsolete"}
+    )
+
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")
+
+    assert summary["archive_proposals"] == 1
+    proposal = db.create_proposal.call_args[0][0]
+    assert proposal.proposal_type == "archive"
+    assert proposal.memory_ids == ["mem_old"]
+    assert proposal.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_rerank_pass_writes_rerank_proposal(db, vector_store, llm, bus, settings):
+    a = _make_record("mem_mid", importance=5, age_days=100)
+    db.list_all.return_value = [a]
+    vector_store.search.return_value = []
+
+    llm.reflect_memory = AsyncMock(
+        return_value={"action": "keep", "new_importance": 7, "reason": "still relevant"}
+    )
+
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")
+
+    assert summary["rerank_proposals"] == 1
+    proposal = db.create_proposal.call_args[0][0]
+    assert proposal.proposal_type == "rerank"
+    assert proposal.memory_ids == ["mem_mid"]
+    assert proposal.recommended_importance == 7
+
+
+@pytest.mark.asyncio
+async def test_keep_unchanged_writes_no_proposal(db, vector_store, llm, bus, settings):
+    a = _make_record("mem_keep", importance=5, age_days=100)
+    db.list_all.return_value = [a]
+    vector_store.search.return_value = []
+
+    llm.reflect_memory = AsyncMock(
+        return_value={"action": "keep", "new_importance": 5, "reason": "ok"}
+    )
+
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")
+    assert summary["archive_proposals"] == 0
+    assert summary["rerank_proposals"] == 0
+
+
+@pytest.mark.asyncio
+async def test_age_pass_skips_when_consumed_by_merge(db, vector_store, llm, bus, settings):
+    """A memory in a merge proposal this run must not also get archive/rerank."""
+    a = _make_record("mem_a", importance=2, age_days=40)
+    b = _make_record("mem_b", importance=2, age_days=40)
+    db.list_all.return_value = [a, b]
+    vector_store.search.return_value = [
+        _vs_neighbor("mem_a", 0.0),
+        _vs_neighbor("mem_b", 0.05),
+    ]
+    llm.reflect_duplicates = AsyncMock(
+        return_value={"is_duplicate": True, "keep_id": "mem_a", "reasoning": "dup"}
+    )
+    llm.reflect_memory = AsyncMock(
+        return_value={"action": "archive", "new_importance": None, "reason": "old"}
+    )
+
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")
+
+    assert summary["merge_proposals"] == 1
+    assert summary["archive_proposals"] == 0
+    llm.reflect_memory.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_archive_pass_swallows_llm_failure(db, vector_store, llm, bus, settings):
+    a = _make_record("mem_old", importance=2, age_days=40)
+    db.list_all.return_value = [a]
+    vector_store.search.return_value = []
+    llm.reflect_memory = AsyncMock(side_effect=RuntimeError("boom"))
+
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    summary = await task.run_once(triggered_by="api")
+    assert summary["archive_proposals"] == 0

@@ -168,9 +168,61 @@ class ReflectionTask:
 
         return proposals_created, consumed
 
-    async def _archive_rerank_pass(self, in_scope, skip_ids, consumed_ids):
-        # Filled in by Task 3.
-        return 0, 0
+    async def _archive_rerank_pass(
+        self,
+        in_scope: list[MemoryRecord],
+        skip_ids: set[str],
+        consumed_ids: set[str],
+    ) -> tuple[int, int]:
+        archive_count = 0
+        rerank_count = 0
+
+        for record in in_scope:
+            if record.id in skip_ids or record.id in consumed_ids:
+                continue
+            if not _is_age_candidate(record, self._settings):
+                continue
+
+            try:
+                decision = await self._llm.reflect_memory(record)
+            except Exception as e:
+                logger.warning("reflect_memory failed for %s: %s", record.id, e)
+                continue
+
+            action = decision.get("action", "keep")
+            new_importance = decision.get("new_importance")
+            reason = decision.get("reason", "")
+
+            if action == "archive":
+                proposal = ReflectionProposal(
+                    id=f"prop_{uuid.uuid4().hex[:12]}",
+                    proposal_type="archive",
+                    status="pending",
+                    memory_ids=[record.id],
+                    reasoning=reason,
+                    created_at=datetime.now(UTC),
+                )
+                self._db.create_proposal(proposal)
+                archive_count += 1
+            elif new_importance is not None:
+                try:
+                    clamped = max(1, min(10, int(new_importance)))
+                except (TypeError, ValueError):
+                    continue
+                if clamped != record.importance:
+                    proposal = ReflectionProposal(
+                        id=f"prop_{uuid.uuid4().hex[:12]}",
+                        proposal_type="rerank",
+                        status="pending",
+                        memory_ids=[record.id],
+                        recommended_importance=clamped,
+                        reasoning=reason,
+                        created_at=datetime.now(UTC),
+                    )
+                    self._db.create_proposal(proposal)
+                    rerank_count += 1
+
+        return archive_count, rerank_count
 
     def _write_log(self, summary: dict) -> None:
         log_path = self._settings.reflection_log_path
