@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,10 @@ class ReflectionState:
             ts = data.get("last_run")
             if ts is None:
                 return None
-            return datetime.fromisoformat(ts)
+            dt = datetime.fromisoformat(ts)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            return dt
         except (OSError, ValueError, json.JSONDecodeError) as e:
             logger.warning("Failed to read reflection state at %s: %s", self._path, e)
             return None

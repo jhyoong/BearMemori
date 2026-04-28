@@ -5,6 +5,7 @@ def test_reflection_defaults():
     s = Settings(
         telegram_bot_token="x",
         telegram_allowed_user_id=1,
+        _env_file=None,
     )
     assert s.reflection_start_hour == 2
     assert s.reflection_end_hour == 6
@@ -16,7 +17,7 @@ def test_reflection_defaults():
 
 
 def _settings_with_required(**overrides):
-    return Settings(api_only_mode=True, **overrides)
+    return Settings(api_only_mode=True, _env_file=None, **overrides)
 
 
 def test_reflection_duplicate_settings_have_defaults():
