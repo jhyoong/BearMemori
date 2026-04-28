@@ -11,9 +11,11 @@ def test_settings(tmp_path):
         api_only_mode=True,
         database_path=str(tmp_path / "test.db"),
         chroma_persist_dir=str(tmp_path / "chroma"),
+        image_storage_dir=str(tmp_path / "images"),
         webapp_secret="",
         llm_base_url="http://localhost:11434/v1",
         llm_model="llama3",
+        _env_file=None,
     )
 
 

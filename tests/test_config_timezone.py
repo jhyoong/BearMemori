@@ -26,5 +26,5 @@ def test_user_timezone_defaults_to_utc():
     ):
         from bearmemori.config import Settings
 
-        settings = Settings()
+        settings = Settings(_env_file=None)
         assert settings.user_timezone == "UTC"

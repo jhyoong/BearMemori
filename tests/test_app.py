@@ -7,13 +7,15 @@ from bearmemori.config import Settings
 
 
 @pytest.fixture
-def settings():
+def settings(tmp_path):
     return Settings(
         telegram_bot_token="fake-token",
         telegram_allowed_user_id=12345,
         llm_base_url="http://localhost:11434/v1",
         llm_model="llama3",
         database_path=":memory:",
+        image_storage_dir=str(tmp_path / "images"),
+        _env_file=None,
     )
 
 
@@ -80,7 +82,9 @@ def test_webapp_mounted_when_secret_configured(tmp_path):
         llm_base_url="http://localhost:11434/v1",
         llm_model="llama3",
         database_path=str(tmp_path / "test.db"),
+        image_storage_dir=str(tmp_path / "images"),
         webapp_secret="test-secret",
+        _env_file=None,
     )
 
     with patch("bearmemori.app.VectorStore") as mock_vs_cls:
@@ -99,7 +103,9 @@ def test_webapp_not_mounted_when_secret_not_configured(tmp_path):
         llm_base_url="http://localhost:11434/v1",
         llm_model="llama3",
         database_path=str(tmp_path / "test.db"),
+        image_storage_dir=str(tmp_path / "images"),
         webapp_secret="",
+        _env_file=None,
     )
 
     with patch("bearmemori.app.VectorStore") as mock_vs_cls:
