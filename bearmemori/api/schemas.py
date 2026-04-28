@@ -44,3 +44,21 @@ class AuditEntryResponse(BaseModel):
     timestamp: str
     title_snapshot: str | None
     category_snapshot: str | None
+
+
+class ProposalSummary(BaseModel):
+    id: str
+    proposal_type: str
+    status: str
+    created_at: str
+    memory_count: int
+    reasoning_preview: str
+
+
+class ApproveProposalRequest(BaseModel):
+    keep_id: str | None = None
+    importance: int | None = None
+
+
+class RejectProposalRequest(BaseModel):
+    reason: str | None = None
