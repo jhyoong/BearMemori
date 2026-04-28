@@ -529,6 +529,22 @@ class MemoryDatabase:
         )
         self._conn.commit()
 
+    def merge_group_recently_rejected(self, memory_ids: list[str], cooldown_days: int) -> bool:
+        cutoff = (datetime.now(UTC) - timedelta(days=cooldown_days)).isoformat()
+        rows = self._conn.execute(
+            """SELECT memory_ids FROM reflection_proposals
+               WHERE proposal_type = 'merge'
+                 AND status = 'rejected'
+                 AND resolved_at IS NOT NULL
+                 AND resolved_at >= ?""",
+            (cutoff,),
+        ).fetchall()
+        target = set(memory_ids)
+        for row in rows:
+            if set(json.loads(row["memory_ids"])) == target:
+                return True
+        return False
+
     def memory_ids_in_pending_proposals(self) -> set[str]:
         rows = self._conn.execute(
             """SELECT DISTINCT m.memory_id

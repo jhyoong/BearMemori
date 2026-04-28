@@ -105,3 +105,17 @@ def test_resolve_proposal_removes_from_pending_set(tmp_path):
     db.create_proposal(_make_merge_proposal(["mem_a", "mem_b"]))
     db.resolve_proposal("prop_merge_1", status="approved", note=None)
     assert db.memory_ids_in_pending_proposals() == set()
+
+
+def test_recently_rejected_merge_group_lookup(tmp_path):
+    db = _new_db(tmp_path)
+    db.create_proposal(_make_merge_proposal(["mem_a", "mem_b"]))
+    db.resolve_proposal("prop_merge_1", status="rejected", note=None)
+
+    # exact same group: should be flagged as recently rejected
+    assert db.merge_group_recently_rejected(memory_ids=["mem_a", "mem_b"], cooldown_days=30) is True
+
+    # different group: not flagged
+    assert (
+        db.merge_group_recently_rejected(memory_ids=["mem_a", "mem_x"], cooldown_days=30) is False
+    )
