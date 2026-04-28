@@ -163,3 +163,18 @@ def test_approve_rerank_archived_memory_raises():
     except ProposalValidationError:
         return
     raise AssertionError("expected ProposalValidationError")
+
+
+def test_approve_rerank_zero_importance_raises():
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(
+        proposal_type="rerank", memory_ids=["mem_b"], recommended_importance=7
+    )
+    db.get.return_value = _record("mem_b", importance=5)
+    svc = ProposalService(db=db, vector_store=MagicMock())
+
+    try:
+        svc.approve("p1", overrides={"importance": 0})
+    except ProposalValidationError:
+        return
+    raise AssertionError("expected ProposalValidationError")

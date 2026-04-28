@@ -70,7 +70,10 @@ class ProposalService:
         if record.archived:
             raise ProposalValidationError(f"memory is archived: {memory_id}")
 
-        new_importance = overrides.get("importance") or proposal.recommended_importance
+        override_imp = overrides.get("importance")
+        new_importance = (
+            override_imp if override_imp is not None else proposal.recommended_importance
+        )
         if new_importance is None:
             raise ProposalValidationError("importance is required for rerank")
         if not (1 <= int(new_importance) <= 10):
@@ -90,7 +93,8 @@ class ProposalService:
                 notes.append(f"keep_id override: {rec_keep} -> {used_keep}")
         if proposal.proposal_type == "rerank":
             rec_imp = proposal.recommended_importance
-            used_imp = overrides.get("importance") or rec_imp
+            override_imp = overrides.get("importance")
+            used_imp = override_imp if override_imp is not None else rec_imp
             if used_imp and used_imp != rec_imp:
                 notes.append(f"importance override: {rec_imp} -> {used_imp}")
         return "; ".join(notes) if notes else None
