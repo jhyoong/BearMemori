@@ -31,6 +31,7 @@ class MemoryDatabase:
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS memories (
                 id TEXT PRIMARY KEY,
@@ -114,6 +115,36 @@ class MemoryDatabase:
         self._conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_audit_log_actor
             ON audit_log (actor)
+        """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS reflection_proposals (
+                id TEXT PRIMARY KEY,
+                proposal_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                memory_ids TEXT NOT NULL,
+                recommended_keep_id TEXT,
+                recommended_importance INTEGER,
+                reasoning TEXT NOT NULL,
+                resolution_note TEXT,
+                created_at TEXT NOT NULL,
+                resolved_at TEXT
+            )
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_reflection_proposals_status
+            ON reflection_proposals (status)
+        """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS reflection_proposal_memories (
+                proposal_id TEXT NOT NULL,
+                memory_id TEXT NOT NULL,
+                PRIMARY KEY (proposal_id, memory_id),
+                FOREIGN KEY (proposal_id) REFERENCES reflection_proposals(id) ON DELETE CASCADE
+            )
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_reflection_proposal_memories_memory
+            ON reflection_proposal_memories (memory_id)
         """)
         self._conn.commit()
 
