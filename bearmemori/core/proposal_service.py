@@ -1,5 +1,7 @@
 import logging
 
+from bearmemori.storage.models import Actor
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,3 +30,48 @@ class ProposalService:
             raise ProposalAlreadyResolvedError(proposal_id)
         self._db.resolve_proposal(proposal_id, status="rejected", note=reason)
         return {"status": "rejected"}
+
+    def approve(self, proposal_id: str, overrides: dict | None = None) -> dict:
+        overrides = overrides or {}
+        proposal = self._db.get_proposal(proposal_id)
+        if proposal is None:
+            raise ProposalNotFoundError(proposal_id)
+        if proposal.status != "pending":
+            raise ProposalAlreadyResolvedError(proposal_id)
+
+        if proposal.proposal_type == "archive":
+            applied = self._approve_archive(proposal)
+        elif proposal.proposal_type == "rerank":
+            applied = self._approve_rerank(proposal, overrides)
+        elif proposal.proposal_type == "merge":
+            applied = self._approve_merge(proposal, overrides)
+        else:
+            raise ProposalValidationError(f"unknown proposal_type: {proposal.proposal_type}")
+
+        note = self._build_resolution_note(proposal, overrides)
+        self._db.resolve_proposal(proposal_id, status="approved", note=note)
+        return {"status": "approved", "applied": applied}
+
+    def _approve_archive(self, proposal) -> dict:
+        memory_id = proposal.memory_ids[0]
+        record = self._db.get(memory_id)
+        if record is None or record.archived:
+            return {"archived_ids": [], "updated_ids": []}
+        record.archived = True
+        self._db.update(record, actor=Actor.REFLECTION)
+        self._vector_store.delete(memory_id)
+        return {"archived_ids": [memory_id], "updated_ids": []}
+
+    def _build_resolution_note(self, proposal, overrides: dict) -> str | None:
+        notes = []
+        if proposal.proposal_type == "merge":
+            rec_keep = proposal.recommended_keep_id
+            used_keep = overrides.get("keep_id") or rec_keep
+            if used_keep and used_keep != rec_keep:
+                notes.append(f"keep_id override: {rec_keep} -> {used_keep}")
+        if proposal.proposal_type == "rerank":
+            rec_imp = proposal.recommended_importance
+            used_imp = overrides.get("importance") or rec_imp
+            if used_imp and used_imp != rec_imp:
+                notes.append(f"importance override: {rec_imp} -> {used_imp}")
+        return "; ".join(notes) if notes else None

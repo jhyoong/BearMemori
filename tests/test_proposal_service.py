@@ -1,8 +1,12 @@
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
-from bearmemori.core.proposal_service import ProposalNotFoundError, ProposalService
-from bearmemori.storage.models import ReflectionProposal
+from bearmemori.core.proposal_service import (
+    ProposalAlreadyResolvedError,
+    ProposalNotFoundError,
+    ProposalService,
+)
+from bearmemori.storage.models import MemoryCategory, MemoryRecord, ReflectionProposal
 
 
 def _proposal(**overrides):
@@ -42,8 +46,6 @@ def test_reject_missing_proposal_raises():
 
 
 def test_reject_already_resolved_raises():
-    from bearmemori.core.proposal_service import ProposalAlreadyResolvedError
-
     db = MagicMock()
     db.get_proposal.return_value = _proposal(status="approved", resolved_at=datetime.now(UTC))
     svc = ProposalService(db=db, vector_store=MagicMock())
@@ -52,3 +54,47 @@ def test_reject_already_resolved_raises():
     except ProposalAlreadyResolvedError:
         return
     raise AssertionError("expected ProposalAlreadyResolvedError")
+
+
+def _record(record_id: str, importance: int = 5, archived: bool = False) -> MemoryRecord:
+    return MemoryRecord(
+        id=record_id,
+        category=MemoryCategory.GENERAL,
+        title=f"Title {record_id}",
+        content=f"Content {record_id}",
+        created_at=datetime.now(UTC),
+        importance=importance,
+        archived=archived,
+    )
+
+
+def test_approve_archive_archives_the_memory():
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(proposal_type="archive", memory_ids=["mem_a"])
+    db.get.return_value = _record("mem_a", archived=False)
+    vs = MagicMock()
+    svc = ProposalService(db=db, vector_store=vs)
+
+    result = svc.approve("p1", overrides={})
+
+    args, kwargs = db.update.call_args
+    updated_record = args[0]
+    assert updated_record.archived is True
+    vs.delete.assert_called_once_with("mem_a")
+    db.resolve_proposal.assert_called_once()
+    assert result["applied"]["archived_ids"] == ["mem_a"]
+
+
+def test_approve_archive_already_archived_is_noop_but_resolves_proposal():
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(proposal_type="archive", memory_ids=["mem_a"])
+    db.get.return_value = _record("mem_a", archived=True)
+    vs = MagicMock()
+    svc = ProposalService(db=db, vector_store=vs)
+
+    result = svc.approve("p1", overrides={})
+
+    db.update.assert_not_called()
+    vs.delete.assert_not_called()
+    db.resolve_proposal.assert_called_once()
+    assert result["applied"]["archived_ids"] == []
