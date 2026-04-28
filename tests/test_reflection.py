@@ -1,3 +1,4 @@
+import json as _json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
@@ -335,3 +336,36 @@ async def test_archive_pass_swallows_llm_failure(db, vector_store, llm, bus, set
     task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
     summary = await task.run_once(triggered_by="api")
     assert summary["archive_proposals"] == 0
+
+
+@pytest.mark.asyncio
+async def test_run_persists_last_run_timestamp(db, vector_store, llm, bus, settings, tmp_path):
+    db.list_all.return_value = []
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    await task.run_once(triggered_by="api")
+
+    state_path = tmp_path / "reflection_state.json"
+    assert state_path.exists()
+    data = _json.loads(state_path.read_text())
+    assert "last_run" in data
+
+
+@pytest.mark.asyncio
+async def test_subsequent_run_only_scans_new_memories(
+    db, vector_store, llm, bus, settings, tmp_path
+):
+    """First run sets last_run to now. Second run should scan zero memories
+    if the existing memory was created before that timestamp."""
+    old = _make_record("mem_old", importance=2, age_days=40)
+    db.list_all.return_value = [old]
+
+    task = ReflectionTask(db=db, vector_store=vector_store, llm=llm, bus=bus, settings=settings)
+    first = await task.run_once(triggered_by="api")
+    assert first["scanned"] == 1
+
+    db.create_proposal.reset_mock()
+    llm.reflect_memory.reset_mock()
+
+    second = await task.run_once(triggered_by="api")
+    assert second["scanned"] == 0
+    llm.reflect_memory.assert_not_called()
