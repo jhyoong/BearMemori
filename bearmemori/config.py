@@ -42,4 +42,8 @@ class Settings(BaseSettings):
     reflection_needs_review_age_days: int = 21
     reflection_mid_importance_age_days: int = 90
     reflection_log_path: str = "data/reflection.log"
+    reflection_duplicate_similarity_threshold: float = 0.85
+    reflection_duplicate_top_k: int = 5
+    reflection_reject_cooldown_days: int = 30
+    reflection_state_path: str = "data/reflection_state.json"
     api_only_mode: bool = False
