@@ -520,6 +520,15 @@ class MemoryDatabase:
             ).fetchone()
         return row[0]
 
+    def resolve_proposal(self, proposal_id: str, status: str, note: str | None) -> None:
+        self._conn.execute(
+            """UPDATE reflection_proposals
+               SET status = ?, resolved_at = ?, resolution_note = ?
+               WHERE id = ?""",
+            (status, datetime.now(UTC).isoformat(), note, proposal_id),
+        )
+        self._conn.commit()
+
     def memory_ids_in_pending_proposals(self) -> set[str]:
         rows = self._conn.execute(
             """SELECT DISTINCT m.memory_id

@@ -77,3 +77,31 @@ def test_count_proposals(tmp_path):
     db.create_proposal(_make_merge_proposal(["mem_a", "mem_b"]))
     assert db.count_proposals(status="pending") == 1
     assert db.count_proposals(status="approved") == 0
+
+
+def test_resolve_proposal_sets_status_and_resolved_at(tmp_path):
+    db = _new_db(tmp_path)
+    db.create_proposal(_make_merge_proposal(["mem_a", "mem_b"]))
+
+    db.resolve_proposal("prop_merge_1", status="approved", note=None)
+    fetched = db.get_proposal("prop_merge_1")
+    assert fetched.status == "approved"
+    assert fetched.resolved_at is not None
+    assert fetched.resolution_note is None
+
+
+def test_resolve_proposal_with_note(tmp_path):
+    db = _new_db(tmp_path)
+    db.create_proposal(_make_merge_proposal(["mem_a", "mem_b"]))
+
+    db.resolve_proposal("prop_merge_1", status="rejected", note="not duplicates")
+    fetched = db.get_proposal("prop_merge_1")
+    assert fetched.status == "rejected"
+    assert fetched.resolution_note == "not duplicates"
+
+
+def test_resolve_proposal_removes_from_pending_set(tmp_path):
+    db = _new_db(tmp_path)
+    db.create_proposal(_make_merge_proposal(["mem_a", "mem_b"]))
+    db.resolve_proposal("prop_merge_1", status="approved", note=None)
+    assert db.memory_ids_in_pending_proposals() == set()
