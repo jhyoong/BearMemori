@@ -437,6 +437,66 @@ class MemoryDatabase:
         ).fetchone()
         return row[0]
 
+    def create_proposal(self, proposal) -> None:
+        """Insert a ReflectionProposal and its memory_id rows in one transaction."""
+        self._conn.execute(
+            """INSERT INTO reflection_proposals
+               (id, proposal_type, status, memory_ids, recommended_keep_id,
+                recommended_importance, reasoning, resolution_note,
+                created_at, resolved_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                proposal.id,
+                proposal.proposal_type,
+                proposal.status,
+                json.dumps(proposal.memory_ids),
+                proposal.recommended_keep_id,
+                proposal.recommended_importance,
+                proposal.reasoning,
+                proposal.resolution_note,
+                proposal.created_at.isoformat(),
+                proposal.resolved_at.isoformat() if proposal.resolved_at else None,
+            ),
+        )
+        for memory_id in proposal.memory_ids:
+            self._conn.execute(
+                """INSERT INTO reflection_proposal_memories (proposal_id, memory_id)
+                   VALUES (?, ?)""",
+                (proposal.id, memory_id),
+            )
+        self._conn.commit()
+
+    def _row_to_proposal(self, row):
+        from bearmemori.storage.models import ReflectionProposal
+
+        return ReflectionProposal(
+            id=row["id"],
+            proposal_type=row["proposal_type"],
+            status=row["status"],
+            memory_ids=json.loads(row["memory_ids"]),
+            recommended_keep_id=row["recommended_keep_id"],
+            recommended_importance=row["recommended_importance"],
+            reasoning=row["reasoning"],
+            resolution_note=row["resolution_note"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            resolved_at=datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None,
+        )
+
+    def get_proposal(self, proposal_id: str):
+        row = self._conn.execute(
+            "SELECT * FROM reflection_proposals WHERE id = ?", (proposal_id,)
+        ).fetchone()
+        return self._row_to_proposal(row) if row else None
+
+    def memory_ids_in_pending_proposals(self) -> set[str]:
+        rows = self._conn.execute(
+            """SELECT DISTINCT m.memory_id
+               FROM reflection_proposal_memories m
+               JOIN reflection_proposals p ON p.id = m.proposal_id
+               WHERE p.status = 'pending'"""
+        ).fetchall()
+        return {r["memory_id"] for r in rows}
+
     def list_recently_updated(self, since: datetime, limit: int = 50) -> list[MemoryRecord]:
         since_iso = since.isoformat()
         rows = self._conn.execute(
