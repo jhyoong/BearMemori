@@ -237,6 +237,8 @@ def create_app(
             raise HTTPException(status_code=404, detail="Proposal not found")
         except ProposalAlreadyResolvedError:
             raise HTTPException(status_code=409, detail="Proposal already resolved")
+        except ProposalValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     @app.post("/memory/pending")
     def create_pending(draft: MemoryDraft):
