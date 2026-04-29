@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from bearmemori.core.memory_service import MemoryService
+from bearmemori.core.proposal_service import ProposalService
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import Actor, EventFields, MemoryCategory, MemoryDraft
 from bearmemori.storage.vector_store import VectorStore
@@ -30,6 +31,7 @@ def create_webapp_router(
     memory_service: MemoryService | None = None,
     image_storage_dir: str = "",
     user_timezone: str = "UTC",
+    proposal_service: ProposalService | None = None,
 ) -> APIRouter:
     r = APIRouter(prefix="/webapp")
 
@@ -557,5 +559,64 @@ def create_webapp_router(
     ):
         ctx = _audit_context(actor, action, start, end)
         return templates.TemplateResponse(request, "partials/audit_table.html", ctx)
+
+    @r.get("/proposals", response_class=HTMLResponse)
+    async def proposals_page(
+        request: Request,
+        status: str = "pending",
+        type: str | None = None,
+    ):
+        proposals = db.list_proposals(status=status, proposal_type=type, limit=100)
+        items = []
+        for p in proposals:
+            memories = []
+            for mid in p.memory_ids:
+                record = db.get(mid)
+                if record is not None:
+                    memories.append(record)
+            items.append({"proposal": p, "memories": memories})
+        return templates.TemplateResponse(
+            request,
+            "proposals.html",
+            {
+                "items": items,
+                "status_filter": status,
+                "type_filter": type or "",
+            },
+        )
+
+    @r.post("/proposals/{proposal_id}/approve", response_class=HTMLResponse)
+    async def proposals_approve(
+        request: Request,
+        proposal_id: str,
+        keep_id: str = Form(""),
+        importance: int | None = Form(None),
+    ):
+        if proposal_service is None:
+            return HTMLResponse("Proposals not configured", status_code=503)
+        overrides = {}
+        if keep_id:
+            overrides["keep_id"] = keep_id
+        if importance is not None:
+            overrides["importance"] = importance
+        try:
+            proposal_service.approve(proposal_id, overrides=overrides)
+            return HTMLResponse(f'<p class="contrast">Approved {proposal_id}</p>')
+        except Exception as e:
+            return HTMLResponse(f'<p class="error">Error: {e}</p>', status_code=400)
+
+    @r.post("/proposals/{proposal_id}/reject", response_class=HTMLResponse)
+    async def proposals_reject(
+        request: Request,
+        proposal_id: str,
+        reason: str = Form(""),
+    ):
+        if proposal_service is None:
+            return HTMLResponse("Proposals not configured", status_code=503)
+        try:
+            proposal_service.reject(proposal_id, reason=reason or None)
+            return HTMLResponse(f'<p class="secondary">Rejected {proposal_id}</p>')
+        except Exception as e:
+            return HTMLResponse(f'<p class="error">Error: {e}</p>', status_code=400)
 
     return r

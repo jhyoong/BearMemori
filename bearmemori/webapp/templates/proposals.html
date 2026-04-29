@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Proposals - BearMemori{% endblock %}
+{% block content %}
+<h2>Reflection Proposals</h2>
+
+<form method="get" action="/webapp/proposals">
+    <fieldset role="group">
+        <select name="status">
+            <option value="pending" {% if status_filter == "pending" %}selected{% endif %}>Pending</option>
+            <option value="approved" {% if status_filter == "approved" %}selected{% endif %}>Approved</option>
+            <option value="rejected" {% if status_filter == "rejected" %}selected{% endif %}>Rejected</option>
+        </select>
+        <select name="type">
+            <option value="" {% if not type_filter %}selected{% endif %}>All types</option>
+            <option value="merge" {% if type_filter == "merge" %}selected{% endif %}>Merge</option>
+            <option value="archive" {% if type_filter == "archive" %}selected{% endif %}>Archive</option>
+            <option value="rerank" {% if type_filter == "rerank" %}selected{% endif %}>Rerank</option>
+        </select>
+        <button type="submit">Filter</button>
+    </fieldset>
+</form>
+
+<p>{{ items | length }} proposal(s).</p>
+
+{% for item in items %}
+{% set p = item.proposal %}
+<article id="proposal-{{ p.id }}">
+    {% if p.proposal_type == "merge" %}
+        <h3>Possible duplicates</h3>
+        <p><em>Recommended to keep: <strong>{{ p.recommended_keep_id }}</strong></em></p>
+        <div class="grid">
+            {% for m in item.memories %}
+            <div class="memory-card{% if m.id == p.recommended_keep_id %} highlight{% endif %}">
+                <strong>{{ m.title }}</strong>
+                <p>{{ m.content }}</p>
+                <small>id: {{ m.id }} | category: {{ m.category.value }} | importance: {{ m.importance }}/10</small>
+            </div>
+            {% endfor %}
+        </div>
+        <p><em>Reason: {{ p.reasoning }}</em></p>
+        <form hx-post="/webapp/proposals/{{ p.id }}/approve" hx-target="#proposal-{{ p.id }}" hx-swap="outerHTML">
+            <label>Keep memory:
+                <select name="keep_id">
+                    {% for m in item.memories %}
+                    <option value="{{ m.id }}"{% if m.id == p.recommended_keep_id %} selected{% endif %}>{{ m.id }} — {{ m.title }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button type="submit" class="contrast">Approve</button>
+        </form>
+        <form hx-post="/webapp/proposals/{{ p.id }}/reject" hx-target="#proposal-{{ p.id }}" hx-swap="outerHTML">
+            <button type="submit" class="secondary">Reject</button>
+        </form>
+
+    {% elif p.proposal_type == "archive" %}
+        <h3>Suggested archive</h3>
+        {% set m = item.memories[0] %}
+        <div class="memory-card">
+            <strong>{{ m.title }}</strong>
+            <p>{{ m.content }}</p>
+            <small>id: {{ m.id }} | importance: {{ m.importance }}/10</small>
+        </div>
+        <p><em>Reason: {{ p.reasoning }}</em></p>
+        <form hx-post="/webapp/proposals/{{ p.id }}/approve" hx-target="#proposal-{{ p.id }}" hx-swap="outerHTML">
+            <button type="submit" class="contrast">Approve archive</button>
+        </form>
+        <form hx-post="/webapp/proposals/{{ p.id }}/reject" hx-target="#proposal-{{ p.id }}" hx-swap="outerHTML">
+            <button type="submit" class="secondary">Reject</button>
+        </form>
+
+    {% elif p.proposal_type == "rerank" %}
+        {% set m = item.memories[0] %}
+        <h3>Suggested importance change: {{ m.importance }} → {{ p.recommended_importance }}</h3>
+        <div class="memory-card">
+            <strong>{{ m.title }}</strong>
+            <p>{{ m.content }}</p>
+            <small>id: {{ m.id }} | category: {{ m.category.value }}</small>
+        </div>
+        <p><em>Reason: {{ p.reasoning }}</em></p>
+        <form hx-post="/webapp/proposals/{{ p.id }}/approve" hx-target="#proposal-{{ p.id }}" hx-swap="outerHTML">
+            <label>New importance:
+                <input type="number" name="importance" min="1" max="10" value="{{ p.recommended_importance }}">
+            </label>
+            <button type="submit" class="contrast">Approve</button>
+        </form>
+        <form hx-post="/webapp/proposals/{{ p.id }}/reject" hx-target="#proposal-{{ p.id }}" hx-swap="outerHTML">
+            <button type="submit" class="secondary">Reject</button>
+        </form>
+    {% endif %}
+</article>
+<hr>
+{% endfor %}
+{% endblock %}

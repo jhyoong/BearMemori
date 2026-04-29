@@ -144,6 +144,7 @@ def create_application(settings: Settings) -> FastAPI:
             memory_service=memory_service,
             image_storage_dir=settings.image_storage_dir,
             user_timezone=settings.user_timezone,
+            proposal_service=proposal_service,
         )
         api.include_router(webapp_router)
         api.add_middleware(
