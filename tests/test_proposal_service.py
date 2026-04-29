@@ -178,3 +178,102 @@ def test_approve_rerank_zero_importance_raises():
     except ProposalValidationError:
         return
     raise AssertionError("expected ProposalValidationError")
+
+
+def test_approve_merge_archives_others_keeps_one():
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(
+        proposal_type="merge",
+        memory_ids=["mem_a", "mem_b", "mem_c"],
+        recommended_keep_id="mem_a",
+    )
+    records = {
+        "mem_a": _record("mem_a"),
+        "mem_b": _record("mem_b"),
+        "mem_c": _record("mem_c"),
+    }
+    db.get.side_effect = lambda mid: records[mid]
+    vs = MagicMock()
+    svc = ProposalService(db=db, vector_store=vs)
+
+    result = svc.approve("p1", overrides={})
+
+    archived_ids = sorted(result["applied"]["archived_ids"])
+    assert archived_ids == ["mem_b", "mem_c"]
+
+    updated_ids = [c.args[0].id for c in db.update.call_args_list]
+    assert sorted(updated_ids) == ["mem_b", "mem_c"]
+    vs.delete.assert_any_call("mem_b")
+    vs.delete.assert_any_call("mem_c")
+
+
+def test_approve_merge_with_keep_override():
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(
+        proposal_type="merge",
+        memory_ids=["mem_a", "mem_b"],
+        recommended_keep_id="mem_a",
+    )
+    records = {"mem_a": _record("mem_a"), "mem_b": _record("mem_b")}
+    db.get.side_effect = lambda mid: records[mid]
+    svc = ProposalService(db=db, vector_store=MagicMock())
+
+    result = svc.approve("p1", overrides={"keep_id": "mem_b"})
+
+    assert result["applied"]["archived_ids"] == ["mem_a"]
+
+
+def test_approve_merge_keep_id_not_in_group_raises():
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(
+        proposal_type="merge",
+        memory_ids=["mem_a", "mem_b"],
+        recommended_keep_id="mem_a",
+    )
+    db.get.side_effect = lambda mid: {"mem_a": _record("mem_a"), "mem_b": _record("mem_b")}[mid]
+    svc = ProposalService(db=db, vector_store=MagicMock())
+
+    try:
+        svc.approve("p1", overrides={"keep_id": "mem_xyz"})
+    except ProposalValidationError:
+        return
+    raise AssertionError("expected ProposalValidationError")
+
+
+def test_approve_merge_keep_id_already_archived_raises():
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(
+        proposal_type="merge",
+        memory_ids=["mem_a", "mem_b"],
+        recommended_keep_id="mem_a",
+    )
+    db.get.side_effect = lambda mid: {
+        "mem_a": _record("mem_a", archived=True),
+        "mem_b": _record("mem_b"),
+    }[mid]
+    svc = ProposalService(db=db, vector_store=MagicMock())
+
+    try:
+        svc.approve("p1", overrides={})
+    except ProposalValidationError:
+        return
+    raise AssertionError("expected ProposalValidationError")
+
+
+def test_approve_merge_other_already_archived_is_skipped():
+    """If one of the memories was already archived externally, don't fail — just continue."""
+    db = MagicMock()
+    db.get_proposal.return_value = _proposal(
+        proposal_type="merge",
+        memory_ids=["mem_a", "mem_b", "mem_c"],
+        recommended_keep_id="mem_a",
+    )
+    db.get.side_effect = lambda mid: {
+        "mem_a": _record("mem_a"),
+        "mem_b": _record("mem_b", archived=True),
+        "mem_c": _record("mem_c"),
+    }[mid]
+    svc = ProposalService(db=db, vector_store=MagicMock())
+
+    result = svc.approve("p1", overrides={})
+    assert result["applied"]["archived_ids"] == ["mem_c"]

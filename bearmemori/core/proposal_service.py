@@ -84,6 +84,31 @@ class ProposalService:
         self._vector_store.update(record)
         return {"archived_ids": [], "updated_ids": [memory_id]}
 
+    def _approve_merge(self, proposal, overrides: dict) -> dict:
+        override_keep = overrides.get("keep_id")
+        keep_id = override_keep if override_keep is not None else proposal.recommended_keep_id
+        if keep_id not in proposal.memory_ids:
+            raise ProposalValidationError(f"keep_id {keep_id} not in proposal memory_ids")
+        keeper = self._db.get(keep_id)
+        if keeper is None:
+            raise ProposalValidationError(f"keep memory not found: {keep_id}")
+        if keeper.archived:
+            raise ProposalValidationError(f"keep memory already archived: {keep_id}")
+
+        archived_ids: list[str] = []
+        for mid in proposal.memory_ids:
+            if mid == keep_id:
+                continue
+            record = self._db.get(mid)
+            if record is None or record.archived:
+                continue
+            record.archived = True
+            self._db.update(record, actor=Actor.REFLECTION)
+            self._vector_store.delete(mid)
+            archived_ids.append(mid)
+
+        return {"archived_ids": sorted(archived_ids), "updated_ids": []}
+
     def _build_resolution_note(self, proposal, overrides: dict) -> str | None:
         notes = []
         if proposal.proposal_type == "merge":
