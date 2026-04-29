@@ -28,6 +28,7 @@
     {% if p.proposal_type == "merge" %}
         <h3>Possible duplicates</h3>
         <p><em>Recommended to keep: <strong>{{ p.recommended_keep_id }}</strong></em></p>
+        {% if item.memories %}
         <div class="grid">
             {% for m in item.memories %}
             <div class="memory-card{% if m.id == p.recommended_keep_id %} highlight{% endif %}">
@@ -51,6 +52,12 @@
         <form hx-post="/webapp/proposals/{{ p.id }}/reject" hx-target="#proposal-{{ p.id }}" hx-swap="outerHTML">
             <button type="submit" class="secondary">Reject</button>
         </form>
+        {% else %}
+        <p><em>Memories no longer available. Reason: {{ p.reasoning }}</em></p>
+        <form hx-post="/webapp/proposals/{{ p.id }}/reject" hx-target="#proposal-{{ p.id }}" hx-swap="outerHTML">
+            <button type="submit" class="secondary">Reject</button>
+        </form>
+        {% endif %}
 
     {% elif p.proposal_type == "archive" %}
         <h3>Suggested archive</h3>
