@@ -8,7 +8,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from bearmemori.core.memory_service import MemoryService
-from bearmemori.core.proposal_service import ProposalService
+from bearmemori.core.proposal_service import (
+    ProposalAlreadyResolvedError,
+    ProposalNotFoundError,
+    ProposalService,
+    ProposalValidationError,
+)
 from bearmemori.storage.database import MemoryDatabase
 from bearmemori.storage.models import Actor, EventFields, MemoryCategory, MemoryDraft
 from bearmemori.storage.vector_store import VectorStore
@@ -602,8 +607,12 @@ def create_webapp_router(
         try:
             proposal_service.approve(proposal_id, overrides=overrides)
             return HTMLResponse(f'<p class="contrast">Approved {proposal_id}</p>')
-        except Exception as e:
-            return HTMLResponse(f'<p class="error">Error: {e}</p>', status_code=400)
+        except ProposalNotFoundError:
+            return HTMLResponse('<p class="error">Proposal not found</p>', status_code=404)
+        except ProposalAlreadyResolvedError:
+            return HTMLResponse('<p class="error">Already resolved</p>', status_code=409)
+        except ProposalValidationError as e:
+            return HTMLResponse(f'<p class="error">{e}</p>', status_code=400)
 
     @r.post("/proposals/{proposal_id}/reject", response_class=HTMLResponse)
     async def proposals_reject(
@@ -616,7 +625,11 @@ def create_webapp_router(
         try:
             proposal_service.reject(proposal_id, reason=reason or None)
             return HTMLResponse(f'<p class="secondary">Rejected {proposal_id}</p>')
-        except Exception as e:
-            return HTMLResponse(f'<p class="error">Error: {e}</p>', status_code=400)
+        except ProposalNotFoundError:
+            return HTMLResponse('<p class="error">Proposal not found</p>', status_code=404)
+        except ProposalAlreadyResolvedError:
+            return HTMLResponse('<p class="error">Already resolved</p>', status_code=409)
+        except ProposalValidationError as e:
+            return HTMLResponse(f'<p class="error">{e}</p>', status_code=400)
 
     return r

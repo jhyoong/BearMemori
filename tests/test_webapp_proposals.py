@@ -78,3 +78,30 @@ def test_proposals_page_renders_rerank():
     res = client.get("/webapp/proposals")
     assert res.status_code == 200
     assert "importance" in res.text.lower()
+
+
+def test_proposals_approve_archive():
+    proposal = _proposal("archive")
+    client, db = _make_client(proposal)
+    db.get_proposal.return_value = proposal
+    db.get.return_value = _record("mem_a")
+    res = client.post("/webapp/proposals/p1/approve", data={})
+    assert res.status_code == 200
+    assert "Approved" in res.text
+
+
+def test_proposals_reject():
+    proposal = _proposal("archive")
+    client, db = _make_client(proposal)
+    db.get_proposal.return_value = proposal
+    res = client.post("/webapp/proposals/p1/reject", data={"reason": "wrong"})
+    assert res.status_code == 200
+    assert "Rejected" in res.text
+
+
+def test_proposals_approve_missing_returns_404():
+    proposal = _proposal("archive")
+    client, db = _make_client(proposal)
+    db.get_proposal.return_value = None
+    res = client.post("/webapp/proposals/missing/approve", data={})
+    assert res.status_code == 404

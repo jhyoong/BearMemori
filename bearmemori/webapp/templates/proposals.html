@@ -54,12 +54,14 @@
 
     {% elif p.proposal_type == "archive" %}
         <h3>Suggested archive</h3>
+        {% if item.memories %}
         {% set m = item.memories[0] %}
         <div class="memory-card">
             <strong>{{ m.title }}</strong>
             <p>{{ m.content }}</p>
             <small>id: {{ m.id }} | importance: {{ m.importance }}/10</small>
         </div>
+        {% endif %}
         <p><em>Reason: {{ p.reasoning }}</em></p>
         <form hx-post="/webapp/proposals/{{ p.id }}/approve" hx-target="#proposal-{{ p.id }}" hx-swap="outerHTML">
             <button type="submit" class="contrast">Approve archive</button>
@@ -69,6 +71,7 @@
         </form>
 
     {% elif p.proposal_type == "rerank" %}
+        {% if item.memories %}
         {% set m = item.memories[0] %}
         <h3>Suggested importance change: {{ m.importance }} → {{ p.recommended_importance }}</h3>
         <div class="memory-card">
@@ -76,6 +79,7 @@
             <p>{{ m.content }}</p>
             <small>id: {{ m.id }} | category: {{ m.category.value }}</small>
         </div>
+        {% endif %}
         <p><em>Reason: {{ p.reasoning }}</em></p>
         <form hx-post="/webapp/proposals/{{ p.id }}/approve" hx-target="#proposal-{{ p.id }}" hx-swap="outerHTML">
             <label>New importance:
