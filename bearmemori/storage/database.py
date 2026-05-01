@@ -9,6 +9,7 @@ from bearmemori.storage.models import (
     MemoryCategory,
     MemoryRecord,
     MemorySource,
+    ReflectionProposal,
 )
 
 
@@ -31,6 +32,7 @@ class MemoryDatabase:
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS memories (
                 id TEXT PRIMARY KEY,
@@ -114,6 +116,36 @@ class MemoryDatabase:
         self._conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_audit_log_actor
             ON audit_log (actor)
+        """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS reflection_proposals (
+                id TEXT PRIMARY KEY,
+                proposal_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                memory_ids TEXT NOT NULL,
+                recommended_keep_id TEXT,
+                recommended_importance INTEGER,
+                reasoning TEXT NOT NULL,
+                resolution_note TEXT,
+                created_at TEXT NOT NULL,
+                resolved_at TEXT
+            )
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_reflection_proposals_status
+            ON reflection_proposals (status)
+        """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS reflection_proposal_memories (
+                proposal_id TEXT NOT NULL,
+                memory_id TEXT NOT NULL,
+                PRIMARY KEY (proposal_id, memory_id),
+                FOREIGN KEY (proposal_id) REFERENCES reflection_proposals(id) ON DELETE CASCADE
+            )
+        """)
+        self._conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_reflection_proposal_memories_memory
+            ON reflection_proposal_memories (memory_id)
         """)
         self._conn.commit()
 
@@ -405,6 +437,121 @@ class MemoryDatabase:
             "SELECT COUNT(*) FROM memories WHERE category = ? AND archived = 0", (category.value,)
         ).fetchone()
         return row[0]
+
+    def create_proposal(self, proposal: ReflectionProposal) -> None:
+        self._conn.execute(
+            """INSERT INTO reflection_proposals
+               (id, proposal_type, status, memory_ids, recommended_keep_id,
+                recommended_importance, reasoning, resolution_note,
+                created_at, resolved_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                proposal.id,
+                proposal.proposal_type,
+                proposal.status,
+                json.dumps(proposal.memory_ids),
+                proposal.recommended_keep_id,
+                proposal.recommended_importance,
+                proposal.reasoning,
+                proposal.resolution_note,
+                proposal.created_at.isoformat(),
+                proposal.resolved_at.isoformat() if proposal.resolved_at else None,
+            ),
+        )
+        for memory_id in proposal.memory_ids:
+            self._conn.execute(
+                """INSERT INTO reflection_proposal_memories (proposal_id, memory_id)
+                   VALUES (?, ?)""",
+                (proposal.id, memory_id),
+            )
+        self._conn.commit()
+
+    def _row_to_proposal(self, row: sqlite3.Row) -> ReflectionProposal:
+        return ReflectionProposal(
+            id=row["id"],
+            proposal_type=row["proposal_type"],
+            status=row["status"],
+            memory_ids=json.loads(row["memory_ids"]),
+            recommended_keep_id=row["recommended_keep_id"],
+            recommended_importance=row["recommended_importance"],
+            reasoning=row["reasoning"],
+            resolution_note=row["resolution_note"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            resolved_at=datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None,
+        )
+
+    def get_proposal(self, proposal_id: str) -> ReflectionProposal | None:
+        row = self._conn.execute(
+            "SELECT * FROM reflection_proposals WHERE id = ?", (proposal_id,)
+        ).fetchone()
+        return self._row_to_proposal(row) if row else None
+
+    def list_proposals(
+        self,
+        status: str | None = None,
+        proposal_type: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> list[ReflectionProposal]:
+        clauses: list[str] = []
+        params: list = []
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        if proposal_type is not None:
+            clauses.append("proposal_type = ?")
+            params.append(proposal_type)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.extend([limit, offset])
+        rows = self._conn.execute(
+            f"SELECT * FROM reflection_proposals{where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            params,
+        ).fetchall()
+        return [self._row_to_proposal(r) for r in rows]
+
+    def count_proposals(self, status: str | None = None) -> int:
+        if status is None:
+            row = self._conn.execute("SELECT COUNT(*) FROM reflection_proposals").fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM reflection_proposals WHERE status = ?",
+                (status,),
+            ).fetchone()
+        return row[0]
+
+    def resolve_proposal(self, proposal_id: str, status: str, note: str | None) -> None:
+        self._conn.execute(
+            """UPDATE reflection_proposals
+               SET status = ?, resolved_at = ?, resolution_note = ?
+               WHERE id = ?""",
+            (status, datetime.now(UTC).isoformat(), note, proposal_id),
+        )
+        self._conn.commit()
+
+    def merge_group_recently_rejected(self, memory_ids: list[str], cooldown_days: int) -> bool:
+        cutoff = (datetime.now(UTC) - timedelta(days=cooldown_days)).isoformat()
+        rows = self._conn.execute(
+            """SELECT memory_ids FROM reflection_proposals
+               WHERE proposal_type = 'merge'
+                 AND status = 'rejected'
+                 AND resolved_at IS NOT NULL
+                 AND resolved_at >= ?""",
+            (cutoff,),
+        ).fetchall()
+        target = set(memory_ids)
+        for row in rows:
+            if set(json.loads(row["memory_ids"])) == target:
+                return True
+        return False
+
+    def memory_ids_in_pending_proposals(self) -> set[str]:
+        rows = self._conn.execute(
+            """SELECT DISTINCT m.memory_id
+               FROM reflection_proposal_memories m
+               JOIN reflection_proposals p ON p.id = m.proposal_id
+               WHERE p.status = 'pending'"""
+        ).fetchall()
+        return {r["memory_id"] for r in rows}
 
     def list_recently_updated(self, since: datetime, limit: int = 50) -> list[MemoryRecord]:
         since_iso = since.isoformat()

@@ -7,13 +7,22 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 from bearmemori.api.schemas import (
+    ApproveProposalRequest,
     BulkDeleteRequest,
     BulkUpdateRequest,
     ConfirmRequest,
+    ProposalSummary,
+    RejectProposalRequest,
     TriageRequest,
     UpdateMemoryRequest,
 )
 from bearmemori.core.memory_service import MemoryService
+from bearmemori.core.proposal_service import (
+    ProposalAlreadyResolvedError,
+    ProposalNotFoundError,
+    ProposalService,
+    ProposalValidationError,
+)
 from bearmemori.core.reflection import ReflectionTask
 from bearmemori.core.triage import run_triage
 from bearmemori.llm.client import LLMClient
@@ -39,6 +48,7 @@ def create_app(
     memory_service: MemoryService,
     llm: LLMClient | None = None,
     reflection_task: ReflectionTask | None = None,
+    proposal_service: ProposalService | None = None,
     user_timezone: str = "UTC",
     image_storage_dir: str = "",
 ) -> FastAPI:
@@ -149,6 +159,86 @@ def create_app(
             return {"error": "Reflection is not configured"}
         summary = await reflection_task.run_once(triggered_by="api")
         return summary
+
+    def _proposal_to_summary(p) -> ProposalSummary:
+        preview = (p.reasoning or "")[:200]
+        return ProposalSummary(
+            id=p.id,
+            proposal_type=p.proposal_type,
+            status=p.status,
+            created_at=p.created_at.isoformat(),
+            memory_count=len(p.memory_ids),
+            reasoning_preview=preview,
+        )
+
+    @app.get("/reflection/proposals")
+    def list_proposals(
+        status: str | None = "pending",
+        type: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ):
+        limit = min(limit, 200)
+        proposals = db.list_proposals(status=status, proposal_type=type, offset=offset, limit=limit)
+        return {
+            "proposals": [_proposal_to_summary(p).model_dump() for p in proposals],
+            "total": db.count_proposals(status=status),
+            "offset": offset,
+            "limit": limit,
+        }
+
+    @app.get("/reflection/proposals/{proposal_id}")
+    def get_proposal_detail(proposal_id: str):
+        p = db.get_proposal(proposal_id)
+        if p is None:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        memories = []
+        for mid in p.memory_ids:
+            record = db.get(mid)
+            if record is not None:
+                memories.append(record.model_dump(mode="json"))
+        return {
+            "proposal": {
+                "id": p.id,
+                "proposal_type": p.proposal_type,
+                "status": p.status,
+                "memory_ids": p.memory_ids,
+                "recommended_keep_id": p.recommended_keep_id,
+                "recommended_importance": p.recommended_importance,
+                "reasoning": p.reasoning,
+                "resolution_note": p.resolution_note,
+                "created_at": p.created_at.isoformat(),
+                "resolved_at": p.resolved_at.isoformat() if p.resolved_at else None,
+            },
+            "memories": memories,
+        }
+
+    @app.post("/reflection/proposals/{proposal_id}/approve")
+    def approve_proposal(proposal_id: str, request: ApproveProposalRequest):
+        if proposal_service is None:
+            raise HTTPException(status_code=503, detail="Proposals not configured")
+        overrides = request.model_dump(exclude_none=True)
+        try:
+            return proposal_service.approve(proposal_id, overrides=overrides)
+        except ProposalNotFoundError:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        except ProposalAlreadyResolvedError:
+            raise HTTPException(status_code=409, detail="Proposal already resolved")
+        except ProposalValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/reflection/proposals/{proposal_id}/reject")
+    def reject_proposal(proposal_id: str, request: RejectProposalRequest):
+        if proposal_service is None:
+            raise HTTPException(status_code=503, detail="Proposals not configured")
+        try:
+            return proposal_service.reject(proposal_id, reason=request.reason)
+        except ProposalNotFoundError:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        except ProposalAlreadyResolvedError:
+            raise HTTPException(status_code=409, detail="Proposal already resolved")
+        except ProposalValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     @app.post("/memory/pending")
     def create_pending(draft: MemoryDraft):

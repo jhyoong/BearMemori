@@ -10,7 +10,7 @@ Event-driven modular monolith. Single Python process with an async event bus (`a
 bearmemori/
   events/       # Event definitions (types.py, domain.py) and async pub/sub bus
   interfaces/   # Telegram adapter (emits/handles events)
-  core/         # Queue manager, processor, follow-up manager, scheduler, triage
+  core/         # Queue manager, processor, follow-up manager, scheduler, triage, reflection (writes proposals)
   llm/          # OpenAI-compatible client (targets local LLM endpoint), response parsing
   storage/      # SQLite + FTS5 (database.py), ChromaDB vectors (vector_store.py), pending store
   api/          # FastAPI REST API (routes.py, schemas.py)
@@ -28,6 +28,7 @@ Entry point: `bearmemori/app.py` wires everything together. Run via `bearmemori/
 - ChromaDB for vector storage, SQLite + FTS5 for structured storage
 - LLM endpoint is OpenAI-compatible at a remote homelab server (see .env for URL)
 - Follow-up system maintains conversation context until LLM has enough info
+- Reflection produces review-gated proposals (merge / archive / rerank); user approves or rejects them in the webapp before any state change is applied
 
 ## Stack
 

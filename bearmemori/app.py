@@ -12,6 +12,7 @@ from bearmemori.core.confirm import ConfirmHandler
 from bearmemori.core.followup import FollowUpManager
 from bearmemori.core.memory_service import MemoryService
 from bearmemori.core.processor import Processor
+from bearmemori.core.proposal_service import ProposalService
 from bearmemori.core.queue import QueueManager
 from bearmemori.core.reflection import ReflectionTask
 from bearmemori.core.scheduler import ReminderScheduler
@@ -116,6 +117,8 @@ def create_application(settings: Settings) -> FastAPI:
         image_storage_dir=settings.image_storage_dir,
     )
 
+    proposal_service = ProposalService(db=db, vector_store=vector_store)
+
     # Create FastAPI app
     api = create_api_app(
         db=db,
@@ -124,6 +127,7 @@ def create_application(settings: Settings) -> FastAPI:
         memory_service=memory_service,
         llm=llm,
         reflection_task=reflection_task,
+        proposal_service=proposal_service,
         user_timezone=settings.user_timezone,
         image_storage_dir=settings.image_storage_dir,
     )
@@ -140,6 +144,7 @@ def create_application(settings: Settings) -> FastAPI:
             memory_service=memory_service,
             image_storage_dir=settings.image_storage_dir,
             user_timezone=settings.user_timezone,
+            proposal_service=proposal_service,
         )
         api.include_router(webapp_router)
         api.add_middleware(

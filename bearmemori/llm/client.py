@@ -216,6 +216,20 @@ Importance scale:
 - 9-10: Critical (health/safety, core identity, major life events)
 """
 
+_REFLECT_DUPLICATES_SYSTEM_PROMPT = """\
+You are a memory deduplication agent. The following memories were flagged as candidate \
+duplicates by similarity scan. Decide whether they describe the same fact, event, or entity.
+
+If they are duplicates, choose which memory to keep. Prefer the most complete, most recent, \
+and highest-importance memory. The other memories will be archived.
+
+Respond with a single valid JSON object and nothing else. No explanation, no commentary, \
+no markdown formatting.
+
+{"is_duplicate": <true|false>, "keep_id": "<id of memory to keep, or empty string if not \
+duplicates>", "reasoning": "<one-sentence explanation>"}
+"""
+
 DESCRIBE_IMAGE_SYSTEM_PROMPT = (
     "/no_think\n"
     "You are a memory extraction assistant. "
@@ -383,4 +397,32 @@ class LLMClient:
         )
         raw = _get_content(response.choices[0].message)
         logger.debug("Reflect memory raw output: %s", raw)
+        return extract_json(raw)
+
+    async def reflect_duplicates(self, group) -> dict:
+        from datetime import UTC, datetime
+
+        parts = []
+        for r in group:
+            age_days = (datetime.now(UTC) - r.created_at).days
+            parts.append(
+                f"- id: {r.id}\n"
+                f"  title: {r.title}\n"
+                f"  category: {r.category.value}\n"
+                f"  content: {r.content}\n"
+                f"  tags: {', '.join(r.tags) if r.tags else 'none'}\n"
+                f"  importance: {r.importance}/10\n"
+                f"  age_days: {age_days}"
+            )
+        user_text = "Candidate duplicate group:\n" + "\n".join(parts)
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": _REFLECT_DUPLICATES_SYSTEM_PROMPT},
+                {"role": "user", "content": user_text},
+            ],
+            temperature=0.1,
+        )
+        raw = _get_content(response.choices[0].message)
+        logger.debug("Reflect duplicates raw output: %s", raw)
         return extract_json(raw)

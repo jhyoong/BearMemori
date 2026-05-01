@@ -7,6 +7,7 @@ def test_settings_loads_defaults():
         telegram_allowed_user_id=12345,
         llm_base_url="http://localhost:11434/v1",
         llm_model="llama3",
+        _env_file=None,
     )
     assert settings.telegram_bot_token == "test-token"
     assert settings.telegram_allowed_user_id == 12345
@@ -19,7 +20,7 @@ def test_settings_loads_defaults():
 def test_reminder_poll_interval_default(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test")
     monkeypatch.setenv("TELEGRAM_ALLOWED_USER_ID", "123")
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.reminder_poll_interval_seconds == 60
 
 
@@ -50,6 +51,7 @@ def test_image_storage_dir_default():
     settings = Settings(
         telegram_bot_token="fake",
         telegram_allowed_user_id=1,
+        _env_file=None,
     )
     assert settings.image_storage_dir == "data/images"
 
