@@ -1,7 +1,9 @@
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
+
+from bearmemori.utils.time import ensure_utc
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +20,7 @@ class ReflectionState:
             ts = data.get("last_run")
             if ts is None:
                 return None
-            dt = datetime.fromisoformat(ts)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=UTC)
-            return dt
+            return ensure_utc(datetime.fromisoformat(ts))
         except (OSError, ValueError, json.JSONDecodeError) as e:
             logger.warning("Failed to read reflection state at %s: %s", self._path, e)
             return None

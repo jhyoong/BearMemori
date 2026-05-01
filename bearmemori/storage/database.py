@@ -439,7 +439,6 @@ class MemoryDatabase:
         return row[0]
 
     def create_proposal(self, proposal: ReflectionProposal) -> None:
-        """Insert a ReflectionProposal and its memory_id rows in one transaction."""
         self._conn.execute(
             """INSERT INTO reflection_proposals
                (id, proposal_type, status, memory_ids, recommended_keep_id,
